@@ -465,6 +465,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </ol>
 </li>
 <li class="toc-major">
+<a data-target="android-process-lifecycle-state-restoration" href="#android-process-lifecycle-state-restoration">Життєвий цикл процесу Android і відновлення стану</a>
+</li>
+<li class="toc-major">
 <a data-target="kotlin-for-android" href="#kotlin-for-android">Kotlin for Android</a>
 <ol class="toc-children">
 <li><a data-target="val-vs-var-immutability" href="#val-vs-var-immutability">val vs var, immutability</a></li>
@@ -741,6 +744,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <li><a data-target="en-services-broadcastreceiver-contentprovider-and-background-limits" href="#en-services-broadcastreceiver-contentprovider-and-background-limits">Services, BroadcastReceiver, ContentProvider, and background limits</a></li>
 <li><a data-target="en-permissions" href="#en-permissions">Permissions</a></li>
 </ol>
+</li>
+<li class="toc-major">
+<a data-target="en-android-process-lifecycle-state-restoration" href="#en-android-process-lifecycle-state-restoration">Android process lifecycle and state restoration</a>
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-for-android" href="#en-kotlin-for-android">Kotlin for Android</a>
@@ -1381,6 +1387,156 @@ Idempotency key, згенерований до першої спроби + uniqu
 <h2 id="android-fundamentals-підсумок">Android Fundamentals — підсумок<a aria-label="Посилання на розділ: Android Fundamentals — підсумок" class="heading-anchor" href="#android-fundamentals-підсумок">#</a></h2>
 <p>Для Senior Android Developer Android fundamentals — це не memorization callbacks. Це розуміння lifecycle, process death, state ownership, background limitations, navigation semantics, security і system constraints. На співбесіді важливо постійно пов’язувати framework behavior з production наслідками: leaks, lost state, battery drain, broken navigation, ANR, bad UX.</p>
 <hr/>
+</div></details><details class="major-section" data-key="android-process-lifecycle-state-restoration" data-title="Життєвий цикл процесу Android і відновлення стану" id="android-process-lifecycle-state-restoration" open=""><summary class="major-summary"><span class="major-title">Життєвий цикл процесу Android і відновлення стану</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<h2 id="stage1-uk-learning-objective">Навчальна мета й mental model<a aria-label="Посилання на розділ: Навчальна мета й mental model" class="heading-anchor" href="#stage1-uk-learning-objective">#</a></h2>
+<p>Це консолідований Stage 1 mental model, а не ще один список callback-ів. Після розділу кандидат має вміти провести причинний ланцюжок: <strong>важливість процесу → lifecycle компонента → власник стану → механізм відновлення → поведінка після process death → перевірка тестами</strong>.</p>
+<blockquote><p><strong>Senior-теза:</strong> Android не гарантує безперервне існування процесу. Коректний екран відтворюється з мінімального збереженого стану та джерела істини, а не залежить від об’єктів, які випадково лишилися в пам’яті.</p></blockquote>
+<p>Короткі API-приклади вже є в <a href="#activity-lifecycle">Activity lifecycle</a> та <a href="#configuration-changes-savedinstancestate-process-death">configuration/saved-state deep dive</a>. Тут фокус — на процесному контракті, ownership, recovery та доказовій test matrix.</p>
+
+<h2 id="stage1-uk-process-importance">Процес: важливість і не-гарантії<a aria-label="Посилання на розділ: Процес: важливість і не-гарантії" class="heading-anchor" href="#stage1-uk-process-importance">#</a></h2>
+<p>Зазвичай застосунок працює у власному Linux-процесі. Процес може бути створений, коли системі треба запустити компонент застосунку, а його lifetime контролює Android. За дефіциту пам’яті система оцінює процес за найважливішим активним компонентом; залежність через bound service або <code>ContentProvider</code> також може підвищити пріоритет.</p>
+<table><thead><tr><th>Рівень</th><th>Типові умови</th><th>Коректне твердження</th></tr></thead><tbody>
+<tr><td><strong>Foreground</strong></td><td><code>Activity</code> у <code>RESUMED</code>; виконується <code>BroadcastReceiver.onReceive()</code> або callback <code>Service</code></td><td>Вбивається лише як останній засіб, але абсолютної гарантії немає.</td></tr>
+<tr><td><strong>Visible</strong></td><td>Видима, але не сфокусована <code>Activity</code>; foreground service; видимий системний сервіс</td><td>Має високий пріоритет, але може бути завершений заради foreground-процесів.</td></tr>
+<tr><td><strong>Service</strong></td><td>Активний started service</td><td>Важливіший за cached, однак довготривалий service може бути понижений.</td></tr>
+<tr><td><strong>Cached</strong></td><td>Немає потрібного користувачу компонента; часто всі <code>Activity</code> у <code>STOPPED</code></td><td>Може бути вбитий будь-коли; з Android 13 cached-процес може отримувати обмежений або нульовий CPU-time.</td></tr>
+</tbody></table>
+<ul>
+<li>Система звільняє пам’ять, завершуючи <strong>весь процес</strong>: зникають <code>Application</code>, singleton-и, ViewModel-и, coroutine scopes і memory caches.</li>
+<li><code>onDestroy()</code> при system-initiated process death <strong>не гарантований</strong> і не є commit point.</li>
+<li>Робота, запущена з <code>BroadcastReceiver.onReceive()</code>, не має гарантії продовжитися після повернення з callback; для довшої роботи потрібен системно видимий механізм.</li>
+<li>Порядок видалення cached-процесів — implementation detail, а не API-контракт.</li>
+</ul>
+
+<h2 id="stage1-uk-activity-configuration">Activity і configuration changes<a aria-label="Посилання на розділ: Activity і configuration changes" class="heading-anchor" href="#stage1-uk-activity-configuration">#</a></h2>
+<p><code>onCreate()</code> створює екземпляр і підключає state holders; <code>onStart()</code> означає видимість; <code>onResume()</code> — готовність до фокусованої взаємодії; <code>onPause()</code> — втрату фокуса, хоча екран може лишатися видимим у multi-window; <code>onStop()</code> — невидимість. <code>onDestroy()</code> може бути наслідком <code>finish()</code> або recreation, але це не callback process death.</p>
+<p><code>onPause()</code> має завершуватися швидко: network calls, транзакції БД й довге збереження можуть не встигнути. <code>onStop()</code> краще підходить для відносно важкого shutdown, але критичні зміни слід зберігати інкрементально, а не чекати lifecycle callback.</p>
+<p>За типової configuration change стара <code>Activity</code> знищується, нова отримує ресурси нової конфігурації, retained ViewModel приєднується до нового owner-а, а supported saved state відновлюється. Поля старої <code>Activity</code> не переносяться. Після process death немає ні старої <code>Activity</code>, ні ViewModel, ні іншого in-memory graph.</p>
+<p><code>android:configChanges</code> лише передає застосунку обов’язок адаптувати ресурси; він не вирішує ownership, не захищає від інших recreation і process death. Крім того, починаючи з Android 17/API 37, окремі зміни конфігурації можуть доставлятися через <code>onConfigurationChanged()</code> без повного restart, тому «кожна configuration change завжди recreate-ить Activity» — вже не універсальна гарантія.</p>
+
+<h2 id="stage1-uk-fragment-dual-lifecycle">Fragment: два lifecycle owner-и<a aria-label="Посилання на розділ: Fragment: два lifecycle owner-и" class="heading-anchor" href="#stage1-uk-fragment-dual-lifecycle">#</a></h2>
+<p><code>Fragment</code> і його <code>View</code> — різні <code>LifecycleOwner</code>. View може завершитися в <code>onDestroyView()</code>, поки Fragment лишається у back stack у стані <code>CREATED</code>. Тому binding, adapters, UI observers і collectors належать <code>viewLifecycleOwner</code>; references на View очищаються в <code>onDestroyView()</code>, а стару View не кешують між <code>onCreateView()</code>.</p>
+<ul>
+<li><code>STARTED</code> гарантує створену View і є типовою межею lifecycle-aware UI work; <code>RESUMED</code> потрібен для focus, input та IME-сценаріїв.</li>
+<li>Під час руху вгору callback Fragment передує lifecycle events Fragment/View; під час руху вниз event спершу отримує View lifecycle, потім Fragment lifecycle, а далі callback.</li>
+<li><code>ON_STOP</code> відбувається до збереження state Fragment і є останньою безпечною lifecycle-межею для child <code>FragmentTransaction</code>.</li>
+<li>Взаємний порядок <code>onStop()</code> та <code>onSaveInstanceState()</code> батьківського компонента відрізняється до API 28 і починаючи з API 28.</li>
+</ul>
+
+<h2 id="stage1-uk-state-recovery-matrix">Ownership і матриця відновлення<a aria-label="Посилання на розділ: Ownership і матриця відновлення" class="heading-anchor" href="#stage1-uk-state-recovery-matrix">#</a></h2>
+<table><thead><tr><th>Шар стану</th><th>Приклад / механізм</th><th>Configuration change</th><th>System process death</th><th><code>finish()</code> / task removal</th></tr></thead><tbody>
+<tr><td>Recomposition-local</td><td>Проміжна анімація — <code>remember</code></td><td>Ні</td><td>Ні</td><td>Ні</td></tr>
+<tr><td>UI element state</td><td>Text, tab, scroll — <code>rememberSaveable</code>, <code>rememberSerializable</code> або supported View state</td><td>Так</td><td>Так, лише якщо system saved-state/task record існує</td><td>Ні</td></tr>
+<tr><td>Screen state у пам’яті</td><td>Завантажені моделі, derived state — ViewModel</td><td>Так</td><td>Ні</td><td>Ні</td></tr>
+<tr><td>Мінімальні recovery inputs</td><td><code>itemId</code>, query, filter, draft ID — <code>SavedStateHandle</code></td><td>Так</td><td>Так, лише доки task record збережено</td><td>Ні</td></tr>
+<tr><td>Durable facts</td><td>Документ, транзакція, settings — Room, DataStore, file/server</td><td>Так</td><td>Так</td><td>Так</td></tr>
+</tbody></table>
+<p><strong>Saved state — це контракт system-initiated restoration, поки існує запис task-а, а не durable storage.</strong> Він не має обіцяти відновлення після явного <code>finish()</code>, force-stop, видалення task з Recents або іншого сценарію, що прибирає task record. ViewModel переживає configuration change, але <strong>не</strong> process death. Правильний pattern — зберегти малий ключ і повторно побудувати складний <code>UiState</code> з data layer.</p>
+<h3 id="stage1-uk-saveable-boundaries">Межі <code>rememberSaveable</code>, <code>rememberSerializable</code> і <code>SavedStateHandle</code><a aria-label="Посилання на розділ: Межі rememberSaveable, rememberSerializable і SavedStateHandle" class="heading-anchor" href="#stage1-uk-saveable-boundaries">#</a></h3>
+<ul>
+<li><code>rememberSaveable</code> належить Composition і зберігає невеликий UI state через saved-instance-state; для нестандартних типів потрібен <code>Saver</code> або supported representation.</li>
+<li><code>rememberSerializable</code> — варіант для локального Compose state з Kotlin Serialization. Він зменшує boilerplate для serializable типів, але має той самий restoration lifetime: це не база даних і не місце для великих object graphs.</li>
+<li><code>SavedStateHandle</code> належить ViewModel і підходить для малих inputs, потрібних бізнес-логіці. Фізичний transport має Bundle-like size/serialization constraints.</li>
+<li>Великі списки, bitmap-и чи повні API responses збільшують main-thread cost і ризик <code>TransactionTooLargeException</code>; зберігайте ID/query, а дані перечитуйте.</li>
+<li>State capture для <code>SavedStateHandle</code> відбувається, коли host переходить у stopped state. Запис після <code>onStop()</code> може не потрапити у відновлюваний snapshot без наступного циклу <code>onStart()</code> → <code>onStop()</code>.</li>
+</ul>
+
+<h2 id="stage1-uk-lifecycle-flow">Lifecycle-aware Flow collection<a aria-label="Посилання на розділ: Lifecycle-aware Flow collection" class="heading-anchor" href="#stage1-uk-lifecycle-flow">#</a></h2>
+<pre><code class="language-kotlin">// Compose
+val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+// Fragment View
+viewLifecycleOwner.lifecycleScope.launch {
+    viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+        launch { viewModel.uiState.collect(::render) }
+        launch { viewModel.effects.collect(::handleEffect) }
+    }
+}</code></pre>
+<p><code>collectAsStateWithLifecycle()</code> за замовчуванням активний від <code>STARTED</code>. <code>repeatOnLifecycle</code> запускає block на цій межі, скасовує нижче неї та запускає знову після повернення. Для кількох нескінченних Flow потрібні окремі child coroutines. Plain <code>lifecycleScope.launch { collect(...) }</code> може оновлювати вже знищену Fragment View, а <code>launchWhenStarted</code> suspend-ить collector, не гарантуючи зупинки upstream.</p>
+<p><code>SharingStarted.WhileSubscribed(5_000)</code> може оптимізувати upstream під час короткої recreation-паузи. Це <strong>не</strong> recovery mechanism і нічого не зберігає після process death.</p>
+
+<h2 id="stage1-uk-production-failures">8 production failure modes<a aria-label="Посилання на розділ: 8 production failure modes" class="heading-anchor" href="#stage1-uk-production-failures">#</a></h2>
+<ol>
+<li><strong>ViewModel сприймають як persistence.</strong> Low-memory kill повертає екран до initial state, бо ViewModel був process-local.</li>
+<li><strong>Повний response кладуть у <code>SavedStateHandle</code>.</strong> Отримують stale model, main-thread serialization і ризик <code>TransactionTooLargeException</code>.</li>
+<li><strong>Критичний draft записують лише в <code>onPause()</code>/<code>onStop()</code>.</strong> Callback або async write може не завершитися; reliable data треба зберігати під час зміни з debounce/batching.</li>
+<li><strong>Fragment колектить через <code>fragment.lifecycleScope</code>.</strong> Collector переживає View і звертається до stale binding.</li>
+<li><strong><code>android:configChanges</code> маскує ownership bug.</strong> Rotation виглядає справною, але locale, інша recreation або process death знову губить state.</li>
+<li><strong>ViewModel/singleton тримає <code>Activity</code>, View, callback чи UI scope.</strong> Старий екземпляр переживає recreation і витікає.</li>
+<li><strong>Після restoration повторюється неідемпотентна команда.</strong> Payment/POST дублюється, бо «loading» було відновлено як команду, а не опис state; потрібен durable operation ID/idempotency.</li>
+<li><strong>Force Stop називають тестом process restoration.</strong> Force-stop має іншу семантику й не перевіряє system-initiated відновлення task.</li>
+</ol>
+
+<h2 id="stage1-uk-test-matrix">Детермінована test matrix<a aria-label="Посилання на розділ: Детермінована test matrix" class="heading-anchor" href="#stage1-uk-test-matrix">#</a></h2>
+<table><thead><tr><th>Ризик</th><th>Інструмент</th><th>Що доводить / не доводить</th></tr></thead><tbody>
+<tr><td>ViewModel recovery logic</td><td>Unit test із <code>SavedStateHandle(mapOf(...))</code> і fake repository</td><td>Мінімальні inputs відновлюють <code>UiState</code>; не тестує framework/process.</td></tr>
+<tr><td>Activity recreation</td><td><code>ActivityScenario.recreate()</code>, <code>moveToState()</code></td><td>Новий Activity instance і lifecycle states; не є реальним process death.</td></tr>
+<tr><td>Fragment/View recreation</td><td><code>FragmentScenario.recreate()</code></td><td>Нова View, відсутність stale binding/duplicate collectors; не є реальним kill.</td></tr>
+<tr><td>Compose saved state</td><td><code>StateRestorationTester.emulateSavedInstanceStateRestore()</code></td><td>Контракт <code>rememberSaveable</code>/<code>rememberSerializable</code> без restart Activity.</td></tr>
+<tr><td>Configuration-sensitive behavior</td><td>Rotation, resize/multi-window, locale, dark theme, font scale, hardware keyboard</td><td>Resources, navigation та user input після конкретної зміни.</td></tr>
+<tr><td>System-like process death</td><td>Home → <code>adb shell am kill &lt;package&gt;</code> → перевірити новий PID → повернути task</td><td>Новий process/ViewModel, restored minimal state, reload із repository, відсутність duplicate commands.</td></tr>
+<tr><td>Explicit user/system stop semantics</td><td>Force-stop і task removal — окремі negative tests</td><td>Підтверджують cold-start/cleared-task behavior, а не saved-state restoration.</td></tr>
+</tbody></table>
+<p>Developer option <strong>“Don’t keep activities”</strong> та <code>recreate()</code> корисні для recreation, але не створюють новий Linux-процес і не доводять process-death safety. Для kill test task спочатку лишають у background, перевіряють зміну PID і лише тоді повертаються до нього.</p>
+
+<h2 id="stage1-uk-likely-qa">10 ймовірних практичних Q&amp;A<a aria-label="Посилання на розділ: 10 ймовірних практичних Q and A" class="heading-anchor" href="#stage1-uk-likely-qa">#</a></h2>
+<p><em>Це ймовірні теми для практики, а не підтверджений або гарантований список питань.</em></p>
+<ol>
+<li><strong>Configuration change vs process death?</strong> У першому випадку Activity instance змінюється, але process і retained ViewModel зазвичай лишаються; у другому зникає весь in-memory graph.</li>
+<li><strong>Чи гарантований <code>onDestroy()</code>?</strong> Ні при system process kill; це cleanup callback, а не commit point.</li>
+<li><strong>Де тримати query, results і critical draft?</strong> Query/filter — saveable state або <code>SavedStateHandle</code> за owner-ом; results — ViewModel з повторним load; незамінний draft — durable storage.</li>
+<li><strong>Чому не весь <code>UiState</code> у <code>SavedStateHandle</code>?</strong> Через size/main-thread serialization, stale derived data та те, що recovery краще будувати з мінімальних inputs.</li>
+<li><strong>Коли <code>remember</code> недостатньо?</strong> Коли state має пережити Activity/system process recreation; <code>remember</code> переживає лише recomposition.</li>
+<li><strong>Навіщо <code>viewLifecycleOwner</code>?</strong> Fragment може жити довше за View, тож UI observers мають завершитися разом із View.</li>
+<li><strong><code>STARTED</code> чи <code>RESUMED</code>?</strong> <code>STARTED</code> — типовий поріг rendering видимого UI; <code>RESUMED</code> — лише для роботи, що потребує focus/input.</li>
+<li><strong>Чому <code>repeatOnLifecycle</code>, а не <code>launchWhenStarted</code>?</strong> Перший скасовує й перезапускає block; suspension collector-а не обов’язково зупиняє upstream.</li>
+<li><strong>Що станеться з singleton cache?</strong> Він зникне разом із процесом; singleton означає process scope, не persistence.</li>
+<li><strong>Чи вирішують <code>android:configChanges</code> або <code>WhileSubscribed</code> recovery?</strong> Ні: перше змінює handling окремих конфігурацій, друге керує subscription lifetime.</li>
+</ol>
+
+<h2 id="stage1-uk-senior-followups">5 senior follow-ups<a aria-label="Посилання на розділ: 5 senior follow-ups" class="heading-anchor" href="#stage1-uk-senior-followups">#</a></h2>
+<ul>
+<li>Як зробити recovery ідемпотентним, якщо process death стався між server commit і локальним UI update?</li>
+<li>Як розділити state, command та durable fact, щоб navigation/payment не повторилися?</li>
+<li>Що станеться із записом у <code>SavedStateHandle</code>, зробленим після <code>STOPPED</code>?</li>
+<li>Як тестом довести скасування collector-а старої Fragment View і відсутність duplicate upstream subscriptions?</li>
+<li>Які configuration-sensitive dependencies, крім UI, треба перестворити при ручному <code>onConfigurationChanged()</code>?</li>
+</ul>
+
+<h2 id="stage1-uk-production-scenario">Production-сценарій: редагування замовлення<a aria-label="Посилання на розділ: Production-сценарій: редагування замовлення" class="heading-anchor" href="#stage1-uk-production-scenario">#</a></h2>
+<p>Екран містить форму, selected client, scroll, серверні ціни та незбережений коментар. Room/server володіє замовленням, durable draft і commit status; <code>SavedStateHandle</code> — <code>orderId</code>, active section, query та draft ID; ViewModel — aggregate <code>OrderUiState</code>, validation і repository orchestration; <code>rememberSaveable</code>/<code>rememberSerializable</code> — локальні tab, expansion або scroll, якщо вони не потрібні бізнес-логіці.</p>
+<p>Після process death новий ViewModel отримує ID, читає durable draft і актуальні ціни та будує state заново. Submit має durable operation ID/idempotency key, тому restoration не повторює замовлення. <strong>Trade-off:</strong> записувати draft після кожної зміни надійніше, але потребує debounce/batching і має I/O cost; запис лише в <code>onStop()</code> дешевший, проте лишає вікно втрати.</p>
+
+<h2 id="stage1-uk-self-check">Self-check без відповідей<a aria-label="Посилання на розділ: Self-check без відповідей" class="heading-anchor" href="#stage1-uk-self-check">#</a></h2>
+<ol>
+<li>Який мінімальний state потрібен вашому найдорожчому екрану, щоб відновитися в новому процесі?</li>
+<li>Які значення у вашому UI зараз помилково вважаються durable лише тому, що живуть у ViewModel?</li>
+<li>Як ви доведете тестом, що payment command не повторюється після restoration?</li>
+<li>Яку межу lifecycle має кожен collector і чому саме її?</li>
+</ol>
+
+<h2 id="stage1-uk-answer-skeletons">Interview-ready skeletons<a aria-label="Посилання на розділ: Interview-ready skeletons" class="heading-anchor" href="#stage1-uk-answer-skeletons">#</a></h2>
+<h3 id="stage1-uk-answer-30-seconds">Відповідь на 30 секунд<a aria-label="Посилання на розділ: Відповідь на 30 секунд" class="heading-anchor" href="#stage1-uk-answer-30-seconds">#</a></h3>
+<blockquote><p>Android може знищити весь background process, і <code>onDestroy()</code> при цьому не гарантований. Тому я розділяю state за lifetime: локальний UI state — saveable Compose API, screen logic — ViewModel, мінімальні recovery keys — <code>SavedStateHandle</code>, а дані, які не можна втратити, — Room, DataStore або server. У Fragment збираю Flow через <code>viewLifecycleOwner.repeatOnLifecycle(STARTED)</code>, у Compose — <code>collectAsStateWithLifecycle()</code>. Recreation і реальний process kill тестую окремо.</p></blockquote>
+<h3 id="stage1-uk-answer-2-minutes">Відповідь на 2 хвилини<a aria-label="Посилання на розділ: Відповідь на 2 хвилини" class="heading-anchor" href="#stage1-uk-answer-2-minutes">#</a></h3>
+<blockquote><p>Configuration change і process death можуть обидва привести до нового Activity instance, але гарантії різні. Після configuration change ViewModel зазвичай лишається в живому процесі; після process death зникає весь object graph. System saved state відновлює лише невеликі значення, поки існує task record, тому він не замінює durable storage.</p><p>Я визначаю owner за семантикою. Локальна UI-деталь належить Composition і може використовувати <code>rememberSaveable</code> або <code>rememberSerializable</code>. Screen state і business logic належать ViewModel, але для recovery я зберігаю лише ID, query чи draft ID у <code>SavedStateHandle</code>. Durable facts записуються в data layer, а новий ViewModel реконструює derived state.</p><p>У Fragment я прив’язую binding і collectors до lifecycle View, бо View може померти раніше за Fragment. Я не покладаюся на <code>onDestroy()</code>, довгу операцію в <code>onPause()</code> або <code>WhileSubscribed</code> як persistence. У test strategy розділяю <code>recreate()</code>, Compose restoration tests і справжній kill background-процесу через <code>adb shell am kill</code>, перевіряючи новий PID та відсутність повторних команд.</p></blockquote>
+
+<h2 id="stage1-uk-official-sources">Офіційні Android Developers джерела<a aria-label="Посилання на розділ: Офіційні Android Developers джерела" class="heading-anchor" href="#stage1-uk-official-sources">#</a></h2>
+<ul>
+<li><a href="https://developer.android.com/guide/components/activities/process-lifecycle">Processes and app lifecycle</a></li>
+<li><a href="https://developer.android.com/guide/components/activities/activity-lifecycle">The Activity lifecycle</a></li>
+<li><a href="https://developer.android.com/guide/fragments/lifecycle">Fragment lifecycle</a></li>
+<li><a href="https://developer.android.com/guide/topics/resources/runtime-changes">Handle configuration changes</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/saving-states">Save UI states</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/state-saving">Save UI state in Compose</a> and <a href="https://developer.android.com/develop/ui/compose/state-lifespans">State lifespans in Compose</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/viewmodel/viewmodel-savedstate">Saved State module for ViewModel</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/coroutines">Use Kotlin coroutines with lifecycle-aware components</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/views/coroutines-views">Use Kotlin coroutines with lifecycle-aware components (Views)</a></li>
+<li><a href="https://developer.android.com/guide/fragments/test">Test your fragments</a></li>
+<li><a href="https://developer.android.com/reference/androidx/test/core/app/ActivityScenario">ActivityScenario API reference</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/testing/common-patterns">Common patterns in Compose testing</a></li>
+<li><a href="https://developer.android.com/codelabs/android-lifecycles">Android lifecycle-aware components codelab</a></li>
+</ul>
 </div></details><details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
 <h2 id="val-vs-var-immutability">val vs var, immutability<a aria-label="Посилання на розділ: val vs var, immutability" class="heading-anchor" href="#val-vs-var-immutability">#</a></h2>
 <h3 id="питання-8">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-8">#</a></h3>
@@ -5906,6 +6062,156 @@ class CheckoutViewModel @Inject constructor(
 <li>Blocking the whole feature without fallback.</li>
 <li>Not handling “Don’t ask again”.</li>
 <li>Not considering newer Android permission changes.</li>
+</ul>
+</div></details><details class="major-section" data-key="android-process-lifecycle-state-restoration" data-title="Android process lifecycle and state restoration" id="en-android-process-lifecycle-state-restoration" open=""><summary class="major-summary"><span class="major-title">Android process lifecycle and state restoration</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<h2 id="en-stage1-learning-objective">Learning objective and mental model<a aria-label="Link to section: Learning objective and mental model" class="heading-anchor" href="#en-stage1-learning-objective">#</a></h2>
+<p>This is a consolidated Stage 1 mental model, not another callback list. After this section, a candidate should be able to trace the full chain: <strong>process importance → component lifecycle → state owner → restoration mechanism → behavior after process death → test evidence</strong>.</p>
+<blockquote><p><strong>Senior principle:</strong> Android does not guarantee continuous process lifetime. A correct screen can be rebuilt from minimal saved state and a source of truth instead of depending on objects that happen to remain in memory.</p></blockquote>
+<p>The guide already contains short API examples in <a href="#en-activity-lifecycle">Activity lifecycle</a> and the <a href="#en-configuration-changes-savedinstancestate-and-process-death">configuration/saved-state deep dive</a>. This section focuses on the process contract, ownership, recovery, and a deterministic test matrix.</p>
+
+<h2 id="en-stage1-process-importance">Process importance and non-guarantees<a aria-label="Link to section: Process importance and non-guarantees" class="heading-anchor" href="#en-stage1-process-importance">#</a></h2>
+<p>An app normally runs in its own Linux process. Android can create that process when a component must run, and the system—not the app—controls its lifetime. Under memory pressure, Android classifies a process by its most important active component; dependencies through a bound service or <code>ContentProvider</code> can also raise importance.</p>
+<table><thead><tr><th>Level</th><th>Typical conditions</th><th>What is safe to claim</th></tr></thead><tbody>
+<tr><td><strong>Foreground</strong></td><td>A <code>RESUMED</code> Activity; executing <code>BroadcastReceiver.onReceive()</code> or a Service callback</td><td>Killed only as a last resort, but it is not immortal.</td></tr>
+<tr><td><strong>Visible</strong></td><td>A visible but unfocused Activity; foreground service; visible system service</td><td>Very important, but it may be killed to preserve foreground processes.</td></tr>
+<tr><td><strong>Service</strong></td><td>An active started service</td><td>Kept after foreground/visible processes, but a long-running service can be demoted.</td></tr>
+<tr><td><strong>Cached</strong></td><td>No user-needed component; Activities are often <code>STOPPED</code></td><td>May be killed at any time; from Android 13, it may receive limited or no CPU time.</td></tr>
+</tbody></table>
+<ul>
+<li>The system reclaims memory by killing the <strong>whole process</strong>: <code>Application</code>, singletons, ViewModels, coroutine scopes, and memory caches all disappear.</li>
+<li><code>onDestroy()</code> is <strong>not guaranteed</strong> for system-initiated process death and is not a commit point.</li>
+<li>Work started from <code>BroadcastReceiver.onReceive()</code> is not guaranteed to continue after the callback returns; hand longer work to a system-visible scheduling mechanism.</li>
+<li>Cached-process eviction order is an implementation detail, not an API contract.</li>
+</ul>
+
+<h2 id="en-stage1-activity-configuration">Activity and configuration changes<a aria-label="Link to section: Activity and configuration changes" class="heading-anchor" href="#en-stage1-activity-configuration">#</a></h2>
+<p><code>onCreate()</code> creates the instance and attaches state holders; <code>onStart()</code> means visible; <code>onResume()</code> means ready for focused interaction; <code>onPause()</code> means focus is lost although the screen may remain visible in multi-window; <code>onStop()</code> means no longer visible. <code>onDestroy()</code> may follow <code>finish()</code> or recreation, but it is not a process-death callback.</p>
+<p><code>onPause()</code> must be brief: network calls, database transactions, and long saves may not finish. <code>onStop()</code> is a better boundary for relatively heavy shutdown, but critical user changes should be persisted incrementally rather than waiting for a lifecycle callback.</p>
+<p>During a typical configuration change, Android destroys the old Activity, creates a new instance with new configuration resources, reattaches a retained ViewModel to the new owner, and restores supported saved state. Fields of the old Activity do not transfer. After process death, neither the Activity nor ViewModel nor any other in-memory graph remains.</p>
+<p><code>android:configChanges</code> only transfers responsibility for adapting resources to the app; it does not solve state ownership or protect against other recreation and process death. Also, starting with Android 17/API 37, some changes can be delivered through <code>onConfigurationChanged()</code> without a full restart, so “every configuration change always recreates the Activity” is no longer a universal guarantee.</p>
+
+<h2 id="en-stage1-fragment-dual-lifecycle">Fragment has two lifecycle owners<a aria-label="Link to section: Fragment has two lifecycle owners" class="heading-anchor" href="#en-stage1-fragment-dual-lifecycle">#</a></h2>
+<p>A <code>Fragment</code> and its <code>View</code> are distinct <code>LifecycleOwner</code>s. The View can end in <code>onDestroyView()</code> while the Fragment remains in the back stack in <code>CREATED</code>. View binding, adapters, UI observers, and collectors therefore belong to <code>viewLifecycleOwner</code>; View references are cleared in <code>onDestroyView()</code>, and an old View is never cached across <code>onCreateView()</code> calls.</p>
+<ul>
+<li><code>STARTED</code> guarantees a created View and is the normal boundary for lifecycle-aware UI work; <code>RESUMED</code> is for focus, input, and IME-sensitive work.</li>
+<li>Moving upward, the Fragment callback happens before Fragment/View lifecycle events; moving downward, the View lifecycle receives the event first, then the Fragment lifecycle, then the callback.</li>
+<li><code>ON_STOP</code> occurs before Fragment state is saved and is the last safe lifecycle boundary for a child <code>FragmentTransaction</code>.</li>
+<li>The parent component's <code>onStop()</code>/<code>onSaveInstanceState()</code> ordering differs before API 28 and from API 28 onward.</li>
+</ul>
+
+<h2 id="en-stage1-state-recovery-matrix">State ownership and recovery matrix<a aria-label="Link to section: State ownership and recovery matrix" class="heading-anchor" href="#en-stage1-state-recovery-matrix">#</a></h2>
+<table><thead><tr><th>State layer</th><th>Example / mechanism</th><th>Configuration change</th><th>System process death</th><th><code>finish()</code> / task removal</th></tr></thead><tbody>
+<tr><td>Recomposition-local</td><td>Intermediate animation — <code>remember</code></td><td>No</td><td>No</td><td>No</td></tr>
+<tr><td>UI element state</td><td>Text, tab, scroll — <code>rememberSaveable</code>, <code>rememberSerializable</code>, or supported View state</td><td>Yes</td><td>Yes, only while a system saved-state/task record exists</td><td>No</td></tr>
+<tr><td>In-memory screen state</td><td>Loaded models and derived state — ViewModel</td><td>Yes</td><td>No</td><td>No</td></tr>
+<tr><td>Minimal recovery inputs</td><td><code>itemId</code>, query, filter, draft ID — <code>SavedStateHandle</code></td><td>Yes</td><td>Yes, only while the task record exists</td><td>No</td></tr>
+<tr><td>Durable facts</td><td>Document, transaction, settings — Room, DataStore, file/server</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+</tbody></table>
+<p><strong>Saved state is a system-initiated restoration contract while the task record exists, not durable storage.</strong> It does not promise restoration after explicit <code>finish()</code>, force-stop, task removal from Recents, or another action that removes the task record. A ViewModel survives configuration change but is <strong>not</strong> process-death-safe. Save a small key and rebuild complex <code>UiState</code> from the data layer.</p>
+<h3 id="en-stage1-saveable-boundaries">Boundaries of <code>rememberSaveable</code>, <code>rememberSerializable</code>, and <code>SavedStateHandle</code><a aria-label="Link to section: Boundaries of rememberSaveable, rememberSerializable, and SavedStateHandle" class="heading-anchor" href="#en-stage1-saveable-boundaries">#</a></h3>
+<ul>
+<li><code>rememberSaveable</code> belongs to the Composition and preserves small UI state through saved instance state; custom types need a <code>Saver</code> or a supported representation.</li>
+<li><code>rememberSerializable</code> targets local Compose state that has a Kotlin Serialization serializer. It reduces boilerplate for serializable types, but has the same restoration lifetime: it is not a database or a place for large object graphs.</li>
+<li><code>SavedStateHandle</code> belongs to a ViewModel and is appropriate for small inputs needed by business logic. Its physical transport has Bundle-like size and serialization constraints.</li>
+<li>Large lists, bitmaps, and complete API responses add main-thread cost and risk <code>TransactionTooLargeException</code>; save an ID/query and reload the data.</li>
+<li><code>SavedStateHandle</code> state is captured as the host enters stopped state. A write made after <code>onStop()</code> may not be captured unless another <code>onStart()</code> → <code>onStop()</code> cycle occurs.</li>
+</ul>
+
+<h2 id="en-stage1-lifecycle-flow">Lifecycle-aware Flow collection<a aria-label="Link to section: Lifecycle-aware Flow collection" class="heading-anchor" href="#en-stage1-lifecycle-flow">#</a></h2>
+<pre><code class="language-kotlin">// Compose
+val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+// Fragment View
+viewLifecycleOwner.lifecycleScope.launch {
+    viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+        launch { viewModel.uiState.collect(::render) }
+        launch { viewModel.effects.collect(::handleEffect) }
+    }
+}</code></pre>
+<p><code>collectAsStateWithLifecycle()</code> is active from <code>STARTED</code> by default. <code>repeatOnLifecycle</code> starts the block at that boundary, cancels it below the boundary, and starts it again on return. Multiple infinite Flows need separate child coroutines. Plain <code>lifecycleScope.launch { collect(...) }</code> can update a destroyed Fragment View, while <code>launchWhenStarted</code> suspends the collector without necessarily stopping upstream work.</p>
+<p><code>SharingStarted.WhileSubscribed(5_000)</code> can optimize upstream work across a short recreation gap. It is <strong>not</strong> a recovery mechanism and preserves nothing across process death.</p>
+
+<h2 id="en-stage1-production-failures">8 production failure modes<a aria-label="Link to section: 8 production failure modes" class="heading-anchor" href="#en-stage1-production-failures">#</a></h2>
+<ol>
+<li><strong>Treating ViewModel as persistence.</strong> A low-memory kill returns the screen to initial state because the ViewModel was process-local.</li>
+<li><strong>Putting a complete response in <code>SavedStateHandle</code>.</strong> This creates stale models, main-thread serialization, and <code>TransactionTooLargeException</code> risk.</li>
+<li><strong>Persisting a critical draft only in <code>onPause()</code>/<code>onStop()</code>.</strong> The callback or asynchronous write may not finish; persist valuable edits as they happen, with debounce/batching where needed.</li>
+<li><strong>Collecting from <code>fragment.lifecycleScope</code>.</strong> The collector outlives the View and touches stale binding.</li>
+<li><strong>Using <code>android:configChanges</code> to mask an ownership bug.</strong> Rotation looks correct, but locale change, another recreation, or process death loses state again.</li>
+<li><strong>Keeping an Activity, View, callback, or UI scope in a ViewModel/singleton.</strong> The old instance survives recreation and leaks.</li>
+<li><strong>Repeating a non-idempotent command after restoration.</strong> A payment/POST is duplicated because “loading” was restored as a command rather than state; use a durable operation ID/idempotency strategy.</li>
+<li><strong>Calling Force Stop a process-restoration test.</strong> Force-stop has different semantics and does not test system-initiated task restoration.</li>
+</ol>
+
+<h2 id="en-stage1-test-matrix">Deterministic test matrix<a aria-label="Link to section: Deterministic test matrix" class="heading-anchor" href="#en-stage1-test-matrix">#</a></h2>
+<table><thead><tr><th>Risk</th><th>Tool</th><th>What it proves / does not prove</th></tr></thead><tbody>
+<tr><td>ViewModel recovery logic</td><td>Unit test with <code>SavedStateHandle(mapOf(...))</code> and a fake repository</td><td>Minimal inputs rebuild <code>UiState</code>; does not test framework/process behavior.</td></tr>
+<tr><td>Activity recreation</td><td><code>ActivityScenario.recreate()</code>, <code>moveToState()</code></td><td>A new Activity instance and lifecycle states; not real process death.</td></tr>
+<tr><td>Fragment/View recreation</td><td><code>FragmentScenario.recreate()</code></td><td>A new View, no stale binding or duplicate collector; not a real process kill.</td></tr>
+<tr><td>Compose saved state</td><td><code>StateRestorationTester.emulateSavedInstanceStateRestore()</code></td><td>The <code>rememberSaveable</code>/<code>rememberSerializable</code> contract without restarting the Activity.</td></tr>
+<tr><td>Configuration-sensitive behavior</td><td>Rotation, resize/multi-window, locale, dark theme, font scale, hardware keyboard</td><td>Resources, navigation, and user input after that specific change.</td></tr>
+<tr><td>System-like process death</td><td>Home → <code>adb shell am kill &lt;package&gt;</code> → verify a new PID → return to task</td><td>A new process/ViewModel, restored minimal state, repository reload, and no duplicate commands.</td></tr>
+<tr><td>Explicit user/system stop semantics</td><td>Force-stop and task removal as separate negative tests</td><td>Cold-start/cleared-task behavior, not saved-state restoration.</td></tr>
+</tbody></table>
+<p>The developer option <strong>“Don’t keep activities”</strong> and <code>recreate()</code> are useful recreation tests, but they do not create a new Linux process and do not prove process-death safety. For the kill test, first leave the task in the background, verify that the PID changes, and only then return to it.</p>
+
+<h2 id="en-stage1-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice Q and A" class="heading-anchor" href="#en-stage1-likely-qa">#</a></h2>
+<p><em>These are likely practice topics, not a confirmed or guaranteed list of interview questions.</em></p>
+<ol>
+<li><strong>Configuration change versus process death?</strong> The first normally replaces the Activity while retaining the process and ViewModel; the second removes the entire in-memory graph.</li>
+<li><strong>Is <code>onDestroy()</code> guaranteed?</strong> Not for a system process kill; it is a cleanup callback, not a commit point.</li>
+<li><strong>Where do query, results, and a critical draft belong?</strong> Query/filter in saveable state or <code>SavedStateHandle</code> by owner; results in ViewModel with reload; irreplaceable draft in durable storage.</li>
+<li><strong>Why not store all <code>UiState</code> in <code>SavedStateHandle</code>?</strong> Size/main-thread serialization, stale derived data, and a cleaner recovery design based on minimal inputs.</li>
+<li><strong>When is <code>remember</code> insufficient?</strong> When state must survive Activity/system process recreation; <code>remember</code> only survives recomposition.</li>
+<li><strong>Why use <code>viewLifecycleOwner</code>?</strong> A Fragment can outlive its View, so UI observers must end with the View.</li>
+<li><strong><code>STARTED</code> or <code>RESUMED</code>?</strong> <code>STARTED</code> normally renders visible UI; <code>RESUMED</code> is for work requiring focus/input.</li>
+<li><strong>Why <code>repeatOnLifecycle</code> instead of <code>launchWhenStarted</code>?</strong> It cancels and restarts the block; suspending a collector does not necessarily stop upstream.</li>
+<li><strong>What happens to a singleton cache?</strong> It disappears with the process; singleton means process scope, not persistence.</li>
+<li><strong>Do <code>android:configChanges</code> or <code>WhileSubscribed</code> solve recovery?</strong> No: one changes handling for selected configurations, the other manages subscription lifetime.</li>
+</ol>
+
+<h2 id="en-stage1-senior-followups">5 senior follow-ups<a aria-label="Link to section: 5 senior follow-ups" class="heading-anchor" href="#en-stage1-senior-followups">#</a></h2>
+<ul>
+<li>How do you make recovery idempotent if process death happens between a server commit and a local UI update?</li>
+<li>How do you separate state, command, and durable fact so navigation or payment is not repeated?</li>
+<li>What happens to a <code>SavedStateHandle</code> write made after the host is <code>STOPPED</code>?</li>
+<li>How would a test prove that the old Fragment View collector is cancelled and upstream is not subscribed twice?</li>
+<li>Which configuration-sensitive dependencies, beyond UI, must be recreated when handling <code>onConfigurationChanged()</code> manually?</li>
+</ul>
+
+<h2 id="en-stage1-production-scenario">Production scenario: editing an order<a aria-label="Link to section: Production scenario: editing an order" class="heading-anchor" href="#en-stage1-production-scenario">#</a></h2>
+<p>The screen contains a form, selected client, scroll position, server prices, and an unsaved comment. Room/server owns the order, durable draft, and commit status; <code>SavedStateHandle</code> owns <code>orderId</code>, active section, query, and draft ID; ViewModel owns aggregate <code>OrderUiState</code>, validation, and repository orchestration; <code>rememberSaveable</code>/<code>rememberSerializable</code> owns local tab, expansion, or scroll when business logic does not need it.</p>
+<p>After process death, a new ViewModel receives the IDs, reads the durable draft and current prices, and rebuilds state. Submit uses a durable operation ID/idempotency key, so restoration cannot submit twice. <strong>Trade-off:</strong> persisting on every edit is safer but needs debounce/batching and incurs I/O; persisting only in <code>onStop()</code> costs less but leaves a loss window.</p>
+
+<h2 id="en-stage1-self-check">Self-check questions without answers<a aria-label="Link to section: Self-check questions without answers" class="heading-anchor" href="#en-stage1-self-check">#</a></h2>
+<ol>
+<li>What is the minimum state your most expensive screen needs to recover in a new process?</li>
+<li>Which values in your UI are currently treated as durable only because they live in a ViewModel?</li>
+<li>How would you prove that a payment command is not repeated after restoration?</li>
+<li>Which lifecycle boundary owns each collector, and why?</li>
+</ol>
+
+<h2 id="en-stage1-answer-skeletons">Interview-ready answer skeletons<a aria-label="Link to section: Interview-ready answer skeletons" class="heading-anchor" href="#en-stage1-answer-skeletons">#</a></h2>
+<h3 id="en-stage1-answer-30-seconds">30-second answer<a aria-label="Link to section: 30-second answer" class="heading-anchor" href="#en-stage1-answer-30-seconds">#</a></h3>
+<blockquote><p>Android may kill the entire background process, and <code>onDestroy()</code> is not guaranteed. I therefore split state by lifetime: local UI state goes into a saveable Compose API, screen logic into ViewModel, minimal recovery keys into <code>SavedStateHandle</code>, and data that cannot be lost into Room, DataStore, or the server. In a Fragment I collect through <code>viewLifecycleOwner.repeatOnLifecycle(STARTED)</code>; in Compose I use <code>collectAsStateWithLifecycle()</code>. I test recreation and a real process kill separately.</p></blockquote>
+<h3 id="en-stage1-answer-2-minutes">2-minute answer<a aria-label="Link to section: 2-minute answer" class="heading-anchor" href="#en-stage1-answer-2-minutes">#</a></h3>
+<blockquote><p>A configuration change and process death can both result in a new Activity instance, but the guarantees differ. During configuration change, the ViewModel normally remains in the same live process. After process death, the whole object graph is gone. System saved state restores only small values while the task record exists, so it does not replace durable storage.</p><p>I choose an owner based on meaning. A local UI detail belongs to the Composition and can use <code>rememberSaveable</code> or <code>rememberSerializable</code>. Screen state and business logic belong to the ViewModel, but for recovery I keep only an ID, query, or draft ID in <code>SavedStateHandle</code>. Durable facts go to the data layer, and a new ViewModel reconstructs derived state.</p><p>In a Fragment, I bind View references and collectors to the View lifecycle because the View can die before the Fragment. I do not rely on <code>onDestroy()</code>, a long operation in <code>onPause()</code>, or <code>WhileSubscribed</code> as persistence. My test strategy separates <code>recreate()</code>, Compose restoration tests, and a real background-process kill with <code>adb shell am kill</code>, including a new-PID check and assertions that commands are not repeated.</p></blockquote>
+
+<h2 id="en-stage1-official-sources">Official Android Developers sources<a aria-label="Link to section: Official Android Developers sources" class="heading-anchor" href="#en-stage1-official-sources">#</a></h2>
+<ul>
+<li><a href="https://developer.android.com/guide/components/activities/process-lifecycle">Processes and app lifecycle</a></li>
+<li><a href="https://developer.android.com/guide/components/activities/activity-lifecycle">The Activity lifecycle</a></li>
+<li><a href="https://developer.android.com/guide/fragments/lifecycle">Fragment lifecycle</a></li>
+<li><a href="https://developer.android.com/guide/topics/resources/runtime-changes">Handle configuration changes</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/saving-states">Save UI states</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/state-saving">Save UI state in Compose</a> and <a href="https://developer.android.com/develop/ui/compose/state-lifespans">State lifespans in Compose</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/viewmodel/viewmodel-savedstate">Saved State module for ViewModel</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/coroutines">Use Kotlin coroutines with lifecycle-aware components</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/views/coroutines-views">Use Kotlin coroutines with lifecycle-aware components (Views)</a></li>
+<li><a href="https://developer.android.com/guide/fragments/test">Test your fragments</a></li>
+<li><a href="https://developer.android.com/reference/androidx/test/core/app/ActivityScenario">ActivityScenario API reference</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/testing/common-patterns">Common patterns in Compose testing</a></li>
+<li><a href="https://developer.android.com/codelabs/android-lifecycles">Android lifecycle-aware components codelab</a></li>
 </ul>
 </div></details><details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="en-kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
 <h2 id="en-val-vs-var-and-immutability"><code>val</code> vs <code>var</code> and immutability<a aria-label="Link to section: val vs var and immutability" class="heading-anchor" href="#en-val-vs-var-and-immutability">#</a></h2>
