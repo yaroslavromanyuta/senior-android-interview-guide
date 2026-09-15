@@ -471,6 +471,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="kotlin-type-system-state-modeling" href="#kotlin-type-system-state-modeling">Kotlin: система типів і моделювання стану</a>
 </li>
 <li class="toc-major">
+<a data-target="advanced-kotlin-jvm" href="#advanced-kotlin-jvm">Advanced Kotlin/JVM для Senior Android</a>
+</li>
+<li class="toc-major">
 <a data-target="kotlin-for-android" href="#kotlin-for-android">Kotlin for Android</a>
 <ol class="toc-children">
 <li><a data-target="val-vs-var-immutability" href="#val-vs-var-immutability">val vs var, immutability</a></li>
@@ -753,6 +756,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-type-system-state-modeling" href="#en-kotlin-type-system-state-modeling">Kotlin: type system and state modelling</a>
+</li>
+<li class="toc-major">
+<a data-target="en-advanced-kotlin-jvm" href="#en-advanced-kotlin-jvm">Advanced Kotlin/JVM for Senior Android</a>
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-for-android" href="#en-kotlin-for-android">Kotlin for Android</a>
@@ -1737,6 +1743,177 @@ val safeAfter = safeBefore.itemAdded("B")</code></pre>
 <li><a href="https://kotlinlang.org/docs/inline-classes.html">Kotlin: Inline value classes</a></li>
 <li><a href="https://developer.android.com/topic/architecture/ui-layer">Android: UI layer</a></li>
 <li><a href="https://developer.android.com/topic/architecture/ui-layer/stateholders">Android: State holders and UI state</a></li>
+</ul>
+</div></details><details class="major-section" data-key="advanced-kotlin-jvm" data-title="Advanced Kotlin/JVM для Senior Android" id="advanced-kotlin-jvm" open=""><summary class="major-summary"><span class="major-title">Advanced Kotlin/JVM для Senior Android</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<h2 id="stage3-uk-mental-model">Senior mental model<a aria-label="Посилання на розділ: Senior mental model" class="heading-anchor" href="#stage3-uk-mental-model">#</a></h2>
+<p>Senior-рівень тут — бачити одночасно три контракти: <strong>Kotlin source type system → JVM ABI/bytecode → Android DEX/ART execution</strong>. Мовна конструкція може бути безпечною в Kotlin source, але стертою, boxed або незручною для Java; оптимізація compiler/R8/ART може змінити representation, не змінюючи observable contract.</p>
+<blockquote><p><strong>Причинна карта:</strong> API ownership і variance → generated JVM signature та metadata → boxing/captures/dispatch → D8/R8 і ART → сумісність уже скомпільованих consumers. Спочатку проєктуйте контракт, потім перевіряйте artifact і вимірюйте hot path.</p></blockquote>
+<p><a href="#stage2-uk-nullability">Stage 2</a> уже пояснює nullability/platform boundaries та <a href="#stage2-uk-state-shape">state modeling</a>. Тут вони не дублюються: фокус на lowering, interop та library evolution.</p>
+
+<h2 id="stage3-uk-internals">Internals: від type system до ART<a aria-label="Посилання на розділ: Internals" class="heading-anchor" href="#stage3-uk-internals">#</a></h2>
+<h3 id="stage3-uk-generics">Generics, variance і projections<a aria-label="Посилання на розділ: Generics variance projections" class="heading-anchor" href="#stage3-uk-generics">#</a></h3>
+<p>Generic declarations invariant за замовчуванням. <code>out T</code> дозволяє лише producer-позиції та covariance; <code>in T</code> — consumer-позиції та contravariance. Use-site projection обмежує один view: <code>MutableList&lt;out Animal&gt;</code> безпечно читається як <code>Animal</code>, але не приймає довільного <code>Animal</code>; <code>MutableList&lt;in Dog&gt;</code> приймає <code>Dog</code>, але читання має тип <code>Any?</code>. <code>*</code> — безпечний невідомий argument відповідно до declaration variance, а не синонім <code>Any?</code>.</p>
+<pre><code class="language-kotlin">interface Codec&lt;in Wire, out Domain&gt; {
+    fun decode(value: Wire): Domain
+}
+fun copyDogs(from: List&lt;out Dog&gt;, to: MutableList&lt;in Dog&gt;) =
+    from.forEach(to::add)
+
+fun inspectUnknown(values: MutableList&lt;*&gt;) {
+    val first: Any? = values.firstOrNull()
+    // values.add(Dog()) // forbidden: actual element type is unknown
+}</code></pre>
+<p>На JVM type arguments переважно erased: runtime зазвичай бачить raw class, bridge methods/casts і Kotlin metadata, але не повний <code>List&lt;Dog&gt;</code> як перевірювану runtime-істину. <code>@JvmSuppressWildcards</code>/<code>@JvmWildcard</code> коригують Java signatures, проте це API/ABI-рішення, а не спосіб вимкнути type safety.</p>
+
+<h3 id="stage3-uk-inline">inline, noinline, crossinline та reified: точні межі<a aria-label="Посилання на розділ: inline noinline crossinline reified" class="heading-anchor" href="#stage3-uk-inline">#</a></h3>
+<ul>
+<li><code>inline</code> просить compiler скопіювати body та inlinable lambdas у call site. Це може прибрати function-object allocation і virtual call у конкретному місці, але збільшує bytecode та не гарантує відсутності всіх allocations після повного toolchain.</li>
+<li><code>noinline</code> залишає конкретний lambda parameter об’єктом: його можна зберігати, повертати або передавати в non-inline context; non-local <code>return</code> з нього заборонений.</li>
+<li>Звичайна inlined lambda може зробити non-local <code>return</code> із enclosing function, якщо виклик structurally дозволений. <code>crossinline</code> забороняє такий return, коли implementation може викликати lambda не прямо — наприклад, у <code>Runnable</code>. Це не thread-safety і не async-гарантія.</li>
+<li><code>reified T</code> дозволений лише для type parameter inline function/property accessor. У call site доступні <code>is T</code>, <code>as T</code>, <code>T::class</code> та інші операції з runtime-available type. Він не відновлює erased nested arguments: <code>value is List&lt;String&gt;</code> не доводить тип кожного елемента.</li>
+</ul>
+<pre><code class="language-kotlin">inline fun &lt;reified T : Any&gt; Bundle.requireParcelableCompat(key: String): T {
+    val value = getParcelable(key) // platform/API-version adapter omitted
+    return value as? T ?: error("$key is not ${T::class.java.name}")
+}
+
+inline fun dispatch(
+    crossinline onUi: () -> Unit,
+    noinline onFailure: (Throwable) -> Unit,
+) {
+    executor.execute { runCatching(onUi).onFailure(onFailure) }
+}</code></pre>
+<p>Public/protected inline API фактично вбудовує implementation у consumer. Він не може довільно звертатися до non-public declarations; <code>@PublishedApi internal</code> робить helper доступним для generated ABI, але тим самим додає compatibility obligation. Зміна inline body потребує recompilation consumer, щоб старий call site отримав нову поведінку.</p>
+
+<h3 id="stage3-uk-delegation">Delegation і delegated properties<a aria-label="Посилання на розділ: Delegation and delegated properties" class="heading-anchor" href="#stage3-uk-delegation">#</a></h3>
+<p>Class delegation <code>class LoggingStore(private val base: Store) : Store by base</code> генерує forwarding для interface members і віддає composition без inheritance boilerplate. Override у wrapper перехоплює зовнішній dispatch, але виклик, який сам delegate робить на власний member, не магічно перенаправляється на override wrapper-а.</p>
+<p>Delegated property lowering використовує <code>getValue(thisRef, KProperty)</code> і, для <code>var</code>, <code>setValue</code>; compiler зазвичай зберігає delegate у synthetic field на кшталт <code>prop$delegate</code>, хоча documented optimized cases можуть його не створювати. Built-ins <code>lazy</code>, observable/vetoable, map-backed properties та property-to-property delegation мають різні lifetime, synchronization і failure contracts.</p>
+<pre><code class="language-kotlin">class FragmentBinding&lt;T : ViewBinding&gt;(
+    private val bind: (View) -> T,
+) : ReadOnlyProperty&lt;Fragment, T&gt; {
+    override fun getValue(thisRef: Fragment, property: KProperty&lt;*&gt;): T =
+        bind(thisRef.requireView())
+}
+// Convenient, but this implementation recreates a binding on every access.
+// A caching delegate must clear the cached view at onDestroyView().</code></pre>
+<p>Delegate не доводить lifecycle correctness. Перевіряйте owner, момент cleanup, exception semantics, synchronization mode та те, чи не прихована дорога робота за property access.</p>
+
+<h3 id="stage3-uk-erasure-boxing-value">JVM erasure, boxing і value-class ABI<a aria-label="Посилання на розділ: JVM erasure boxing value class ABI" class="heading-anchor" href="#stage3-uk-erasure-boxing-value">#</a></h3>
+<p>Через erasure overloads, що відрізняються лише generic argument, можуть мати однаковий JVM descriptor; unchecked cast компілюється, але failure може проявитися пізніше на element access. Kotlin primitives за можливості мапляться на JVM primitive, однак nullable, generic, interface або <code>Any</code> context часто вимагає wrapper/boxing. Перевіряйте generated signatures через <code>javap</code> або bytecode viewer, а allocations — profiler/benchmark, не інтуїцію.</p>
+<p><code>@JvmInline value class</code> має один underlying value й може компілюватися в unboxed representation, але boxing потрібен у generic, nullable та interface usages. Functions із value-class parameters за замовчуванням name-mangled, щоб уникати clashes, тому Java/reflection surface не тотожна Kotlin surface. Для SDK створюйте навмисний Java-friendly bridge з underlying/JVM type і стабільним <code>@JvmName</code>, замість обіцянки прозорого interop.</p>
+<pre><code class="language-kotlin">@JvmInline value class UserId(val raw: String)
+fun find(id: UserId): User = TODO()          // mangled JVM name
+@JvmName("findByUserId")
+fun findForJava(raw: String): User = find(UserId(raw))
+
+fun &lt;T&gt; identity(value: T): T = value
+val boxed = identity(UserId("42"))           // generic representation can box</code></pre>
+
+<h3 id="stage3-uk-java-interop">SAM, default methods, annotations, platform types і lambdas<a aria-label="Посилання на розділ: Java interop and lambdas" class="heading-anchor" href="#stage3-uk-java-interop">#</a></h3>
+<p>Kotlin робить SAM conversion для Java functional interfaces і Kotlin <code>fun interface</code>. Function type <code>(T) -&gt; R</code> та конкретний SAM не є одним ABI: Java-facing callback API часто краще експозити як named <code>fun interface</code>. Для default interface methods JVM mode/target і consumer toolchain мають значення; не змінюйте <code>-jvm-default</code> стратегію published library без ABI analysis.</p>
+<p><code>@JvmName</code>, <code>@JvmStatic</code>, <code>@JvmField</code>, <code>@JvmOverloads</code>, wildcard annotations і use-site targets (<code>@get:</code>, <code>@field:</code>, <code>@param:</code>) керують generated Java surface. <code>@JvmOverloads</code> генерує overloads лише послідовно від останнього default parameter; Kotlin default arguments і named arguments не стають Java semantics автоматично.</p>
+<p>Java nullability annotations покращують Kotlin types, але unannotated/insufficiently annotated API дає platform types. Як розібрано в <a href="#stage2-uk-nullability">Stage 2</a>, boundary має одразу обрати явний nullable/non-null contract і валідовувати недовірені дані; annotation не є runtime validation.</p>
+<p>Capturing lambda мусить десь тримати captured state; non-capturing lambda може бути reused, а inlining може прибрати lambda object у конкретному call site. Але backend може використовувати generated classes або <code>invokedynamic</code>, D8/R8 можуть переписувати код, ART — AOT/JIT compile. Отже «lambda завжди allocation» і «inline завжди zero allocation» однаково хибні. Capture великого owner-а також може продовжити його lifetime.</p>
+
+<h3 id="stage3-uk-bytecode-art">JVM bytecode, DEX та ART: implications без міфів<a aria-label="Посилання на розділ: JVM bytecode DEX ART" class="heading-anchor" href="#stage3-uk-bytecode-art">#</a></h3>
+<p>Kotlin/JVM compiler продукує class files і Kotlin metadata; Android toolchain виконує desugaring/shrinking та D8/R8 conversion у DEX. На пристрої ART виконує DEX і може поєднувати interpretation, AOT та JIT залежно від Android/runtime/profile. JVM bytecode shape корисна для діагностики signatures, bridges, synthetic accessors і allocations, але не є фінальним machine code.</p>
+<p>Практичний висновок: перевіряйте release variant, minification/keep rules і representative devices. Не гарантуйте, що конкретна функція inlined runtime-компілятором, що object не allocated, або що micro-optimization швидша без benchmark/profile. Семантичні гарантії мови сильніші за припущення про optimizer.</p>
+
+<h3 id="stage3-uk-compatibility">Binary/source compatibility Android library або SDK API<a aria-label="Посилання на розділ: Binary and source compatibility" class="heading-anchor" href="#stage3-uk-compatibility">#</a></h3>
+<p><strong>Binary compatibility</strong>: уже compiled consumer працює з новим artifact без relink/recompile errors. <strong>Source compatibility</strong>: consumer source recompiles без змін. <strong>Behavioral compatibility</strong>: observable semantics лишилися прийнятними. Ці множини не збігаються.</p>
+<ul>
+<li>Зміна JVM descriptor, видалення/перейменування public member, class/interface shape, superclass, visibility або default-method scheme може зламати binary ABI.</li>
+<li>Додавання default parameter не створює Java overload; зміна default value binary-compatible для звичайного call через <code>$default</code> може змінити поведінку після recompilation. Public inline body, <code>const val</code> і default аргументи можуть бути embedded у consumer.</li>
+<li>Новий overload може лишити binary compatibility, але зламати source через overload-resolution ambiguity. Новий abstract interface member ламає implementers; навіть default member треба перевіряти проти Java/Kotlin targets і desugaring.</li>
+<li>Зміни variance, nullability annotations, generic bounds, value-class representation/mangling або annotations можуть змінити Kotlin source/metadata чи Java surface без очевидної source diff.</li>
+</ul>
+<p>Для published Android library фіксуйте explicit API, генеруйте й review-те API/ABI dump, запускайте binary compatibility validator, Java+Kotlin consumer compile tests та Android release smoke test. Використовуйте deprecation cycle і bridge, SemVer/version policy та changelog; compatibility tool не перевіряє behavior, resources, manifest merge, serialization або reflection contracts.</p>
+
+<h2 id="stage3-uk-guarantees">Гарантії проти не-гарантій<a aria-label="Посилання на розділ: Guarantees versus non-guarantees" class="heading-anchor" href="#stage3-uk-guarantees">#</a></h2>
+<table><thead><tr><th>Можна стверджувати</th><th>Не можна обіцяти</th></tr></thead><tbody>
+<tr><td>Variance/projection обмежує допустимі source operations.</td><td>Generic argument повністю доступний runtime після erasure.</td></tr>
+<tr><td><code>crossinline</code> забороняє non-local return; <code>noinline</code> дозволяє зберігати lambda.</td><td><code>crossinline</code> робить callback synchronous/thread-safe або <code>inline</code> прибирає всі allocations.</td></tr>
+<tr><td>Value class дає окремий Kotlin type.</td><td>Вона завжди unboxed або має автоматично зручний Java constructor/API.</td></tr>
+<tr><td>Nullability annotations впливають на compiler view.</td><td>Зовнішній Java/runtime value ніколи не порушить annotation.</td></tr>
+<tr><td>ABI checker ловить заявлені signature changes у своїй моделі.</td><td>Він доводить source, behavioral, reflection, resource та Android runtime compatibility.</td></tr>
+</tbody></table>
+
+<h2 id="stage3-uk-tradeoffs">Trade-offs і failure modes<a aria-label="Посилання на розділ: Trade-offs and failure modes" class="heading-anchor" href="#stage3-uk-tradeoffs">#</a></h2>
+<ul>
+<li>Надмірна variance/projections робить API важким для inference; небезпечний cast лише приховує неправильний ownership.</li>
+<li>Великий public inline body роздуває consumers, ускладнює patch rollout і прив’язує ABI до internal helpers.</li>
+<li>Property delegate може приховати lifecycle leak, I/O, synchronization або exception за невинним getter.</li>
+<li>Value class у generic-heavy API boxing-иться, а Java/framework/reflection tooling може не бачити очікувану signature.</li>
+<li>Capturing callback, збережений довше owner-а, спричиняє leak; оптимізація allocation не виправляє lifetime.</li>
+<li>«Source компілюється» після SDK update не доводить, що старі APK/AAR consumers binary-compatible або behavior незмінний.</li>
+</ul>
+
+<h2 id="stage3-uk-production-scenario">Production scenario: еволюція analytics SDK<a aria-label="Посилання на розділ: Production scenario" class="heading-anchor" href="#stage3-uk-production-scenario">#</a></h2>
+<p><strong>Гіпотетично:</strong> приватний Android SDK має Kotlin і Java consumers. Команда хоче замінити <code>String userId</code> на <code>UserId</code>, function callback — на inline/reified helper, а Java listener — на lambda. Пряма заміна змінить JVM signatures/name mangling і зламає вже compiled clients.</p>
+<p>Безпечна міграція: залишити старий Java-friendly entry point, позначити його deprecated і делегувати у typed Kotlin core; додати окремо названий <code>@JvmName</code> bridge; listener експозити як стабільний <code>fun interface</code>; nullable/platform input нормалізувати на boundary згідно зі Stage 2. API dump фіксує overloads, wildcards і annotations. Java та Kotlin fixture-apps компілюються проти нового SDK, а fixture, compiled проти попереднього artifact, запускається з новим. Release benchmark перевіряє hot path, але результати не перетворюються на загальну allocation-гарантію.</p>
+
+<h2 id="stage3-uk-review-trap">Code-review/debugging trap: «типізовано й zero-cost»<a aria-label="Посилання на розділ: Code review debugging trap" class="heading-anchor" href="#stage3-uk-review-trap">#</a></h2>
+<pre><code class="language-kotlin">// Trap: unchecked nested cast + capture + value-class boxing in a generic path.
+@JvmInline value class EventId(val raw: String)
+private val pending = mutableListOf&lt;() -&gt; Unit&gt;()
+
+inline fun &lt;reified T&gt; decode(raw: Any): T = raw as T
+fun enqueue(owner: Activity, id: EventId, raw: Any) {
+    val tags = decode&lt;List&lt;String&gt;&gt;(raw) // does not validate each element
+    pending += { owner.title = "$id:${tags.first()}" } // retains Activity
+}</code></pre>
+<p>Review має знайти три незалежні ризики: reified перевіряє лише runtime-available outer type, stored lambda утримує <code>Activity</code>, а <code>EventId</code> у generic/string interpolation path може box-итися. Виправлення: schema/element validation, lifecycle-scoped callback або weak/ID-based ownership, і measurement перед оптимізацією. Для ABI окремо inspect-те Java signature.</p>
+
+<h2 id="stage3-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice Q and A" class="heading-anchor" href="#stage3-uk-likely-qa">#</a></h2>
+<p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
+<ol>
+<li><strong>Чому <code>MutableList&lt;Dog&gt;</code> не є <code>MutableList&lt;Animal&gt;</code>?</strong> Через invariance: інакше caller додасть <code>Cat</code> у список собак. Projection дає обмежений safe view, а не змінює реальний element type.</li>
+<li><strong><code>out</code>, <code>in</code> чи <code>*</code>?</strong> <code>out</code> для producer, <code>in</code> для consumer, <code>*</code> коли argument невідомий і потрібні лише безпечні операції. Починайте з реального read/write contract.</li>
+<li><strong>Що саме роблять <code>noinline</code> і <code>crossinline</code>?</strong> <code>noinline</code> не вбудовує lambda й дозволяє зберегти/передати її; <code>crossinline</code> лишає її inlinable, але забороняє non-local return, бо виклик може бути непрямим.</li>
+<li><strong>Що reified не вміє?</strong> Не відновлює nested erased arguments і не валідовує schema. <code>List&lt;String&gt;</code> потребує перевірки елементів або serializer/type token contract.</li>
+<li><strong>Delegation безкоштовна?</strong> Це source-level зменшення boilerplate; лишаються generated forwarding/delegate storage/dispatch, а property delegate може виконувати роботу на кожному access.</li>
+<li><strong>Коли value class box-иться?</strong> Зокрема у nullable, generic й interface contexts. Точний codegen залежить від use site/toolchain, тому дивимося artifact і profile.</li>
+<li><strong>Як зробити Kotlin API дружнім до Java?</strong> Перевірити generated surface; застосувати named SAM, explicit overloads/bridges і точкові <code>@Jvm*</code> annotations; уникати випадкового exposure function types, mangled value-class methods та platform ambiguity.</li>
+<li><strong>Чи кожна lambda allocates?</strong> Ні. Non-capturing instance може reused, inline call може прибрати object, backend/R8/ART можуть трансформувати representation. Capturing/stored lambda часто потребує state holder; вимірюйте release build.</li>
+<li><strong>JVM bytecode — це те, що виконує Android?</strong> Не безпосередньо: class files конвертуються в DEX, а ART інтерпретує/AOT/JIT-компілює. Bytecode inspection пояснює ABI/lowering, але не гарантує final machine code/performance.</li>
+<li><strong>Binary vs source compatibility?</strong> Binary стосується старого compiled client, source — recompilation source. Новий overload може бути binary-safe, але source-ambiguous; inline/default/const semantics можуть відрізнятися між старим і recompiled caller.</li>
+</ol>
+
+<h2 id="stage3-uk-followups">4 senior follow-ups з відповідями<a aria-label="Посилання на розділ: 4 senior follow ups" class="heading-anchor" href="#stage3-uk-followups">#</a></h2>
+<ol>
+<li><strong>Чому bug у public inline function не зникає після оновлення AAR?</strong> Старий consumer уже містить inlined body. Потрібна його recompilation; для термінової patchability тримайте великий/мінливий logic у non-inline function.</li>
+<li><strong>Додали overload із SAM, і Kotlin call став ambiguous. Це ABI break?</strong> Старий binary може працювати, але source recompilation може зламатися через overload resolution. Це source-compatibility regression; додайте окреме ім’я або migration path.</li>
+<li><strong>Value-class method видно Kotlin, але Java не може викликати. Чому?</strong> Unboxed representation і name mangling не створюють звичайний Java constructor/signature. Дайте explicit bridge та зафіксуйте його в API dump.</li>
+<li><strong>Profiler показує lambda allocation попри <code>inline</code>. Що перевірити?</strong> Чи parameter <code>noinline</code>, stored/converted to SAM, чи capture/materialization виникає в іншому місці; дивіться release DEX і allocation trace. Не робіть висновок лише зі source keyword.</li>
+</ol>
+
+<h2 id="stage3-uk-self-check">5 self-check без відповідей<a aria-label="Посилання на розділ: 5 self check without answers" class="heading-anchor" href="#stage3-uk-self-check">#</a></h2>
+<ol>
+<li>Які public generic API у вашому SDK справді producer/consumer, а які випадково invariant?</li>
+<li>Які public inline/default/const declarations уже embedded у consumer і як ви їх мігруєте?</li>
+<li>Де ваші value classes box-яться або потребують Java/reflection bridges?</li>
+<li>Які stored lambdas capture Activity, Fragment, View або великий graph довше потрібного?</li>
+<li>Чим ваша перевірка доводить binary, source, behavioral та Android runtime compatibility окремо?</li>
+</ol>
+
+<h2 id="stage3-uk-english-skeletons">Interview-ready English answer skeletons<a aria-label="Посилання на розділ: Interview ready English answer skeletons" class="heading-anchor" href="#stage3-uk-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do Kotlin abstractions map to the JVM and Android runtime, and how does that affect a public SDK?</em></p>
+<h3 id="stage3-uk-answer-30">~30-second answer<a aria-label="Посилання на розділ: 30 second answer" class="heading-anchor" href="#stage3-uk-answer-30">#</a></h3>
+<blockquote><p>I separate the Kotlin source contract from the JVM ABI and the Android runtime. Variance controls legal source operations, while generic arguments are mostly erased. Inline and value classes can remove overhead in some call sites, but neither guarantees zero allocation. For a public SDK I inspect generated Java signatures, provide explicit bridges, and validate binary and source compatibility with API dumps plus compiled Java and Kotlin consumers.</p></blockquote>
+<h3 id="stage3-uk-answer-2min">~2-minute answer<a aria-label="Посилання на розділ: 2 minute answer" class="heading-anchor" href="#stage3-uk-answer-2min">#</a></h3>
+<blockquote><p>I reason across three layers. At the Kotlin layer, declaration-site variance and projections express producer and consumer ownership. At the JVM layer, most generic arguments are erased, nullable or generic values may box, and Kotlin features create concrete signatures, bridges, metadata, and sometimes mangled names.</p><p>For higher-order APIs, inline can copy code and inlinable lambdas into the call site. A noinline lambda remains a value that can be stored, while crossinline only forbids non-local returns; it does not promise threading behavior. Reified makes a runtime-available top-level type usable at an inline call site, but it cannot prove nested generic arguments. Capturing lambdas may retain state, and their allocation shape depends on the compiler and Android toolchain.</p><p>On Android, class files are transformed into DEX and ART can interpret or AOT/JIT-compile them, so I do not infer final performance from a keyword or JVM bytecode alone. I inspect release artifacts and benchmark representative devices.</p><p>For a published library, I treat generated JVM signatures as the real ABI. I use deliberate Java-facing SAMs and bridges, explicit nullability, API dumps and binary compatibility checks. I also compile Java and Kotlin fixtures and run an old compiled consumer against the new artifact, because binary, source, and behavioral compatibility are different contracts.</p></blockquote>
+
+<h2 id="stage3-uk-sources">Офіційні джерела<a aria-label="Посилання на розділ: Офіційні джерела" class="heading-anchor" href="#stage3-uk-sources">#</a></h2>
+<ul>
+<li><a href="https://kotlinlang.org/docs/generics.html">Kotlin: Generics, variance, projections, erasure</a></li>
+<li><a href="https://kotlinlang.org/docs/inline-functions.html">Kotlin: Inline functions, noinline, crossinline, reified</a></li>
+<li><a href="https://kotlinlang.org/docs/delegation.html">Kotlin: Delegation</a> та <a href="https://kotlinlang.org/docs/delegated-properties.html">Delegated properties</a></li>
+<li><a href="https://kotlinlang.org/docs/inline-classes.html">Kotlin: Inline value classes</a></li>
+<li><a href="https://kotlinlang.org/docs/java-interop.html">Kotlin: Calling Java from Kotlin</a> та <a href="https://kotlinlang.org/docs/java-to-kotlin-interop.html">Calling Kotlin from Java</a></li>
+<li><a href="https://developer.android.com/kotlin/interop">Android: Kotlin–Java interop guide</a></li>
+<li><a href="https://kotlinlang.org/docs/api-guidelines-backward-compatibility.html">Kotlin: Backward compatibility guidelines for library authors</a></li>
+<li><a href="https://kotlinlang.org/docs/gradle-binary-compatibility-validation.html">Kotlin Gradle plugin: Binary compatibility validation</a></li>
+<li><a href="https://developer.android.com/guide/platform">Android platform architecture: DEX and ART</a> та <a href="https://developer.android.com/tools/d8">D8</a></li>
 </ul>
 </div></details><details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
 <h2 id="val-vs-var-immutability">val vs var, immutability<a aria-label="Посилання на розділ: val vs var, immutability" class="heading-anchor" href="#val-vs-var-immutability">#</a></h2>
@@ -6608,6 +6785,177 @@ val safeAfter = safeBefore.itemAdded("B")</code></pre>
 <li><a href="https://kotlinlang.org/docs/inline-classes.html">Kotlin: Inline value classes</a></li>
 <li><a href="https://developer.android.com/topic/architecture/ui-layer">Android: UI layer</a></li>
 <li><a href="https://developer.android.com/topic/architecture/ui-layer/stateholders">Android: State holders and UI state</a></li>
+</ul>
+</div></details><details class="major-section" data-key="advanced-kotlin-jvm" data-title="Advanced Kotlin/JVM for Senior Android" id="en-advanced-kotlin-jvm" open=""><summary class="major-summary"><span class="major-title">Advanced Kotlin/JVM for Senior Android</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<h2 id="en-stage3-mental-model">Senior mental model<a aria-label="Link to section: Senior mental model" class="heading-anchor" href="#en-stage3-mental-model">#</a></h2>
+<p>Senior-level reasoning keeps three contracts visible at once: <strong>Kotlin source type system → JVM ABI/bytecode → Android DEX/ART execution</strong>. A construct can be safe in Kotlin source yet erased, boxed, or awkward for Java; compiler, R8, and ART optimisations may change representation without changing the observable contract.</p>
+<blockquote><p><strong>Causal map:</strong> API ownership and variance → generated JVM signature and metadata → boxing/captures/dispatch → D8/R8 and ART → compatibility for already compiled consumers. Design the contract first, then inspect the artifact and measure the hot path.</p></blockquote>
+<p><a href="#en-stage2-nullability">Stage 2</a> already covers nullability/platform boundaries and <a href="#en-stage2-state-shape">state modelling</a>. This stage does not repeat them; it focuses on lowering, interoperability, and library evolution.</p>
+
+<h2 id="en-stage3-internals">Internals: from the type system to ART<a aria-label="Link to section: Internals" class="heading-anchor" href="#en-stage3-internals">#</a></h2>
+<h3 id="en-stage3-generics">Generics, variance, and projections<a aria-label="Link to section: Generics variance projections" class="heading-anchor" href="#en-stage3-generics">#</a></h3>
+<p>Generic declarations are invariant by default. <code>out T</code> permits producer positions and covariance; <code>in T</code> permits consumer positions and contravariance. A use-site projection restricts one view: <code>MutableList&lt;out Animal&gt;</code> can safely be read as <code>Animal</code> but cannot accept an arbitrary <code>Animal</code>; <code>MutableList&lt;in Dog&gt;</code> accepts a <code>Dog</code>, but reads as <code>Any?</code>. <code>*</code> is a safely unknown argument interpreted according to declaration variance, not an alias for <code>Any?</code>.</p>
+<pre><code class="language-kotlin">interface Codec&lt;in Wire, out Domain&gt; {
+    fun decode(value: Wire): Domain
+}
+fun copyDogs(from: List&lt;out Dog&gt;, to: MutableList&lt;in Dog&gt;) =
+    from.forEach(to::add)
+
+fun inspectUnknown(values: MutableList&lt;*&gt;) {
+    val first: Any? = values.firstOrNull()
+    // values.add(Dog()) // forbidden: the actual element type is unknown
+}</code></pre>
+<p>On the JVM, type arguments are mostly erased: runtime normally sees a raw class, bridge methods or casts, and Kotlin metadata, not a fully checkable <code>List&lt;Dog&gt;</code>. <code>@JvmSuppressWildcards</code>/<code>@JvmWildcard</code> tune Java signatures, but they are API/ABI choices rather than a way to disable type safety.</p>
+
+<h3 id="en-stage3-inline">inline, noinline, crossinline, and reified: exact boundaries<a aria-label="Link to section: inline noinline crossinline reified" class="heading-anchor" href="#en-stage3-inline">#</a></h3>
+<ul>
+<li><code>inline</code> asks the compiler to copy the body and inlinable lambdas into the call site. This can remove a function-object allocation and virtual call at that site, but increases bytecode and does not guarantee that the complete toolchain creates no allocations.</li>
+<li><code>noinline</code> keeps a selected lambda parameter as an object: it can be stored, returned, or passed to a non-inline context; a non-local <code>return</code> from it is forbidden.</li>
+<li>A regular inlined lambda can perform a non-local <code>return</code> from its enclosing function when the invocation structure permits it. <code>crossinline</code> forbids that return when the implementation may invoke the lambda indirectly, for example inside a <code>Runnable</code>. It is not a thread-safety or asynchronous-execution guarantee.</li>
+<li><code>reified T</code> is allowed only for a type parameter of an inline function or property accessor. It enables operations such as <code>is T</code>, <code>as T</code>, and <code>T::class</code> for a runtime-available type at the call site. It does not restore erased nested arguments: <code>value is List&lt;String&gt;</code> cannot prove every element is a string.</li>
+</ul>
+<pre><code class="language-kotlin">inline fun &lt;reified T : Any&gt; Bundle.requireParcelableCompat(key: String): T {
+    val value = getParcelable(key) // platform/API-version adapter omitted
+    return value as? T ?: error("$key is not ${T::class.java.name}")
+}
+
+inline fun dispatch(
+    crossinline onUi: () -> Unit,
+    noinline onFailure: (Throwable) -> Unit,
+) {
+    executor.execute { runCatching(onUi).onFailure(onFailure) }
+}</code></pre>
+<p>A public or protected inline API effectively embeds implementation into its consumer. It cannot freely access non-public declarations; <code>@PublishedApi internal</code> makes a helper available to generated ABI and therefore adds a compatibility obligation. Consumers must be recompiled to receive a changed inline body at an old call site.</p>
+
+<h3 id="en-stage3-delegation">Delegation and delegated properties<a aria-label="Link to section: Delegation and delegated properties" class="heading-anchor" href="#en-stage3-delegation">#</a></h3>
+<p>Class delegation such as <code>class LoggingStore(private val base: Store) : Store by base</code> generates forwarding for interface members and provides composition without inheritance boilerplate. An override in the wrapper intercepts external dispatch, but a call that the delegate makes to one of its own members is not magically redirected to the wrapper override.</p>
+<p>Delegated-property lowering uses <code>getValue(thisRef, KProperty)</code> and, for a <code>var</code>, <code>setValue</code>. The compiler normally stores the delegate in a synthetic field such as <code>prop$delegate</code>, although documented optimised cases can omit it. Built-ins such as <code>lazy</code>, observable/vetoable, map-backed properties, and property-to-property delegation have different lifetime, synchronisation, and failure contracts.</p>
+<pre><code class="language-kotlin">class FragmentBinding&lt;T : ViewBinding&gt;(
+    private val bind: (View) -> T,
+) : ReadOnlyProperty&lt;Fragment, T&gt; {
+    override fun getValue(thisRef: Fragment, property: KProperty&lt;*&gt;): T =
+        bind(thisRef.requireView())
+}
+// Convenient, but this implementation recreates a binding on every access.
+// A caching delegate must clear the cached view at onDestroyView().</code></pre>
+<p>A delegate does not prove lifecycle correctness. Review its owner, cleanup moment, exception semantics, synchronisation mode, and whether property access hides expensive work.</p>
+
+<h3 id="en-stage3-erasure-boxing-value">JVM erasure, boxing, and value-class ABI<a aria-label="Link to section: JVM erasure boxing value class ABI" class="heading-anchor" href="#en-stage3-erasure-boxing-value">#</a></h3>
+<p>Because of erasure, overloads that differ only by a generic argument can have the same JVM descriptor; an unchecked cast can compile and fail later at element access. Kotlin primitives map to JVM primitives where possible, but nullable, generic, interface, or <code>Any</code> contexts often require wrappers and boxing. Inspect generated signatures with <code>javap</code> or a bytecode viewer, and inspect allocations with a profiler or benchmark rather than intuition.</p>
+<p>An <code>@JvmInline value class</code> has one underlying value and may compile to an unboxed representation, but generic, nullable, and interface uses require boxing. Functions with value-class parameters are name-mangled by default to avoid clashes, so the Java/reflection surface is not identical to the Kotlin surface. For an SDK, create an intentional Java-friendly bridge using the underlying JVM type and a stable <code>@JvmName</code> instead of promising transparent interoperability.</p>
+<pre><code class="language-kotlin">@JvmInline value class UserId(val raw: String)
+fun find(id: UserId): User = TODO()          // mangled JVM name
+@JvmName("findByUserId")
+fun findForJava(raw: String): User = find(UserId(raw))
+
+fun &lt;T&gt; identity(value: T): T = value
+val boxed = identity(UserId("42"))           // generic representation can box</code></pre>
+
+<h3 id="en-stage3-java-interop">SAM, default methods, annotations, platform types, and lambdas<a aria-label="Link to section: Java interop and lambdas" class="heading-anchor" href="#en-stage3-java-interop">#</a></h3>
+<p>Kotlin performs SAM conversion for Java functional interfaces and Kotlin <code>fun interface</code>s. A function type <code>(T) -&gt; R</code> and a concrete SAM are not the same ABI; a named <code>fun interface</code> is often a better Java-facing callback API. JVM mode, target, and consumer toolchain matter for default interface methods; do not change the <code>-jvm-default</code> strategy of a published library without ABI analysis.</p>
+<p><code>@JvmName</code>, <code>@JvmStatic</code>, <code>@JvmField</code>, <code>@JvmOverloads</code>, wildcard annotations, and use-site targets such as <code>@get:</code>, <code>@field:</code>, and <code>@param:</code> control the generated Java surface. <code>@JvmOverloads</code> creates overloads by removing trailing default parameters in order; Kotlin default and named arguments do not automatically become Java semantics.</p>
+<p>Java nullability annotations improve Kotlin's type view, while unannotated or insufficiently annotated APIs produce platform types. As explained in <a href="#en-stage2-nullability">Stage 2</a>, a boundary should immediately choose an explicit nullable/non-null contract and validate untrusted input; an annotation is not runtime validation.</p>
+<p>A capturing lambda must retain captured state somewhere; a non-capturing lambda may be reused, while inlining may eliminate the lambda object at a particular call site. The backend may use generated classes or <code>invokedynamic</code>, D8/R8 may transform code, and ART may AOT/JIT-compile it. Therefore, “every lambda allocates” and “inline is always zero allocation” are both false. Capturing a large owner can also extend its lifetime.</p>
+
+<h3 id="en-stage3-bytecode-art">JVM bytecode, DEX, and ART: implications without myths<a aria-label="Link to section: JVM bytecode DEX ART" class="heading-anchor" href="#en-stage3-bytecode-art">#</a></h3>
+<p>The Kotlin/JVM compiler emits class files and Kotlin metadata; the Android toolchain performs desugaring/shrinking and D8/R8 conversion to DEX. ART executes DEX and may combine interpretation, AOT, and JIT depending on Android version, runtime, and profiles. JVM bytecode shape is useful for diagnosing signatures, bridges, synthetic accessors, and potential allocations, but it is not final machine code.</p>
+<p>The practical rule is to inspect the release variant, minification and keep rules, and representative devices. Do not guarantee that a runtime compiler inlines a specific function, that an object is never allocated, or that a micro-optimisation is faster without a benchmark or profile. Language semantics are stronger guarantees than optimiser assumptions.</p>
+
+<h3 id="en-stage3-compatibility">Binary and source compatibility for an Android library or SDK<a aria-label="Link to section: Binary and source compatibility" class="heading-anchor" href="#en-stage3-compatibility">#</a></h3>
+<p><strong>Binary compatibility</strong> means an already compiled consumer works with the new artifact without relinking or recompilation errors. <strong>Source compatibility</strong> means consumer source recompiles without changes. <strong>Behavioural compatibility</strong> means observable semantics remain acceptable. These sets do not coincide.</p>
+<ul>
+<li>Changing a JVM descriptor, removing or renaming a public member, or changing class/interface shape, superclass, visibility, or default-method scheme can break binary ABI.</li>
+<li>Adding a default parameter does not create a Java overload. Changing a default value may remain binary-compatible through a normal <code>$default</code> call yet change behaviour after recompilation. Public inline bodies, <code>const val</code>s, and defaults can be embedded in consumers.</li>
+<li>A new overload can preserve binary compatibility but break source through overload-resolution ambiguity. A new abstract interface member breaks implementers; even a default member must be checked against Java/Kotlin targets and desugaring.</li>
+<li>Changes to variance, nullability annotations, generic bounds, value-class representation/mangling, or annotations can alter Kotlin source/metadata or the Java surface without an obvious source diff.</li>
+</ul>
+<p>For a published Android library, enable explicit API, generate and review an API/ABI dump, run binary compatibility validation, Java and Kotlin consumer compile tests, and an Android release smoke test. Use a deprecation cycle and bridge, a SemVer/version policy, and a changelog. A compatibility tool does not verify behaviour, resources, manifest merging, serialization, or reflection contracts.</p>
+
+<h2 id="en-stage3-guarantees">Guarantees versus non-guarantees<a aria-label="Link to section: Guarantees versus non-guarantees" class="heading-anchor" href="#en-stage3-guarantees">#</a></h2>
+<table><thead><tr><th>Safe claim</th><th>Do not promise</th></tr></thead><tbody>
+<tr><td>Variance or projection restricts legal source operations.</td><td>A generic argument remains fully available at runtime after erasure.</td></tr>
+<tr><td><code>crossinline</code> forbids non-local return; <code>noinline</code> permits storing a lambda.</td><td><code>crossinline</code> makes a callback synchronous/thread-safe, or <code>inline</code> removes all allocations.</td></tr>
+<tr><td>A value class creates a distinct Kotlin type.</td><td>It is always unboxed or automatically has a convenient Java constructor/API.</td></tr>
+<tr><td>Nullability annotations influence the compiler's view.</td><td>An external Java/runtime value can never violate the annotation.</td></tr>
+<tr><td>An ABI checker catches modelled signature changes.</td><td>It proves source, behavioural, reflection, resource, and Android runtime compatibility.</td></tr>
+</tbody></table>
+
+<h2 id="en-stage3-tradeoffs">Trade-offs and failure modes<a aria-label="Link to section: Trade-offs and failure modes" class="heading-anchor" href="#en-stage3-tradeoffs">#</a></h2>
+<ul>
+<li>Excessive variance and projections make inference difficult; an unsafe cast only hides incorrect ownership.</li>
+<li>A large public inline body inflates consumers, complicates patch rollout, and binds ABI to internal helpers.</li>
+<li>A property delegate can hide lifecycle leaks, I/O, synchronisation, or exceptions behind an innocent getter.</li>
+<li>A value class in a generic-heavy API boxes, while Java, framework, or reflection tooling may not see the expected signature.</li>
+<li>A capturing callback stored longer than its owner causes a leak; allocation optimisation does not fix lifetime.</li>
+<li>“Source still compiles” after an SDK update does not prove old APK/AAR consumers remain binary-compatible or behaviour is unchanged.</li>
+</ul>
+
+<h2 id="en-stage3-production-scenario">Production scenario: evolving an analytics SDK<a aria-label="Link to section: Production scenario" class="heading-anchor" href="#en-stage3-production-scenario">#</a></h2>
+<p><strong>Hypothetically:</strong> a private Android SDK has Kotlin and Java consumers. The team wants to replace a <code>String userId</code> with <code>UserId</code>, a function callback with an inline/reified helper, and a Java listener with a lambda. Direct replacement changes JVM signatures or name mangling and breaks already compiled clients.</p>
+<p>A safe migration keeps the old Java-friendly entry point, deprecates it, and delegates to a typed Kotlin core; adds a separately named <code>@JvmName</code> bridge; and exposes the listener as a stable <code>fun interface</code>. Nullable or platform input is normalised at the Stage 2 boundary. An API dump records overloads, wildcards, and annotations. Java and Kotlin fixture apps compile against the new SDK, while a fixture compiled against the previous artifact runs with the new one. A release benchmark checks the hot path without turning one result into a universal allocation guarantee.</p>
+
+<h2 id="en-stage3-review-trap">Code-review/debugging trap: “typed and zero-cost”<a aria-label="Link to section: Code review debugging trap" class="heading-anchor" href="#en-stage3-review-trap">#</a></h2>
+<pre><code class="language-kotlin">// Trap: unchecked nested cast + capture + value-class boxing in a generic path.
+@JvmInline value class EventId(val raw: String)
+private val pending = mutableListOf&lt;() -&gt; Unit&gt;()
+
+inline fun &lt;reified T&gt; decode(raw: Any): T = raw as T
+fun enqueue(owner: Activity, id: EventId, raw: Any) {
+    val tags = decode&lt;List&lt;String&gt;&gt;(raw) // does not validate each element
+    pending += { owner.title = "$id:${tags.first()}" } // retains Activity
+}</code></pre>
+<p>A review should find three independent risks: reified checks only a runtime-available outer type, the stored lambda retains the <code>Activity</code>, and <code>EventId</code> may box in a generic or string-interpolation path. Fix with schema or element validation, lifecycle-scoped callbacks or ID-based ownership, and measurement before optimisation. Inspect the Java signature separately for ABI.</p>
+
+<h2 id="en-stage3-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice Q and A" class="heading-anchor" href="#en-stage3-likely-qa">#</a></h2>
+<p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
+<ol>
+<li><strong>Why is <code>MutableList&lt;Dog&gt;</code> not a <code>MutableList&lt;Animal&gt;</code>?</strong> Invariance prevents a caller from inserting a <code>Cat</code> into a dog list. A projection provides a restricted safe view; it does not change the real element type.</li>
+<li><strong><code>out</code>, <code>in</code>, or <code>*</code>?</strong> Use <code>out</code> for a producer, <code>in</code> for a consumer, and <code>*</code> when the argument is unknown and only safe operations are required. Start from the actual read/write contract.</li>
+<li><strong>What exactly do <code>noinline</code> and <code>crossinline</code> do?</strong> <code>noinline</code> keeps a lambda as a storable/passable value. <code>crossinline</code> keeps it inlinable but forbids a non-local return because invocation may be indirect.</li>
+<li><strong>What can reified not do?</strong> It cannot recover nested erased arguments or validate a schema. <code>List&lt;String&gt;</code> still needs element validation or a serializer/type-token contract.</li>
+<li><strong>Is delegation free?</strong> It removes source boilerplate, but generated forwarding, delegate storage, and dispatch remain; a property delegate may perform work on every access.</li>
+<li><strong>When does a value class box?</strong> Commonly in nullable, generic, and interface contexts. Exact code generation depends on use site and toolchain, so inspect and profile the artifact.</li>
+<li><strong>How do you make a Kotlin API Java-friendly?</strong> Inspect generated surface; use named SAMs, explicit overloads or bridges, and targeted <code>@Jvm*</code> annotations. Avoid accidental exposure of function types, mangled value-class methods, and platform ambiguity.</li>
+<li><strong>Does every lambda allocate?</strong> No. A non-capturing instance may be reused, an inline call may remove the object, and the backend/R8/ART can transform representation. A capturing or stored lambda often needs state; measure a release build.</li>
+<li><strong>Is JVM bytecode what Android executes?</strong> Not directly. Class files become DEX, which ART interprets or AOT/JIT-compiles. Bytecode inspection explains ABI and lowering, not final machine code or guaranteed performance.</li>
+<li><strong>Binary versus source compatibility?</strong> Binary concerns an old compiled client; source concerns recompilation. A new overload can be binary-safe but source-ambiguous, while inline/default/const semantics may differ between old and recompiled callers.</li>
+</ol>
+
+<h2 id="en-stage3-followups">4 senior follow-ups with answers<a aria-label="Link to section: 4 senior follow ups" class="heading-anchor" href="#en-stage3-followups">#</a></h2>
+<ol>
+<li><strong>Why does a bug in a public inline function remain after updating the AAR?</strong> The old consumer already contains the inlined body. It needs recompilation; keep large or volatile logic in a non-inline function when patchability matters.</li>
+<li><strong>You added a SAM overload and a Kotlin call became ambiguous. Is that an ABI break?</strong> The old binary may run, but source recompilation can fail through overload resolution. It is a source-compatibility regression; use a distinct name or migration path.</li>
+<li><strong>A value-class method is visible to Kotlin but Java cannot call it. Why?</strong> Unboxed representation and name mangling do not create a normal Java constructor/signature. Add an explicit bridge and lock it in the API dump.</li>
+<li><strong>A profiler shows a lambda allocation despite <code>inline</code>. What do you inspect?</strong> Check whether the parameter is <code>noinline</code>, stored, converted to a SAM, or whether capture/materialisation occurs elsewhere; inspect release DEX and the allocation trace. Do not infer from the source keyword alone.</li>
+</ol>
+
+<h2 id="en-stage3-self-check">5 self-check questions without answers<a aria-label="Link to section: 5 self check questions without answers" class="heading-anchor" href="#en-stage3-self-check">#</a></h2>
+<ol>
+<li>Which public generic APIs in your SDK are true producers or consumers, and which are accidentally invariant?</li>
+<li>Which public inline, default, or constant declarations are embedded in consumers, and how will you migrate them?</li>
+<li>Where do your value classes box or require Java/reflection bridges?</li>
+<li>Which stored lambdas capture an Activity, Fragment, View, or large graph longer than necessary?</li>
+<li>How does each test separately prove binary, source, behavioural, and Android runtime compatibility?</li>
+</ol>
+
+<h2 id="en-stage3-english-skeletons">Interview-ready English answer skeletons<a aria-label="Link to section: Interview ready English answer skeletons" class="heading-anchor" href="#en-stage3-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do Kotlin abstractions map to the JVM and Android runtime, and how does that affect a public SDK?</em></p>
+<h3 id="en-stage3-answer-30">~30-second answer<a aria-label="Link to section: 30 second answer" class="heading-anchor" href="#en-stage3-answer-30">#</a></h3>
+<blockquote><p>I separate the Kotlin source contract from the JVM ABI and the Android runtime. Variance controls legal source operations, while generic arguments are mostly erased. Inline and value classes can remove overhead in some call sites, but neither guarantees zero allocation. For a public SDK I inspect generated Java signatures, provide explicit bridges, and validate binary and source compatibility with API dumps plus compiled Java and Kotlin consumers.</p></blockquote>
+<h3 id="en-stage3-answer-2min">~2-minute answer<a aria-label="Link to section: 2 minute answer" class="heading-anchor" href="#en-stage3-answer-2min">#</a></h3>
+<blockquote><p>I reason across three layers. At the Kotlin layer, declaration-site variance and projections express producer and consumer ownership. At the JVM layer, most generic arguments are erased, nullable or generic values may box, and Kotlin features create concrete signatures, bridges, metadata, and sometimes mangled names.</p><p>For higher-order APIs, inline can copy code and inlinable lambdas into the call site. A noinline lambda remains a value that can be stored, while crossinline only forbids non-local returns; it does not promise threading behaviour. Reified makes a runtime-available top-level type usable at an inline call site, but it cannot prove nested generic arguments. Capturing lambdas may retain state, and their allocation shape depends on the compiler and Android toolchain.</p><p>On Android, class files are transformed into DEX and ART can interpret or AOT/JIT-compile them, so I do not infer final performance from a keyword or JVM bytecode alone. I inspect release artifacts and benchmark representative devices.</p><p>For a published library, I treat generated JVM signatures as the real ABI. I use deliberate Java-facing SAMs and bridges, explicit nullability, API dumps and binary compatibility checks. I also compile Java and Kotlin fixtures and run an old compiled consumer against the new artifact, because binary, source, and behavioural compatibility are different contracts.</p></blockquote>
+
+<h2 id="en-stage3-sources">Official sources<a aria-label="Link to section: Official sources" class="heading-anchor" href="#en-stage3-sources">#</a></h2>
+<ul>
+<li><a href="https://kotlinlang.org/docs/generics.html">Kotlin: Generics, variance, projections, and erasure</a></li>
+<li><a href="https://kotlinlang.org/docs/inline-functions.html">Kotlin: Inline functions, noinline, crossinline, and reified</a></li>
+<li><a href="https://kotlinlang.org/docs/delegation.html">Kotlin: Delegation</a> and <a href="https://kotlinlang.org/docs/delegated-properties.html">Delegated properties</a></li>
+<li><a href="https://kotlinlang.org/docs/inline-classes.html">Kotlin: Inline value classes</a></li>
+<li><a href="https://kotlinlang.org/docs/java-interop.html">Kotlin: Calling Java from Kotlin</a> and <a href="https://kotlinlang.org/docs/java-to-kotlin-interop.html">Calling Kotlin from Java</a></li>
+<li><a href="https://developer.android.com/kotlin/interop">Android: Kotlin–Java interop guide</a></li>
+<li><a href="https://kotlinlang.org/docs/api-guidelines-backward-compatibility.html">Kotlin: Backward compatibility guidelines for library authors</a></li>
+<li><a href="https://kotlinlang.org/docs/gradle-binary-compatibility-validation.html">Kotlin Gradle plugin: Binary compatibility validation</a></li>
+<li><a href="https://developer.android.com/guide/platform">Android platform architecture: DEX and ART</a> and <a href="https://developer.android.com/tools/d8">D8</a></li>
 </ul>
 </div></details><details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="en-kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
 <h2 id="en-val-vs-var-and-immutability"><code>val</code> vs <code>var</code> and immutability<a aria-label="Link to section: val vs var and immutability" class="heading-anchor" href="#en-val-vs-var-and-immutability">#</a></h2>

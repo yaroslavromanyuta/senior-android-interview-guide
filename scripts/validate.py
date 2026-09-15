@@ -13,6 +13,7 @@ HTML_FILES = (ROOT / "index.html", ROOT / "reference" / "original-guide.html")
 CHECKSUM_FILE = ROOT / "reference" / "original-guide.sha256"
 MIN_DOCUMENT_BYTES = 1_000
 STAGE2_KEY = "kotlin-type-system-state-modeling"
+STAGE3_KEY = "advanced-kotlin-jvm"
 
 
 def validate_html(path: Path) -> list[str]:
@@ -65,26 +66,34 @@ def validate_index_structure() -> list[str]:
     if unresolved:
         errors.append(f"index.html: unresolved internal hashes: {', '.join(unresolved)}")
 
-    expected_stage_ids = (STAGE2_KEY, f"en-{STAGE2_KEY}")
-    if content.count(f'data-key="{STAGE2_KEY}"') != 2:
-        errors.append("index.html: Stage 2 must have one shared data-key per language")
-    for stage_id in expected_stage_ids:
-        if ids.count(stage_id) != 1:
-            errors.append(f"index.html: expected exactly one Stage 2 id {stage_id!r}")
-        toc_contract = f'data-target="{stage_id}" href="#{stage_id}"'
-        if content.count(toc_contract) != 1:
-            errors.append(f"index.html: expected exactly one Stage 2 TOC link for {stage_id!r}")
+    for stage_number, stage_key in ((2, STAGE2_KEY), (3, STAGE3_KEY)):
+        expected_stage_ids = (stage_key, f"en-{stage_key}")
+        if content.count(f'data-key="{stage_key}"') != 2:
+            errors.append(
+                f"index.html: Stage {stage_number} must have one shared data-key per language"
+            )
+        for stage_id in expected_stage_ids:
+            if ids.count(stage_id) != 1:
+                errors.append(
+                    f"index.html: expected exactly one Stage {stage_number} id {stage_id!r}"
+                )
+            toc_contract = f'data-target="{stage_id}" href="#{stage_id}"'
+            if content.count(toc_contract) != 1:
+                errors.append(
+                    f"index.html: expected exactly one Stage {stage_number} TOC link for {stage_id!r}"
+                )
 
     for prefix in ("", "en-"):
         ordered_ids = (
             f'{prefix}android-process-lifecycle-state-restoration',
             f'{prefix}{STAGE2_KEY}',
+            f'{prefix}{STAGE3_KEY}',
             f'{prefix}kotlin-for-android',
         )
         positions = [content.find(f'id="{value}"') for value in ordered_ids]
         if -1 in positions or positions != sorted(positions):
             errors.append(
-                f"index.html: {prefix or 'uk-'}Stage 2 must follow Stage 1 and precede Kotlin for Android"
+                f"index.html: {prefix or 'uk-'}Stages 2 and 3 must follow Stage 1 and precede Kotlin for Android"
             )
     return errors
 
@@ -103,7 +112,7 @@ def main() -> int:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
-    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2 navigation, and baseline checksum are valid.")
+    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2/3 navigation, and baseline checksum are valid.")
     return 0
 
 
