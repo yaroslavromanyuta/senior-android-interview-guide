@@ -1,0 +1,16 @@
+# OS/editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Local tooling
+.vscode/
+.idea/
+__pycache__/
+*.py[cod]
+
+# Temporary output
+*.tmp
+*.log
