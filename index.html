@@ -474,6 +474,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="advanced-kotlin-jvm" href="#advanced-kotlin-jvm">Advanced Kotlin/JVM для Senior Android</a>
 </li>
 <li class="toc-major">
+<a data-target="android-tasks-back-stack-deep-links-intents-pending-intent" href="#android-tasks-back-stack-deep-links-intents-pending-intent">Android tasks, back stack, deep links, intents та PendingIntent</a>
+</li>
+<li class="toc-major">
 <a data-target="kotlin-for-android" href="#kotlin-for-android">Kotlin for Android</a>
 <ol class="toc-children">
 <li><a data-target="val-vs-var-immutability" href="#val-vs-var-immutability">val vs var, immutability</a></li>
@@ -759,6 +762,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </li>
 <li class="toc-major">
 <a data-target="en-advanced-kotlin-jvm" href="#en-advanced-kotlin-jvm">Advanced Kotlin/JVM for Senior Android</a>
+</li>
+<li class="toc-major">
+<a data-target="en-android-tasks-back-stack-deep-links-intents-pending-intent" href="#en-android-tasks-back-stack-deep-links-intents-pending-intent">Android tasks, back stack, deep links, intents, and PendingIntent</a>
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-for-android" href="#en-kotlin-for-android">Kotlin for Android</a>
@@ -1915,7 +1921,211 @@ fun enqueue(owner: Activity, id: EventId, raw: Any) {
 <li><a href="https://kotlinlang.org/docs/gradle-binary-compatibility-validation.html">Kotlin Gradle plugin: Binary compatibility validation</a></li>
 <li><a href="https://developer.android.com/guide/platform">Android platform architecture: DEX and ART</a> та <a href="https://developer.android.com/tools/d8">D8</a></li>
 </ul>
-</div></details><details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+</div></details><details class="major-section" data-key="android-tasks-back-stack-deep-links-intents-pending-intent" data-title="Android tasks, back stack, deep links, intents та PendingIntent" id="android-tasks-back-stack-deep-links-intents-pending-intent" open=""><summary class="major-summary"><span class="major-title">Android tasks, back stack, deep links, intents та PendingIntent</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<h2 id="stage4-uk-objective">Learning objective<a aria-label="Посилання на розділ: Learning objective" class="heading-anchor" href="#stage4-uk-objective">#</a></h2>
+<p>Після цього етапу ви маєте вміти передбачити, <strong>який task і який instance Activity</strong> отримає intent, спроєктувати безпечний external/deep-link boundary, узгодити system task stack із Navigation/Compose back stack, створити PendingIntent з навмисною identity та перевірити cold/warm/process-death сценарії через <code>adb</code>.</p>
+
+<h2 id="stage4-uk-mental-model">Senior mental model<a aria-label="Посилання на розділ: Senior mental model" class="heading-anchor" href="#stage4-uk-mental-model">#</a></h2>
+<blockquote><p><strong>Два стеки, три межі:</strong> system task містить Activity instances; кожна host Activity може мати власний Navigation back stack; процес лише виконує компоненти й може померти, не визначаючи task identity. Межі довіри — вхідний Intent/URI, внутрішній route і делегований capability у PendingIntent.</p></blockquote>
+<ul>
+<li><strong>Task ≠ process:</strong> task — user-facing LIFO-історія Activity instances у Recents; process — runtime container. Один процес може обслуговувати кілька tasks, а task може пережити смерть процесу як system record і бути відтвореним.</li>
+<li><strong>Activity class ≠ Activity instance:</strong> одна class може мати кілька instances у тому самому або різних tasks. <code>launchMode</code>, flags, affinity і наявний stack вирішують reuse/creation.</li>
+<li><strong>System stack ≠ NavController stack:</strong> Back спершу може pop-нути destination усередині Activity; лише на root завершує/відсуває Activity/task. Їх треба проєктувати разом, але не плутати.</li>
+</ul>
+
+<h2 id="stage4-uk-internals">Internals: task selection, delivery і back dispatch<a aria-label="Посилання на розділ: Internals" class="heading-anchor" href="#stage4-uk-internals">#</a></h2>
+<h3 id="stage4-uk-tasks-affinity">Tasks, affinity та launch modes<a aria-label="Посилання на розділ: Tasks affinity launch modes" class="heading-anchor" href="#stage4-uk-tasks-affinity">#</a></h3>
+<p>Звичайний <code>standard</code> launch створює instance у task caller-а, навіть якщо Activity має іншу affinity. <code>taskAffinity</code> — підказка для reparenting і пошуку task у спеціальних launch режимах; це не process name, не package і не безумовний routing rule.</p>
+<table><thead><tr><th>Механізм</th><th>Точний ефект і edge case</th></tr></thead><tbody>
+<tr><td><code>standard</code></td><td>Новий instance на top поточного task; одна class може повторюватися.</td></tr>
+<tr><td><code>singleTop</code> / <code>FLAG_ACTIVITY_SINGLE_TOP</code></td><td>Reuse лише якщо matching instance уже на top; intent приходить у <code>onNewIntent()</code>. Якщо instance нижче — створюється новий.</td></tr>
+<tr><td><code>singleTask</code> / <code>FLAG_ACTIVITY_NEW_TASK</code> + matching task</td><td>Система шукає task, де Activity є/має бути root; task піднімається, Activity отримує <code>onNewIntent()</code>, а все над нею видаляється. <code>NEW_TASK</code> також обов’язковий при старті з non-Activity context.</td></tr>
+<tr><td><code>singleInstancePerTask</code></td><td>Activity може бути лише root task, але окремі instances можливі в різних tasks з <code>NEW_DOCUMENT</code>/<code>MULTIPLE_TASK</code>.</td></tr>
+<tr><td><code>singleInstance</code></td><td>Activity — єдиний member свого task; наступні Activity запускаються в іншому task. Це ізолює flow і часто ламає очікуваний Back/Recents UX.</td></tr>
+<tr><td><code>CLEAR_TOP</code></td><td>Якщо target є у task, activities над ним finish. Для <code>standard</code> target зазвичай теж видаляється і створюється заново; разом із <code>SINGLE_TOP</code> target зберігається та отримує <code>onNewIntent()</code>.</td></tr>
+<tr><td><code>CLEAR_TASK | NEW_TASK</code></td><td>Очищає matching task перед стартом target; доречно для logout/reset, але знищує user history.</td></tr>
+<tr><td><code>REORDER_TO_FRONT</code></td><td>Переміщує наявний instance на top без очищення проміжних instances; ігнорується, якщо також задано <code>CLEAR_TOP</code>.</td></tr>
+</tbody></table>
+<p><code>allowTaskReparenting="true"</code> дозволяє Activity, яка тимчасово потрапила в чужий task, перейти до task своєї affinity, коли той виходить на foreground. Це робить історію контекстно залежною, тому потрібне явне UX-рішення й тести Recents.</p>
+
+<h3 id="stage4-uk-documents-multiwindow">Document-centric tasks, Recents і multi-window<a aria-label="Посилання на розділ: Document centric tasks and multi window" class="heading-anchor" href="#stage4-uk-documents-multiwindow">#</a></h3>
+<p><code>FLAG_ACTIVITY_NEW_DOCUMENT</code> (manifest: <code>documentLaunchMode</code>) моделює незалежний document як окремий task у Recents; зазвичай URI в Intent розрізняє documents. <code>intoExisting</code> шукає task за base intent Component + data URI, очищає його й доставляє root; <code>always</code> створює новий document task; <code>never</code>/<code>none</code> забороняють або залишають default reuse. <code>MULTIPLE_TASK</code> разом із <code>NEW_TASK</code>/<code>NEW_DOCUMENT</code> вимикає звичайний пошук existing task і майже завжди потребує сильної причини.</p>
+<p>У multi-window два tasks можуть бути видимі й RESUMED одночасно; «app foreground» не означає один active Activity. Не тримайте selected document чи auth redirect у process singleton. Зберігайте ідентифікатор у route/intent та durable state; UI state — у <code>SavedStateHandle</code>/<code>rememberSaveable</code> лише для відновлюваних малих значень.</p>
+
+<h3 id="stage4-uk-back">Predictive Back і dispatcher boundaries<a aria-label="Посилання на розділ: Predictive Back boundaries" class="heading-anchor" href="#stage4-uk-back">#</a></h3>
+<ul>
+<li><code>OnBackInvokedDispatcher</code> — platform API з Android 13 (API 33) для back invocation; progress callbacks для custom predictive animation належать новішим platform/AndroidX APIs. Не реєструйте callback завжди: це може забрати system animation і root task behavior.</li>
+<li><code>OnBackPressedDispatcher</code> — AndroidX compatibility/lifecycle boundary для Activities, Fragments і Compose. <code>OnBackPressedCallback.isEnabled</code> має відображати, чи UI справді може consume Back; останній enabled callback має пріоритет.</li>
+<li>У Compose <code>BackHandler</code> — wrapper над AndroidX dispatcher. Він має бути composition-aware і enabled лише під час transient UI/flow. Не викликайте legacy <code>onBackPressed()</code> рекурсивно.</li>
+<li>Predictive Back потребує раннього знання destination. Callback, що вирішує навігацію лише після completed gesture, не може гарантувати коректний preview. Framework/Navigation версія та target SDK визначають доступну поведінку.</li>
+</ul>
+
+<h3 id="stage4-uk-navigation">Navigation/Compose back stack і restoration<a aria-label="Посилання на розділ: Navigation Compose back stack and restoration" class="heading-anchor" href="#stage4-uk-navigation">#</a></h3>
+<p><code>NavController</code> зберігає <code>NavBackStackEntry</code> для destination/graph із lifecycle, arguments, <code>ViewModelStore</code> і saved state. <code>popUpTo</code> змінює історію; <code>inclusive</code> визначає, чи видаляти target; <code>launchSingleTop</code> уникає другої копії лише на top; <code>saveState</code> + <code>restoreState</code> можуть зберігати/відновлювати popped destination state для multiple back stacks. Вони не перетворюють repository data на durable storage.</p>
+<pre><code class="language-kotlin">navController.navigate(Product(productId)) {
+    launchSingleTop = true
+    restoreState = true
+    popUpTo(navController.graph.findStartDestination().id) {
+        saveState = true
+    }
+}</code></pre>
+<p>Передавайте stable ID, а не великий object. Після process death graph/back-stack restoration може відтворити route та малий saved state, але мережеві дані треба перечитати. Route serializer/schema — compatibility contract; зміни argument names/types потребують migration/defaults.</p>
+
+<h3 id="stage4-uk-intents">Explicit/implicit intents, resolution та exported boundary<a aria-label="Посилання на розділ: Intents resolution and exported boundary" class="heading-anchor" href="#stage4-uk-intents">#</a></h3>
+<p>Explicit Intent задає component і є default для intra-app переходу. Implicit Intent описує action/data/category; Package Manager порівнює intent filters за action, data (scheme/host/port/path/MIME) і category. Для activity implicit start система враховує <code>CATEGORY_DEFAULT</code>; відсутність match дає <code>ActivityNotFoundException</code>, а кілька match можуть показати chooser/default handler.</p>
+<p><code>android:exported</code> визначає, чи інші apps можуть напряму запускати component; для компонентів з intent filter значення треба задавати явно на modern targets. Exported — це доступність, не authorization. Для sensitive operation потрібні permission, caller/auth/session checks і validation усіх extras/URI. Intent filter не є schema validator.</p>
+<pre><code class="language-kotlin">fun parseProduct(uri: Uri): ProductId? {
+    if (uri.scheme != "https" || uri.host != "shop.example.com") return null
+    if (uri.pathSegments.size != 2 || uri.pathSegments[0] != "p") return null
+    val raw = uri.pathSegments[1]
+    if (!raw.matches(Regex("[A-Za-z0-9_-]{1,64}"))) return null
+    return ProductId(raw)
+}</code></pre>
+<p>Нормалізуйте/allowlist-те scheme, canonical host, path shape, length, encoding і business authorization; не довіряйте query parameter як return URL, file path, SQL key або WebView URL. Відхиляйте malformed/duplicate/conflicting parameters fail-closed.</p>
+
+<h3 id="stage4-uk-applinks">Verified App Links і єдиний deep-link router<a aria-label="Посилання на розділ: Verified App Links and deep link router" class="heading-anchor" href="#stage4-uk-applinks">#</a></h3>
+<p>Android App Link — HTTPS deep link із <code>android:autoVerify="true"</code> та успішною association між app і website через <code>https://host/.well-known/assetlinks.json</code> (package + signing certificate fingerprints). Verification дає preferred routing для verified domain, але не валідовує payload, не авторизує user і може залежати від install/update, network, redirect і user domain settings.</p>
+<p>Використовуйте один ingress/router: parse untrusted URI → canonical typed command → auth/entitlement gate → idempotent navigation. На <strong>cold start</strong> intent приходить через creation path і routing чекає, поки готові graph/session; на <strong>warm start</strong> reused Activity отримує новий Intent у <code>onNewIntent()</code>, його треба явно передати router-у. Не обробляйте ту саму delivery і в Activity, і в composable effect: event ID або saved handled-token + <code>launchSingleTop</code>/<code>popUpTo</code> запобігають duplicate destination.</p>
+
+<h3 id="stage4-uk-pendingintent">PendingIntent: identity, mutability, replay і security<a aria-label="Посилання на розділ: PendingIntent identity mutability security" class="heading-anchor" href="#stage4-uk-pendingintent">#</a></h3>
+<p><code>PendingIntent</code> — transferable capability: інший process/system може пізніше виконати операцію з identity/permissions creator-а, навіть якщо creator process помер. Token, а не ваш Intent object, живе в system service.</p>
+<ul>
+<li><strong>Identity:</strong> operation type (<code>getActivity/getBroadcast/getService</code>), creator package/user, requestCode і Intent fields, які порівнює <code>Intent.filterEquals()</code> (action, data, type, identifier, component, categories). <strong>Extras не визначають identity.</strong></li>
+<li><code>FLAG_UPDATE_CURRENT</code> зберігає той самий token і замінює extras current Intent; creator може оновлювати навіть immutable PendingIntent. Це може ненавмисно змінити старі notifications, якщо identity collision.</li>
+<li><code>FLAG_CANCEL_CURRENT</code> скасовує старий token і створює новий; <code>FLAG_NO_CREATE</code> лише шукає; <code>FLAG_ONE_SHOT</code> дозволяє один успішний send. Явний <code>cancel()</code> робить старі копії unusable.</li>
+<li><code>FLAG_IMMUTABLE</code> — default security choice: sender не може fill-in змінити wrapped Intent. <code>FLAG_MUTABLE</code> потрібен лише для конкретної platform feature, наприклад inline reply/bubbles; тоді звузьте explicit component/package, action/data і не залишайте незаповнені поля.</li>
+<li>PendingIntent може бути replayed, доки не canceled/one-shot/invalidated. Навіть immutable token не означає single-use або fresh authorization: перевіряйте auth, resource ownership, expiry/idempotency під час handling.</li>
+</ul>
+<pre><code class="language-kotlin">val intent = Intent(context, MainActivity::class.java).apply {
+    action = "com.example.OPEN_ORDER"
+    data = "myapp://orders/$orderId".toUri() // stable identity per order
+}
+val contentIntent = PendingIntent.getActivity(
+    context,
+    orderId.stableRequestCode(),
+    intent,
+    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+)</code></pre>
+
+<h3 id="stage4-uk-notifications">Notification/deep-link patterns<a aria-label="Посилання на розділ: Notification deep link patterns" class="heading-anchor" href="#stage4-uk-notifications">#</a></h3>
+<p>Для regular destination notification має відкрити очікуваний hierarchy: manifest parent stack + <code>TaskStackBuilder</code>, або Navigation deep-link PendingIntent. Для special transient Activity створюйте окремий task свідомо (<code>NEW_TASK | CLEAR_TASK</code>, excluded from Recents за потреби). Не змішуйте ці патерни випадково. Кожна action повинна мати distinct PendingIntent identity; mutable inline-reply PendingIntent вузько target-те на receiver/service.</p>
+
+<h2 id="stage4-uk-guarantees">Гарантії проти не-гарантій<a aria-label="Посилання на розділ: Guarantees versus non guarantees" class="heading-anchor" href="#stage4-uk-guarantees">#</a></h2>
+<table><thead><tr><th>Можна стверджувати</th><th>Не можна обіцяти</th></tr></thead><tbody>
+<tr><td><code>singleTop</code> reuses matching top instance.</td><td>У task завжди буде лише один instance цієї Activity.</td></tr>
+<tr><td>Verified App Link доводить configured website↔app association для domain.</td><td>URI безпечний, user авторизований або app завжди відкриється всупереч settings.</td></tr>
+<tr><td>Immutable PendingIntent блокує sender fill-in mutation.</td><td>Token single-use, не replayable або його дія досі authorized.</td></tr>
+<tr><td>Saved state може відновити малий navigation/UI descriptor.</td><td>Process, in-memory singleton, socket чи repository cache переживуть смерть.</td></tr>
+<tr><td>Dispatcher визначає пріоритет enabled back callbacks.</td><td>Кастомний callback автоматично дає predictive animation на всіх API/library versions.</td></tr>
+</tbody></table>
+
+<h2 id="stage4-uk-version-sensitive">Version-sensitive behavior<a aria-label="Посилання на розділ: Version sensitive behavior" class="heading-anchor" href="#stage4-uk-version-sensitive">#</a></h2>
+<ul>
+<li>Android 12 / target API 31+: кожен PendingIntent мусить явно задати mutability; unsafe implicit mutable PendingIntent додатково обмежується новішими platform versions.</li>
+<li>Android 12 змінив default handling verified web links: generic web intents відкривають app напряму лише для approved/verified domains; перевіряйте domain state.</li>
+<li>Android 13 (API 33) ввів <code>OnBackInvokedDispatcher</code>; predictive Back rollout, manifest opt-in/out, target-SDK defaults і AndroidX support змінювалися в Android 13–15+. Звіряйте поточну platform та library документацію.</li>
+<li>Implicit intent matching/security restrictions залежать від target SDK; з Android 13 receiving exported component має matching filter для intent, надісланого іншою app, окрім documented exceptions.</li>
+<li>Navigation state/deep-link behavior залежить від Navigation version; multiple back stacks підтримуються component APIs з 2.4+, а type-safe Compose routes — новіший API. Закріплюйте версії й regression tests.</li>
+</ul>
+
+<h2 id="stage4-uk-tradeoffs">Trade-offs і failure modes<a aria-label="Посилання на розділ: Trade offs and failure modes" class="heading-anchor" href="#stage4-uk-tradeoffs">#</a></h2>
+<ul>
+<li>Manifest launch modes дають global behavior; intent flags — call-site behavior. Aggressive <code>singleTask/CLEAR_TOP</code> спрощують deduplication, але непомітно стирають user history.</li>
+<li>Окремий task на document покращує Recents/multi-window, але збільшує кількість simultaneous owners і restoration cases.</li>
+<li>Один external router централізує validation/deduplication; кілька Activity filters можуть бути простішими локально, але дрейфують у auth і stack semantics.</li>
+<li><code>FLAG_UPDATE_CURRENT</code> зручний, але identity collision оновлює extras не того notification; random requestCode маскує, а не моделює identity.</li>
+<li>Навігація до privileged screen до завершення auth check спричиняє flash/leak або redirect loop. Збережіть canonical pending command, завершіть auth, повторно авторизуйте й navigate once.</li>
+</ul>
+
+<h2 id="stage4-uk-production-scenario">Production scenario: notification → verified order link<a aria-label="Посилання на розділ: Production scenario" class="heading-anchor" href="#stage4-uk-production-scenario">#</a></h2>
+<p><strong>Гіпотетично:</strong> notification і HTTPS link відкривають order detail. MainActivity має <code>singleTop</code>; обидва джерела дають одному router-у typed <code>OpenOrder(id, deliveryId)</code>. Router allowlist-ить host/path, чекає restored graph, перевіряє session та entitlement, а потім виконує <code>navigate(Order(id)) { launchSingleTop = true }</code>. Consumed <code>deliveryId</code> зберігається в <code>SavedStateHandle</code>, щоб recreation не дублювала route.</p>
+<p>Notification PendingIntent має explicit Activity, immutable flag і identity через action/data/requestCode order-а. Cold start, warm <code>onNewIntent()</code>, second tap, Back, logout, process kill і два multi-window tasks тестуються окремо. Durable order data перечитується з repository; saved state містить лише ID та navigation intent.</p>
+
+<h2 id="stage4-uk-review-trap">Code-review/debugging trap<a aria-label="Посилання на розділ: Code review debugging trap" class="heading-anchor" href="#stage4-uk-review-trap">#</a></h2>
+<pre><code class="language-kotlin">// Trap: all orders share identity; mutable implicit capability; double routing.
+val pi = PendingIntent.getActivity(
+    context, 0,
+    Intent(Intent.ACTION_VIEW, uri),
+    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+)
+// Activity routes in onCreate/onNewIntent, while a composable LaunchedEffect
+// observes the same intent and navigates again.</code></pre>
+<p>Review questions: чи Intent explicit/verified і URI валідований; чи extras помилково вважаються identity; навіщо mutability; чи кожна notification action має distinct key; де один owner позначає delivery consumed; що станеться на warm start і після process death. Виправлення — explicit component, immutable token, stable action/data/requestCode, один lifecycle-aware router та idempotent command.</p>
+
+<h2 id="stage4-uk-adb">Testing matrix через adb<a aria-label="Посилання на розділ: Testing matrix through adb" class="heading-anchor" href="#stage4-uk-adb">#</a></h2>
+<pre><code class="language-bash"># Cold deep link; -W reports launch, -S force-stops first.
+adb shell am start -W -S -a android.intent.action.VIEW \
+  -c android.intent.category.BROWSABLE \
+  -d 'https://shop.example.com/p/ORDER_42' com.example.app
+
+# Warm delivery: run once, navigate elsewhere, then repeat without -S.
+adb shell am start -W -a android.intent.action.VIEW \
+  -d 'https://shop.example.com/p/ORDER_42' com.example.app
+
+# Inspect tasks/activities and App Links verification state.
+adb shell dumpsys activity activities
+adb shell pm get-app-links com.example.app
+adb shell pm verify-app-links --re-verify com.example.app
+
+# Process-death approximation while task remains, then relaunch from Recents/deep link.
+adb shell am kill com.example.app
+
+# Explicit flag scenarios (replace component with the test Activity).
+adb shell am start -W -n com.example.app/.MainActivity \
+  -f 0x24000000</code></pre>
+<p>Assert destination sequence, task ID/component order, <code>onCreate</code> vs <code>onNewIntent</code>, one navigation event, Back destination, unauthorized/error route, malformed URI rejection and restored state. Add instrumentation tests with <code>TestNavHostController</code>/Compose UI plus device tests; <code>adb</code> alone не доводить in-app state.</p>
+
+<h2 id="stage4-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice Q and A" class="heading-anchor" href="#stage4-uk-likely-qa">#</a></h2>
+<p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
+<ol>
+<li><strong>Task, process і Activity instance — те саме?</strong> Ні: task — UI history, process — execution container, instance — конкретний object/lifecycle. Їхні lifetimes і cardinality різні.</li>
+<li><strong>Чому <code>singleTop</code> не прибирає дублікати?</strong> Він reuses тільки top instance; matching instance нижче не заважає створити новий.</li>
+<li><strong><code>CLEAR_TOP</code> завжди викликає <code>onNewIntent()</code>?</strong> Ні. Standard target може бути видалений і створений заново; <code>SINGLE_TOP</code> або відповідний launch mode дає reuse.</li>
+<li><strong>Коли taskAffinity впливає?</strong> Переважно з <code>NEW_TASK</code>, reparenting і task/document policies; звичайний start іде у task caller-а.</li>
+<li><strong>Як Navigation stack співвідноситься із system stack?</strong> NavController керує destinations усередині host Activity; system task — Activity instances. Root Nav pop передає Back рівню Activity/task.</li>
+<li><strong>Чим verified App Link кращий?</strong> Domain association дозволяє пряме routing для HTTPS domain. Це не payload validation чи authorization.</li>
+<li><strong>Як уникнути duplicate deep-link navigation?</strong> Один ingress/router, delivery identity/consumption, cold/warm paths у тому самому pipeline та idempotent <code>launchSingleTop/popUpTo</code> policy.</li>
+<li><strong>Що визначає PendingIntent identity?</strong> Operation/creator, requestCode і filter-equal Intent fields; extras не входять, тому collisions можуть update-нути чужий token.</li>
+<li><strong>Immutable означає one-shot?</strong> Ні. Immutable забороняє sender mutation; replay контролюють one-shot/cancel та idempotent/authorized receiver logic.</li>
+<li><strong>Що тестувати після process death?</strong> Відновлення task/Nav route і малих descriptors, refetch data, відсутність залежності від singleton, повторну auth/authorization та один delivery.</li>
+</ol>
+
+<h2 id="stage4-uk-followups">4 senior follow-ups з відповідями<a aria-label="Посилання на розділ: 4 senior follow ups" class="heading-anchor" href="#stage4-uk-followups">#</a></h2>
+<ol>
+<li><strong>Два notifications з requestCode 0 та різними extras відкривають останній order. Чому?</strong> Extras не є PendingIntent identity; <code>UPDATE_CURRENT</code> оновив один token. Додайте stable distinct data/action/requestCode.</li>
+<li><strong>Warm App Link іноді ігнорується.</strong> Ймовірно, creation path обробляє <code>intent</code>, а <code>onNewIntent()</code> не передає новий Intent router-у або Activity збережена через <code>singleTop</code>.</li>
+<li><strong>Predictive preview показує Home, а callback відкриває dialog.</strong> Callback перехоплює Back занадто пізно/неправильно enabled; back destination має бути відомим під час gesture. Моделюйте dialog у Navigation або використовуйте progress-aware API.</li>
+<li><strong>Один order відкритий у двох windows, singleton “currentOrder” плутається.</strong> Process state не є task-local. Route/ViewModel owner кожного task має власний ID; repository кешує за ID, а не глобальним selection.</li>
+</ol>
+
+<h2 id="stage4-uk-self-check">5 self-check без відповідей<a aria-label="Посилання на розділ: 5 self check without answers" class="heading-anchor" href="#stage4-uk-self-check">#</a></h2>
+<ol>
+<li>Намалюйте system task stack і NavController stack для cold link, другого tap та трьох Back.</li>
+<li>Які exact Intent fields роблять кожну вашу notification action унікальною?</li>
+<li>Де URI переходить з untrusted text у validated typed command і де повторно перевіряється authorization?</li>
+<li>Який state відновиться після process death, а який треба перечитати?</li>
+<li>Які back callbacks enabled у кожному UI state і чи сумісні вони з predictive Back?</li>
+</ol>
+
+<h2 id="stage4-uk-english-skeletons">Interview-ready English answer skeletons<a aria-label="Посилання на розділ: Interview ready English answer skeletons" class="heading-anchor" href="#stage4-uk-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you design Android task, deep-link, Back, and PendingIntent behavior safely?</em></p>
+<h3 id="stage4-uk-answer-30">~30-second answer<a aria-label="Посилання на розділ: 30 second answer" class="heading-anchor" href="#stage4-uk-answer-30">#</a></h3>
+<blockquote><p>I separate the system task stack from the in-activity Navigation stack and from the app process. I use default launch behavior unless the product requires a specific task model, route every external intent through one validated and authorised typed command, and handle cold and warm delivery idempotently. PendingIntents are explicit and immutable by default, with stable distinct identity because extras do not participate in identity. I verify Back, App Links, notification taps, multi-window, and process death on device.</p></blockquote>
+<h3 id="stage4-uk-answer-2min">~2-minute answer<a aria-label="Посилання на розділ: 2 minute answer" class="heading-anchor" href="#stage4-uk-answer-2min">#</a></h3>
+<blockquote><p>I start with three separate lifetimes: a task is a user-facing stack of Activity instances, a process is an execution container that can die, and a NavController owns destinations inside a host Activity. Launch modes and flags are stack transformations, not singleton guarantees. For example, singleTop only reuses the top instance, while CLEAR_TOP can remove everything above a target and may recreate a standard target.</p><p>External intents are an untrusted boundary. I prefer explicit intents internally. For web entry I use verified HTTPS App Links, but still allowlist and parse the URI into a typed command, then check authentication and resource authorisation. One router handles both onCreate and onNewIntent so cold and warm starts have the same semantics and a delivery is consumed only once.</p><p>Back is owned by the narrowest currently enabled handler. AndroidX OnBackPressedDispatcher integrates lifecycle owners and Compose, while platform predictive Back requires the destination to be known early enough for preview. I avoid permanently intercepting root Back.</p><p>A PendingIntent is a replayable capability executed with its creator's identity. I make it explicit and immutable unless a documented feature requires mutation. Its identity uses operation type, request code, and filter-equal Intent fields—not extras—so each notification action gets a stable distinct key. At handling time I recheck auth, ownership, expiry, and idempotency. Finally, I test task dumps, verified-link state, cold/warm delivery, duplicate taps, multi-window, and process death, and I restore identifiers rather than assuming memory survived.</p></blockquote>
+
+<h2 id="stage4-uk-sources">Офіційні джерела<a aria-label="Посилання на розділ: Офіційні джерела" class="heading-anchor" href="#stage4-uk-sources">#</a></h2>
+<ul>
+<li><a href="https://developer.android.com/guide/components/activities/tasks-and-back-stack">Tasks and the back stack</a> та <a href="https://developer.android.com/guide/components/activities/recents">Document-centric tasks and Recents</a></li>
+<li><a href="https://developer.android.com/guide/navigation/custom-back/predictive-back-gesture">Predictive Back gesture</a>, <a href="https://developer.android.com/reference/android/window/OnBackInvokedDispatcher">OnBackInvokedDispatcher</a> та <a href="https://developer.android.com/guide/navigation/navigation-custom-back">AndroidX custom Back</a></li>
+<li><a href="https://developer.android.com/guide/navigation/backstack">Navigation and the back stack</a>, <a href="https://developer.android.com/guide/navigation/backstack/multi-back-stacks">Multiple back stacks</a> та <a href="https://developer.android.com/develop/ui/compose/navigation">Navigation with Compose</a></li>
+<li><a href="https://developer.android.com/guide/components/intents-filters">Intents and intent filters</a> та <a href="https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks">Unsafe deep links</a></li>
+<li><a href="https://developer.android.com/training/app-links">Android App Links</a>, <a href="https://developer.android.com/training/app-links/verify-applinks">Verify App Links</a> та <a href="https://developer.android.com/training/app-links/test-applinks">Test App Links</a></li>
+<li><a href="https://developer.android.com/reference/android/app/PendingIntent">PendingIntent API reference</a> та <a href="https://developer.android.com/privacy-and-security/risks/pending-intent">PendingIntent security risks</a></li>
+<li><a href="https://developer.android.com/develop/ui/views/notifications/navigation">Start an Activity from a notification</a> та <a href="https://developer.android.com/guide/navigation/design/deep-link">Navigation deep links</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
 <h2 id="val-vs-var-immutability">val vs var, immutability<a aria-label="Посилання на розділ: val vs var, immutability" class="heading-anchor" href="#val-vs-var-immutability">#</a></h2>
 <h3 id="питання-8">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-8">#</a></h3>
 <p>Чим <code>val</code> відрізняється від <code>var</code> і чому immutability важлива?</p>
@@ -6957,7 +7167,211 @@ fun enqueue(owner: Activity, id: EventId, raw: Any) {
 <li><a href="https://kotlinlang.org/docs/gradle-binary-compatibility-validation.html">Kotlin Gradle plugin: Binary compatibility validation</a></li>
 <li><a href="https://developer.android.com/guide/platform">Android platform architecture: DEX and ART</a> and <a href="https://developer.android.com/tools/d8">D8</a></li>
 </ul>
-</div></details><details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="en-kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+</div></details><details class="major-section" data-key="android-tasks-back-stack-deep-links-intents-pending-intent" data-title="Android tasks, back stack, deep links, intents, and PendingIntent" id="en-android-tasks-back-stack-deep-links-intents-pending-intent" open=""><summary class="major-summary"><span class="major-title">Android tasks, back stack, deep links, intents, and PendingIntent</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<h2 id="en-stage4-objective">Learning objective<a aria-label="Link to section: Learning objective" class="heading-anchor" href="#en-stage4-objective">#</a></h2>
+<p>After this stage, you should be able to predict <strong>which task and which Activity instance</strong> receives an intent, design a secure external and deep-link boundary, align the system task stack with the Navigation/Compose back stack, create a PendingIntent with intentional identity, and test cold, warm, and process-death scenarios with <code>adb</code>.</p>
+
+<h2 id="en-stage4-mental-model">Senior mental model<a aria-label="Link to section: Senior mental model" class="heading-anchor" href="#en-stage4-mental-model">#</a></h2>
+<blockquote><p><strong>Two stacks, three boundaries:</strong> a system task contains Activity instances; each host Activity can own a Navigation back stack; the process only executes components and can die without defining task identity. The trust boundaries are the incoming Intent or URI, the internal route, and the delegated capability in a PendingIntent.</p></blockquote>
+<ul>
+<li><strong>Task ≠ process:</strong> a task is a user-facing LIFO history of Activity instances in Recents; a process is a runtime container. One process can serve multiple tasks, and a task can remain as a system record after process death and later be reconstructed.</li>
+<li><strong>Activity class ≠ Activity instance:</strong> one class can have multiple instances in one or several tasks. <code>launchMode</code>, flags, affinity, and the existing stack determine reuse or creation.</li>
+<li><strong>System stack ≠ NavController stack:</strong> Back may first pop an in-Activity destination; only at the root does it finish or move the Activity/task. Design them together without conflating them.</li>
+</ul>
+
+<h2 id="en-stage4-internals">Internals: task selection, delivery, and back dispatch<a aria-label="Link to section: Internals" class="heading-anchor" href="#en-stage4-internals">#</a></h2>
+<h3 id="en-stage4-tasks-affinity">Tasks, affinity, and launch modes<a aria-label="Link to section: Tasks affinity launch modes" class="heading-anchor" href="#en-stage4-tasks-affinity">#</a></h3>
+<p>A normal <code>standard</code> launch creates an instance in the caller's task even when the Activity has a different affinity. <code>taskAffinity</code> is a hint for reparenting and task lookup under special launch policies; it is not a process name, package, or unconditional routing rule.</p>
+<table><thead><tr><th>Mechanism</th><th>Exact effect and edge case</th></tr></thead><tbody>
+<tr><td><code>standard</code></td><td>Creates a new instance on top of the current task; the same class can appear repeatedly.</td></tr>
+<tr><td><code>singleTop</code> / <code>FLAG_ACTIVITY_SINGLE_TOP</code></td><td>Reuses only a matching instance already at the top and delivers via <code>onNewIntent()</code>. A matching instance lower in the stack does not prevent creation.</td></tr>
+<tr><td><code>singleTask</code> / <code>FLAG_ACTIVITY_NEW_TASK</code> with a matching task</td><td>The system finds the task in which the Activity is or should be root, brings it forward, delivers <code>onNewIntent()</code>, and removes entries above it. <code>NEW_TASK</code> is also required when launching from a non-Activity context.</td></tr>
+<tr><td><code>singleInstancePerTask</code></td><td>The Activity can only be the task root, but separate instances can exist in separate tasks when launched with <code>NEW_DOCUMENT</code>/<code>MULTIPLE_TASK</code>.</td></tr>
+<tr><td><code>singleInstance</code></td><td>The Activity is the only member of its task; subsequent Activities launch elsewhere. This isolation often breaks expected Back and Recents UX.</td></tr>
+<tr><td><code>CLEAR_TOP</code></td><td>If the target is in the task, entries above it finish. A <code>standard</code> target is normally removed too and recreated; adding <code>SINGLE_TOP</code> preserves it and delivers <code>onNewIntent()</code>.</td></tr>
+<tr><td><code>CLEAR_TASK | NEW_TASK</code></td><td>Clears the matching task before starting the target. It suits logout/reset flows but destroys user history.</td></tr>
+<tr><td><code>REORDER_TO_FRONT</code></td><td>Moves an existing instance to the top without clearing intermediate instances; it is ignored when <code>CLEAR_TOP</code> is also supplied.</td></tr>
+</tbody></table>
+<p><code>allowTaskReparenting="true"</code> lets an Activity temporarily launched into another task move to the task matching its affinity when that task comes forward. This makes history context-dependent and requires an explicit UX decision plus Recents tests.</p>
+
+<h3 id="en-stage4-documents-multiwindow">Document-centric tasks, Recents, and multi-window<a aria-label="Link to section: Document centric tasks and multi window" class="heading-anchor" href="#en-stage4-documents-multiwindow">#</a></h3>
+<p><code>FLAG_ACTIVITY_NEW_DOCUMENT</code> (manifest: <code>documentLaunchMode</code>) models an independent document as a separate task in Recents; the Intent URI normally distinguishes documents. <code>intoExisting</code> matches a task by base-intent Component plus data URI, clears it, and delivers to its root; <code>always</code> creates a new document task; <code>never</code>/<code>none</code> prohibit or retain default reuse. <code>MULTIPLE_TASK</code> with <code>NEW_TASK</code>/<code>NEW_DOCUMENT</code> disables normal existing-task lookup and almost always needs a strong justification.</p>
+<p>In multi-window, two tasks can be visible and RESUMED at once; “the app is foreground” does not imply one active Activity. Do not store selected document or an auth redirect in a process singleton. Keep the identifier in the route/intent and durable state; use <code>SavedStateHandle</code>/<code>rememberSaveable</code> only for small reconstructible UI state.</p>
+
+<h3 id="en-stage4-back">Predictive Back and dispatcher boundaries<a aria-label="Link to section: Predictive Back boundaries" class="heading-anchor" href="#en-stage4-back">#</a></h3>
+<ul>
+<li><code>OnBackInvokedDispatcher</code> is the platform API introduced in Android 13 (API 33) for back invocation; progress callbacks for custom predictive animation belong to newer platform/AndroidX APIs. Do not register a callback permanently: it can suppress system animation and root-task behavior.</li>
+<li><code>OnBackPressedDispatcher</code> is the AndroidX compatibility and lifecycle boundary for Activities, Fragments, and Compose. <code>OnBackPressedCallback.isEnabled</code> should reflect whether the UI can currently consume Back; the most recently added enabled callback takes priority.</li>
+<li>In Compose, <code>BackHandler</code> wraps the AndroidX dispatcher. It should be composition-aware and enabled only for active transient UI or flow. Do not recursively call legacy <code>onBackPressed()</code>.</li>
+<li>Predictive Back requires the destination to be known early. A callback that decides navigation only after gesture completion cannot guarantee a correct preview. Framework/Navigation versions and target SDK determine available behavior.</li>
+</ul>
+
+<h3 id="en-stage4-navigation">Navigation/Compose back stack and restoration<a aria-label="Link to section: Navigation Compose back stack and restoration" class="heading-anchor" href="#en-stage4-navigation">#</a></h3>
+<p><code>NavController</code> stores a <code>NavBackStackEntry</code> for each destination/graph with lifecycle, arguments, <code>ViewModelStore</code>, and saved state. <code>popUpTo</code> edits history; <code>inclusive</code> decides whether to remove the target; <code>launchSingleTop</code> avoids a second copy only at the top; <code>saveState</code> + <code>restoreState</code> can preserve and restore popped destination state for multiple back stacks. They do not turn repository data into durable storage.</p>
+<pre><code class="language-kotlin">navController.navigate(Product(productId)) {
+    launchSingleTop = true
+    restoreState = true
+    popUpTo(navController.graph.findStartDestination().id) {
+        saveState = true
+    }
+}</code></pre>
+<p>Pass stable IDs rather than large objects. After process death, graph/back-stack restoration can reconstruct the route and small saved state, but network data must be loaded again. A route serializer/schema is a compatibility contract; changes to argument names or types need defaults or migration.</p>
+
+<h3 id="en-stage4-intents">Explicit/implicit intents, resolution, and the exported boundary<a aria-label="Link to section: Intents resolution and exported boundary" class="heading-anchor" href="#en-stage4-intents">#</a></h3>
+<p>An explicit Intent names a component and is the default for in-app navigation. An implicit Intent describes action, data, and category; Package Manager compares filters by action, data (scheme/host/port/path/MIME), and category. Activity implicit starts require a filter with <code>CATEGORY_DEFAULT</code>; no match throws <code>ActivityNotFoundException</code>, while multiple matches can show a chooser or default handler.</p>
+<p><code>android:exported</code> controls whether other apps can directly start a component; components with an intent filter must set it explicitly on modern targets. Exported means reachable, not authorised. Sensitive operations still require permissions, caller/session checks, and validation of every extra/URI. An intent filter is not a schema validator.</p>
+<pre><code class="language-kotlin">fun parseProduct(uri: Uri): ProductId? {
+    if (uri.scheme != "https" || uri.host != "shop.example.com") return null
+    if (uri.pathSegments.size != 2 || uri.pathSegments[0] != "p") return null
+    val raw = uri.pathSegments[1]
+    if (!raw.matches(Regex("[A-Za-z0-9_-]{1,64}"))) return null
+    return ProductId(raw)
+}</code></pre>
+<p>Normalise and allowlist scheme, canonical host, path shape, length, encoding, and business authorisation. Never trust a query parameter as a return URL, file path, SQL key, or WebView URL. Reject malformed, duplicate, or conflicting parameters fail-closed.</p>
+
+<h3 id="en-stage4-applinks">Verified App Links and one deep-link router<a aria-label="Link to section: Verified App Links and deep link router" class="heading-anchor" href="#en-stage4-applinks">#</a></h3>
+<p>An Android App Link is an HTTPS deep link with <code>android:autoVerify="true"</code> and a successful app-to-website association through <code>https://host/.well-known/assetlinks.json</code> containing package and signing-certificate fingerprints. Verification provides preferred routing for a verified domain; it does not validate payload, authorise the user, or guarantee opening against user settings. State can depend on install/update, network, redirects, and domain settings.</p>
+<p>Use one ingress/router: parse the untrusted URI → canonical typed command → authentication/entitlement gate → idempotent navigation. On a <strong>cold start</strong>, the intent enters through creation and routing waits for graph/session readiness; on a <strong>warm start</strong>, a reused Activity gets a new Intent in <code>onNewIntent()</code>, which must be forwarded explicitly. Do not handle one delivery in both the Activity and a composable effect: an event ID or saved handled token plus <code>launchSingleTop</code>/<code>popUpTo</code> prevents duplicate destinations.</p>
+
+<h3 id="en-stage4-pendingintent">PendingIntent: identity, mutability, replay, and security<a aria-label="Link to section: PendingIntent identity mutability security" class="heading-anchor" href="#en-stage4-pendingintent">#</a></h3>
+<p>A <code>PendingIntent</code> is a transferable capability: another process or the system can later execute an operation with the creator's identity and permissions, even after the creator process dies. The system-service token, not your Intent object, persists.</p>
+<ul>
+<li><strong>Identity:</strong> operation type (<code>getActivity/getBroadcast/getService</code>), creator package/user, requestCode, and Intent fields compared by <code>Intent.filterEquals()</code> (action, data, type, identifier, component, categories). <strong>Extras do not determine identity.</strong></li>
+<li><code>FLAG_UPDATE_CURRENT</code> retains the token and replaces extras in its current Intent; the creator can update even an immutable PendingIntent. An identity collision can therefore change older notifications.</li>
+<li><code>FLAG_CANCEL_CURRENT</code> cancels the old token and creates a new one; <code>FLAG_NO_CREATE</code> only looks up an existing token; <code>FLAG_ONE_SHOT</code> permits one successful send. Explicit <code>cancel()</code> makes all old copies unusable.</li>
+<li><code>FLAG_IMMUTABLE</code> is the default security choice: a sender cannot fill in and mutate the wrapped Intent. Use <code>FLAG_MUTABLE</code> only for a specific platform feature such as inline reply or bubbles; then constrain explicit component/package, action, and data and leave no unfilled fields.</li>
+<li>A PendingIntent can be replayed until cancelled, one-shot, or invalidated. Even an immutable token is not single-use or fresh authorisation: recheck authentication, resource ownership, expiry, and idempotency while handling.</li>
+</ul>
+<pre><code class="language-kotlin">val intent = Intent(context, MainActivity::class.java).apply {
+    action = "com.example.OPEN_ORDER"
+    data = "myapp://orders/$orderId".toUri() // stable identity per order
+}
+val contentIntent = PendingIntent.getActivity(
+    context,
+    orderId.stableRequestCode(),
+    intent,
+    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+)</code></pre>
+
+<h3 id="en-stage4-notifications">Notification/deep-link patterns<a aria-label="Link to section: Notification deep link patterns" class="heading-anchor" href="#en-stage4-notifications">#</a></h3>
+<p>For a regular destination, a notification should open the expected hierarchy using manifest parent metadata plus <code>TaskStackBuilder</code>, or a Navigation deep-link PendingIntent. For a special transient Activity, deliberately create a separate task (<code>NEW_TASK | CLEAR_TASK</code>, optionally excluded from Recents). Do not mix these patterns accidentally. Every action needs distinct PendingIntent identity; narrowly target a mutable inline-reply PendingIntent to a receiver or service.</p>
+
+<h2 id="en-stage4-guarantees">Guarantees versus non-guarantees<a aria-label="Link to section: Guarantees versus non guarantees" class="heading-anchor" href="#en-stage4-guarantees">#</a></h2>
+<table><thead><tr><th>Safe claim</th><th>Do not promise</th></tr></thead><tbody>
+<tr><td><code>singleTop</code> reuses a matching top instance.</td><td>The task always has only one instance of that Activity.</td></tr>
+<tr><td>A verified App Link establishes the configured website↔app association for a domain.</td><td>The URI is safe, the user is authorised, or settings can never route elsewhere.</td></tr>
+<tr><td>An immutable PendingIntent blocks sender fill-in mutation.</td><td>The token is single-use, cannot be replayed, or remains authorised.</td></tr>
+<tr><td>Saved state can restore a small navigation/UI descriptor.</td><td>The process, an in-memory singleton, socket, or repository cache survives death.</td></tr>
+<tr><td>The dispatcher prioritises enabled back callbacks.</td><td>A custom callback automatically gives predictive animation on every API/library version.</td></tr>
+</tbody></table>
+
+<h2 id="en-stage4-version-sensitive">Version-sensitive behavior<a aria-label="Link to section: Version sensitive behavior" class="heading-anchor" href="#en-stage4-version-sensitive">#</a></h2>
+<ul>
+<li>Android 12 / target API 31+: every PendingIntent must explicitly specify mutability; newer platforms further restrict unsafe mutable implicit PendingIntents.</li>
+<li>Android 12 changed default verified web-link handling: generic web intents directly open an app only for approved/verified domains. Inspect domain state.</li>
+<li>Android 13 (API 33) introduced <code>OnBackInvokedDispatcher</code>; predictive Back rollout, manifest opt-in/out, target-SDK defaults, and AndroidX support changed across Android 13–15+. Check current platform and library documentation.</li>
+<li>Implicit-intent matching and security restrictions depend on target SDK. From Android 13, a receiving exported component generally needs a matching filter for an intent sent by another app, subject to documented exceptions.</li>
+<li>Navigation state and deep-link behavior depend on Navigation version; component APIs support multiple back stacks from 2.4+, while type-safe Compose routes are newer. Pin versions and regression-test them.</li>
+</ul>
+
+<h2 id="en-stage4-tradeoffs">Trade-offs and failure modes<a aria-label="Link to section: Trade offs and failure modes" class="heading-anchor" href="#en-stage4-tradeoffs">#</a></h2>
+<ul>
+<li>Manifest launch modes impose global behavior; intent flags are call-site policy. Aggressive <code>singleTask/CLEAR_TOP</code> reduces duplicates but can silently erase user history.</li>
+<li>A separate task per document improves Recents and multi-window but multiplies simultaneous owners and restoration cases.</li>
+<li>One external router centralises validation and deduplication. Multiple Activity filters can seem locally simpler but drift in auth and stack semantics.</li>
+<li><code>FLAG_UPDATE_CURRENT</code> is convenient, but an identity collision updates the wrong notification's extras. A random requestCode hides rather than models identity.</li>
+<li>Navigating to a privileged screen before auth finishes causes flashes/leaks or redirect loops. Preserve a canonical pending command, finish auth, authorise again, and navigate once.</li>
+</ul>
+
+<h2 id="en-stage4-production-scenario">Production scenario: notification → verified order link<a aria-label="Link to section: Production scenario" class="heading-anchor" href="#en-stage4-production-scenario">#</a></h2>
+<p><strong>Hypothetically:</strong> a notification and an HTTPS link open order detail. MainActivity is <code>singleTop</code>; both sources submit a typed <code>OpenOrder(id, deliveryId)</code> to one router. The router allowlists host/path, waits for graph restoration, checks session and entitlement, then calls <code>navigate(Order(id)) { launchSingleTop = true }</code>. A consumed <code>deliveryId</code> is stored in <code>SavedStateHandle</code> so recreation does not duplicate the route.</p>
+<p>The notification PendingIntent targets an explicit Activity, is immutable, and uses action/data/requestCode derived from the order for identity. Cold start, warm <code>onNewIntent()</code>, second tap, Back, logout, process kill, and two multi-window tasks are tested separately. Durable order data reloads from the repository; saved state contains only ID and navigation intent.</p>
+
+<h2 id="en-stage4-review-trap">Code-review/debugging trap<a aria-label="Link to section: Code review debugging trap" class="heading-anchor" href="#en-stage4-review-trap">#</a></h2>
+<pre><code class="language-kotlin">// Trap: all orders share identity; mutable implicit capability; double routing.
+val pi = PendingIntent.getActivity(
+    context, 0,
+    Intent(Intent.ACTION_VIEW, uri),
+    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+)
+// Activity routes in onCreate/onNewIntent, while a composable LaunchedEffect
+// observes the same intent and navigates again.</code></pre>
+<p>Review whether the Intent is explicit/verified and the URI validated; whether extras are mistaken for identity; why mutability is required; whether every notification action has a distinct key; where one owner marks a delivery consumed; and what happens on warm start and process death. Fix with an explicit component, immutable token, stable action/data/requestCode, one lifecycle-aware router, and an idempotent command.</p>
+
+<h2 id="en-stage4-adb">Testing matrix with adb<a aria-label="Link to section: Testing matrix with adb" class="heading-anchor" href="#en-stage4-adb">#</a></h2>
+<pre><code class="language-bash"># Cold deep link; -W reports launch, -S force-stops first.
+adb shell am start -W -S -a android.intent.action.VIEW \
+  -c android.intent.category.BROWSABLE \
+  -d 'https://shop.example.com/p/ORDER_42' com.example.app
+
+# Warm delivery: run once, navigate elsewhere, then repeat without -S.
+adb shell am start -W -a android.intent.action.VIEW \
+  -d 'https://shop.example.com/p/ORDER_42' com.example.app
+
+# Inspect tasks/activities and App Links verification state.
+adb shell dumpsys activity activities
+adb shell pm get-app-links com.example.app
+adb shell pm verify-app-links --re-verify com.example.app
+
+# Process-death approximation while the task remains, then relaunch.
+adb shell am kill com.example.app
+
+# Explicit flag scenarios (replace the component with the test Activity).
+adb shell am start -W -n com.example.app/.MainActivity \
+  -f 0x24000000</code></pre>
+<p>Assert destination sequence, task ID/component order, <code>onCreate</code> versus <code>onNewIntent</code>, exactly one navigation event, Back destination, unauthorised/error route, malformed URI rejection, and restored state. Add instrumentation with <code>TestNavHostController</code>/Compose UI plus device tests; <code>adb</code> alone does not prove in-app state.</p>
+
+<h2 id="en-stage4-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice Q and A" class="heading-anchor" href="#en-stage4-likely-qa">#</a></h2>
+<p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
+<ol>
+<li><strong>Are task, process, and Activity instance the same?</strong> No. A task is UI history, a process is an execution container, and an instance is one object/lifecycle. Their lifetimes and cardinality differ.</li>
+<li><strong>Why does <code>singleTop</code> not remove duplicates?</strong> It reuses only the top instance; a matching instance lower in the stack does not block creation.</li>
+<li><strong>Does <code>CLEAR_TOP</code> always call <code>onNewIntent()</code>?</strong> No. A standard target can be removed and recreated; <code>SINGLE_TOP</code> or a compatible launch mode causes reuse.</li>
+<li><strong>When does taskAffinity matter?</strong> Mostly with <code>NEW_TASK</code>, reparenting, and task/document policies; a normal start enters the caller's task.</li>
+<li><strong>How does the Navigation stack relate to the system stack?</strong> NavController owns destinations inside a host Activity; a system task owns Activity instances. A root Nav pop delegates Back to Activity/task behavior.</li>
+<li><strong>What does a verified App Link add?</strong> Domain association enables direct HTTPS routing. It is not payload validation or authorisation.</li>
+<li><strong>How do you avoid duplicate deep-link navigation?</strong> Use one ingress/router, delivery identity and consumption, the same cold/warm pipeline, and an idempotent <code>launchSingleTop/popUpTo</code> policy.</li>
+<li><strong>What determines PendingIntent identity?</strong> Operation/creator, requestCode, and filter-equal Intent fields; extras are excluded, so collisions can update the wrong token.</li>
+<li><strong>Does immutable mean one-shot?</strong> No. Immutable blocks sender mutation; one-shot/cancel and idempotent authorised handling control replay.</li>
+<li><strong>What do you test after process death?</strong> Task/Nav route and small descriptor restoration, data reload, no singleton dependency, renewed auth/authorisation, and one delivery.</li>
+</ol>
+
+<h2 id="en-stage4-followups">4 senior follow-ups with answers<a aria-label="Link to section: 4 senior follow ups" class="heading-anchor" href="#en-stage4-followups">#</a></h2>
+<ol>
+<li><strong>Two notifications use requestCode 0 and different extras but both open the latest order. Why?</strong> Extras are not PendingIntent identity; <code>UPDATE_CURRENT</code> updated one token. Use stable distinct data/action/requestCode.</li>
+<li><strong>A warm App Link is sometimes ignored.</strong> The creation path probably handles <code>intent</code>, while <code>onNewIntent()</code> does not forward the new Intent to the router and <code>singleTop</code> preserves the Activity.</li>
+<li><strong>Predictive preview shows Home but the callback opens a dialog.</strong> The handler is enabled incorrectly or decides too late; the back destination must be known during the gesture. Model the dialog in Navigation or use a progress-aware API.</li>
+<li><strong>One order is open in two windows and a singleton “currentOrder” becomes confused.</strong> Process state is not task-local. Each task's route/ViewModel owner keeps its own ID; the repository caches by ID rather than a global selection.</li>
+</ol>
+
+<h2 id="en-stage4-self-check">5 self-check questions without answers<a aria-label="Link to section: 5 self check questions without answers" class="heading-anchor" href="#en-stage4-self-check">#</a></h2>
+<ol>
+<li>Draw the system task stack and NavController stack for a cold link, a second tap, and three Back operations.</li>
+<li>Which exact Intent fields make every notification action unique?</li>
+<li>Where does a URI become a validated typed command, and where is authorisation checked again?</li>
+<li>Which state is restored after process death, and which data must be reloaded?</li>
+<li>Which back callbacks are enabled in every UI state, and are they compatible with predictive Back?</li>
+</ol>
+
+<h2 id="en-stage4-english-skeletons">Interview-ready English answer skeletons<a aria-label="Link to section: Interview ready English answer skeletons" class="heading-anchor" href="#en-stage4-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you design Android task, deep-link, Back, and PendingIntent behavior safely?</em></p>
+<h3 id="en-stage4-answer-30">~30-second answer<a aria-label="Link to section: 30 second answer" class="heading-anchor" href="#en-stage4-answer-30">#</a></h3>
+<blockquote><p>I separate the system task stack from the in-activity Navigation stack and from the app process. I use default launch behavior unless the product requires a specific task model, route every external intent through one validated and authorised typed command, and handle cold and warm delivery idempotently. PendingIntents are explicit and immutable by default, with stable distinct identity because extras do not participate in identity. I verify Back, App Links, notification taps, multi-window, and process death on device.</p></blockquote>
+<h3 id="en-stage4-answer-2min">~2-minute answer<a aria-label="Link to section: 2 minute answer" class="heading-anchor" href="#en-stage4-answer-2min">#</a></h3>
+<blockquote><p>I start with three separate lifetimes: a task is a user-facing stack of Activity instances, a process is an execution container that can die, and a NavController owns destinations inside a host Activity. Launch modes and flags are stack transformations, not singleton guarantees. For example, singleTop only reuses the top instance, while CLEAR_TOP can remove everything above a target and may recreate a standard target.</p><p>External intents are an untrusted boundary. I prefer explicit intents internally. For web entry I use verified HTTPS App Links, but still allowlist and parse the URI into a typed command, then check authentication and resource authorisation. One router handles both onCreate and onNewIntent so cold and warm starts have the same semantics and a delivery is consumed only once.</p><p>Back is owned by the narrowest currently enabled handler. AndroidX OnBackPressedDispatcher integrates lifecycle owners and Compose, while platform predictive Back requires the destination to be known early enough for preview. I avoid permanently intercepting root Back.</p><p>A PendingIntent is a replayable capability executed with its creator's identity. I make it explicit and immutable unless a documented feature requires mutation. Its identity uses operation type, request code, and filter-equal Intent fields—not extras—so each notification action gets a stable distinct key. At handling time I recheck auth, ownership, expiry, and idempotency. Finally, I test task dumps, verified-link state, cold/warm delivery, duplicate taps, multi-window, and process death, and I restore identifiers rather than assuming memory survived.</p></blockquote>
+
+<h2 id="en-stage4-sources">Official sources<a aria-label="Link to section: Official sources" class="heading-anchor" href="#en-stage4-sources">#</a></h2>
+<ul>
+<li><a href="https://developer.android.com/guide/components/activities/tasks-and-back-stack">Tasks and the back stack</a> and <a href="https://developer.android.com/guide/components/activities/recents">Document-centric tasks and Recents</a></li>
+<li><a href="https://developer.android.com/guide/navigation/custom-back/predictive-back-gesture">Predictive Back gesture</a>, <a href="https://developer.android.com/reference/android/window/OnBackInvokedDispatcher">OnBackInvokedDispatcher</a>, and <a href="https://developer.android.com/guide/navigation/navigation-custom-back">AndroidX custom Back</a></li>
+<li><a href="https://developer.android.com/guide/navigation/backstack">Navigation and the back stack</a>, <a href="https://developer.android.com/guide/navigation/backstack/multi-back-stacks">Multiple back stacks</a>, and <a href="https://developer.android.com/develop/ui/compose/navigation">Navigation with Compose</a></li>
+<li><a href="https://developer.android.com/guide/components/intents-filters">Intents and intent filters</a> and <a href="https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks">Unsafe deep links</a></li>
+<li><a href="https://developer.android.com/training/app-links">Android App Links</a>, <a href="https://developer.android.com/training/app-links/verify-applinks">Verify App Links</a>, and <a href="https://developer.android.com/training/app-links/test-applinks">Test App Links</a></li>
+<li><a href="https://developer.android.com/reference/android/app/PendingIntent">PendingIntent API reference</a> and <a href="https://developer.android.com/privacy-and-security/risks/pending-intent">PendingIntent security risks</a></li>
+<li><a href="https://developer.android.com/develop/ui/views/notifications/navigation">Start an Activity from a notification</a> and <a href="https://developer.android.com/guide/navigation/design/deep-link">Navigation deep links</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="en-kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
 <h2 id="en-val-vs-var-and-immutability"><code>val</code> vs <code>var</code> and immutability<a aria-label="Link to section: val vs var and immutability" class="heading-anchor" href="#en-val-vs-var-and-immutability">#</a></h2>
 <p><code>val</code> means the reference is read-only; it does not guarantee deep immutability. <code>var</code> means the reference can be reassigned. In Android UI state, immutability makes state predictable and easier to test.</p>
 <pre><code class="language-kotlin">data class CheckoutUiState(
