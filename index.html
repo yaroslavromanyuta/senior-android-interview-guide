@@ -468,6 +468,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="android-process-lifecycle-state-restoration" href="#android-process-lifecycle-state-restoration">Життєвий цикл процесу Android і відновлення стану</a>
 </li>
 <li class="toc-major">
+<a data-target="kotlin-type-system-state-modeling" href="#kotlin-type-system-state-modeling">Kotlin: система типів і моделювання стану</a>
+</li>
+<li class="toc-major">
 <a data-target="kotlin-for-android" href="#kotlin-for-android">Kotlin for Android</a>
 <ol class="toc-children">
 <li><a data-target="val-vs-var-immutability" href="#val-vs-var-immutability">val vs var, immutability</a></li>
@@ -747,6 +750,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </li>
 <li class="toc-major">
 <a data-target="en-android-process-lifecycle-state-restoration" href="#en-android-process-lifecycle-state-restoration">Android process lifecycle and state restoration</a>
+</li>
+<li class="toc-major">
+<a data-target="en-kotlin-type-system-state-modeling" href="#en-kotlin-type-system-state-modeling">Kotlin: type system and state modelling</a>
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-for-android" href="#en-kotlin-for-android">Kotlin for Android</a>
@@ -1536,6 +1542,201 @@ viewLifecycleOwner.lifecycleScope.launch {
 <li><a href="https://developer.android.com/reference/androidx/test/core/app/ActivityScenario">ActivityScenario API reference</a></li>
 <li><a href="https://developer.android.com/develop/ui/compose/testing/common-patterns">Common patterns in Compose testing</a></li>
 <li><a href="https://developer.android.com/codelabs/android-lifecycles">Android lifecycle-aware components codelab</a></li>
+</ul>
+</div></details><details class="major-section" data-key="kotlin-type-system-state-modeling" data-title="Kotlin: система типів і моделювання стану" id="kotlin-type-system-state-modeling" open=""><summary class="major-summary"><span class="major-title">Kotlin: система типів і моделювання стану</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<h2 id="stage2-uk-objective">Мета й причинна карта<a aria-label="Посилання на розділ: Мета й причинна карта" class="heading-anchor" href="#stage2-uk-objective">#</a></h2>
+<p>Мета — не вивчити енциклопедію синтаксису, а навчитися перетворювати вимоги на перевірювану модель: <strong>інваріанти домену й межі довіри → типи → лише валідні стани → exhaustive handling → immutable snapshots → передбачувана еволюція й тести</strong>.</p>
+<blockquote><p><strong>Senior-теза:</strong> де це практично, типи мають робити невалідні стани непредставними. Але типізація не скасовує runtime validation на недовірених межах: Java, JSON, БД, IPC та сервер можуть порушити очікування.</p></blockquote>
+<table><thead><tr><th>Питання</th><th>Інструмент</th><th>Що отримуємо</th></tr></thead><tbody>
+<tr><td>Чи значення може бути відсутнім?</td><td><code>T</code> проти <code>T?</code>, boundary adapter</td><td>Явний контракт і локальна валідація.</td></tr>
+<tr><td>Які стани взаємовиключні?</td><td><code>enum</code>, <code>sealed</code>, value/domain types</td><td>Менше Boolean/nullable soup, exhaustive <code>when</code>.</td></tr>
+<tr><td>Як state змінюється?</td><td><code>data class</code>, immutable reduction</td><td>Нові snapshots, прості transition tests.</td></tr>
+<tr><td>Як API безпечно узагальнюється?</td><td>Variance, projections, <code>Nothing</code>, reified boundary tools</td><td>Коректні producer/consumer контракти без небезпечних cast-ів.</td></tr>
+</tbody></table>
+
+<h2 id="stage2-uk-nullability">Nullability і межі довіри<a aria-label="Посилання на розділ: Nullability і межі довіри" class="heading-anchor" href="#stage2-uk-nullability">#</a></h2>
+<p><code>T</code> означає, що Kotlin-код очікує значення; <code>T?</code> моделює можливу відсутність. Safe-call <code>?.</code> продовжує nullable-ланцюжок, а Elvis <code>?:</code> задає fallback або early return/throw. Не розмазуйте nullable DTO по домену: перевірте його один раз в adapter-і та поверніть явний success/failure.</p>
+<pre><code class="language-kotlin">fun JavaProfileDto.toDomain(): Profile {
+    val rawId = requireNotNull(id) { "profile.id is required" }
+    val displayName = name?.trim()?.takeIf(String::isNotEmpty)
+        ?: throw IllegalArgumentException("profile.name is required")
+    return Profile(ProfileId(rawId), displayName, tags.orEmpty().toList())
+}
+
+class Session(private var token: String?) {
+    fun authenticatedToken(): String =
+        checkNotNull(token) { "Session is not authenticated" }
+}</code></pre>
+<p><code>requireNotNull</code> доречний для невалідного аргументу і кидає <code>IllegalArgumentException</code>; <code>checkNotNull</code> — для порушеного стану об’єкта й кидає <code>IllegalStateException</code>. <code>value!!</code> — локальне твердження «тут не null», яке при помилці дає NPE; воно не є доказом інваріанта і не додає boundary validation.</p>
+<p>Офіційно можливі escape hatches для NPE у Kotlin: явний <code>throw NullPointerException()</code>; <code>!!</code>; витік неініціалізованого <code>this</code>; виклик open member під час конструювання base class; Java/platform types; generic pollution, коли Java або інший зовнішній код кладе <code>null</code> у структуру, яку Kotlin бачить як non-null. <code>lateinit</code> теж не дає compile-time гарантії ініціалізації: ранній доступ кидає <code>UninitializedPropertyAccessException</code>.</p>
+<p>Platform type на кшталт <code>String!</code> — гнучкий тип, який Kotlin-компілятор бачить із Java, але який не можна явно записати в Kotlin source. На межі надайте явний <code>String?</code> або <code>String</code> контракт, використовуйте коректні Java nullability annotations, і все одно валідовуйте дані в adapter-і, якщо джерело недовірене.</p>
+<p>Smart cast працює, лише коли компілятор може довести стабільність значення між перевіркою та використанням. Mutable, open/custom-getter або потенційно змінювана з іншої coroutine/thread властивість може не smart-cast-итися; зробіть локальний snapshot: <code>val local = holder.value</code>, перевірте його і працюйте з ним.</p>
+
+<h2 id="stage2-uk-valid-states">Моделювання валідних станів<a aria-label="Посилання на розділ: Моделювання валідних станів" class="heading-anchor" href="#stage2-uk-valid-states">#</a></h2>
+<p>Комбінація <code>isLoading</code>, <code>hasError</code>, nullable data і nullable message допускає суперечності. Спочатку назвіть стани та переходи. <code>enum class</code> — скінченний набір singleton-констант одного типу; кожна константа може мати властивості, але не окремий payload конкретного випадку. <code>sealed interface/class</code> дозволяє різні варіанти з різними даними.</p>
+<pre><code class="language-kotlin">enum class SortOrder { NAME, RECENT }
+
+sealed interface InitialProfileState {
+    data object Loading : InitialProfileState
+    data class Content(val profile: Profile) : InitialProfileState
+    data class Error(val error: UiError) : InitialProfileState
+}
+
+fun title(state: InitialProfileState): String = when (state) {
+    InitialProfileState.Loading -> "Loading"
+    is InitialProfileState.Content -> state.profile.name
+    is InitialProfileState.Error -> "Try again"
+}</code></pre>
+<p><code>when</code> може бути exhaustive без <code>else</code>, коли compiler знає всі прямі варіанти. Прямі subclasses sealed-типу обмежені тим самим package і module та відомі compiler-у. Водночас дозволений прямий subclass, який сам не <code>sealed</code>, може бути <code>open</code> і мати нові непрямі subclasses поза цим закритим набором.</p>
+<p><code>sealed</code> — compile-time exhaustiveness для ієрархії коду, а не доказ, що remote/server значення валідне. Невідомий JSON discriminator або нове enum-подібне поле треба обробити в serializer/adapter як unknown, fallback чи помилку відповідно до product contract.</p>
+
+<h2 id="stage2-uk-data-immutability">Data classes та immutability<a aria-label="Посилання на розділ: Data classes та immutability" class="heading-anchor" href="#stage2-uk-data-immutability">#</a></h2>
+<p>Згенеровані <code>equals/hashCode/toString/componentN/copy</code> data class беруть лише властивості primary constructor. Властивості в body класу в ці операції не входять. Тому прихований mutable body-state може змінитися, хоча equality лишиться тією самою.</p>
+<pre><code class="language-kotlin">data class User(val id: ProfileId, val name: String) {
+    var debugLabel: String = "" // excluded from generated equality and copy
+}</code></pre>
+<p><code>copy()</code> — shallow: nested objects і mutable collections лишаються тими самими references. <code>val</code> забороняє переприсвоїти reference, але не робить об’єкт deeply immutable. Kotlin <code>List</code> є read-only interface, а не гарантією persistent/deep immutability: underlying list або її елементи можуть мутуватися через інший alias.</p>
+<p>На boundary <code>incoming.toList()</code> робить defensive structural snapshot списку, але не deep-copy елементів. Для UI snapshots уникайте <code>var</code> і mutable collections; persistent immutable collections можуть дати структурне sharing та ефективні оновлення, але додають library/API cost. Обирайте після оцінки розміру даних і частоти updates.</p>
+
+<h2 id="stage2-uk-state-shape">Форма UI state: initial load не дорівнює refresh<a aria-label="Посилання на розділ: Форма UI state" class="heading-anchor" href="#stage2-uk-state-shape">#</a></h2>
+<p>Єдиний sealed <code>Loading/Content/Error</code> добре описує взаємовиключні початкові стани. Для refresh він часто невдалий: перехід із <code>Content</code> у <code>Loading</code> викидає stale content і спричиняє full-screen flicker. Коли content може лишатися видимим, моделюйте orthogonal metadata, але зафіксуйте інваріанти.</p>
+<pre><code class="language-kotlin">sealed interface UiError {
+    data class Message(val text: String) : UiError
+}
+
+data class Profile(val id: ProfileId, val name: String, val tags: List&lt;String&gt;)
+
+data class ProfileUiState(
+    val content: Profile? = null,
+    val isInitialLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
+    val blockingError: UiError? = null,
+    val nonBlockingError: UiError? = null,
+) {
+    init {
+        require(!(isInitialLoading && isRefreshing))
+        require(!isInitialLoading || content == null)
+        require(!isRefreshing || content != null)
+        require(blockingError == null || content == null)
+        require(nonBlockingError == null || content != null)
+    }
+}
+
+fun ProfileUiState.refreshStarted(): ProfileUiState =
+    copy(isInitialLoading = content == null, isRefreshing = content != null,
+         blockingError = null, nonBlockingError = null)
+
+fun ProfileUiState.refreshFailed(error: UiError): ProfileUiState =
+    if (content == null) copy(isInitialLoading = false, blockingError = error)
+    else copy(isRefreshing = false, nonBlockingError = error)</code></pre>
+<p>Reducers/factories мають бути єдиним шляхом переходу, щоб callers не складали суперечливі flags. Альтернатива — sealed outer state для <code>InitialLoading</code>/<code>BlockingError</code>/<code>Ready(content, refresh)</code>; вона сильніше кодує фази, але додає nesting і mapping.</p>
+<p><strong>Durable render state</strong> описує те, що UI має відтворити після повторного спостереження. Toast, navigation чи одноразовий focus request — ефекти, а не довготривалий snapshot. Тут важлива семантична межа; delivery mechanics Flow/Channel і їх гарантії належать наступним етапам.</p>
+
+<h2 id="stage2-uk-variance">Variance, projections і <code>Nothing</code><a aria-label="Посилання на розділ: Variance" class="heading-anchor" href="#stage2-uk-variance">#</a></h2>
+<p>Generic типи за замовчуванням invariant: хоча <code>Dog : Animal</code>, <code>MutableList&lt;Dog&gt;</code> не є <code>MutableList&lt;Animal&gt;</code>, бо інакше caller міг би додати <code>Cat</code>. Правило PECS у Kotlin: producer — <code>out</code>, consumer — <code>in</code>.</p>
+<pre><code class="language-kotlin">interface Source&lt;out T&gt; { fun read(): T }
+interface Sink&lt;in T&gt; { fun write(value: T) }
+
+fun renderAnimals(source: Source&lt;Animal&gt;) { /* reads only */ }
+fun sendDogs(target: Sink&lt;Dog&gt;, dogs: List&lt;Dog&gt;) =
+    dogs.forEach(target::write)
+
+// Android boundary: adapter can bind Dog rows, while a sink of Animal accepts them.
+fun bindRows(rows: List&lt;out Animal&gt;, analytics: Sink&lt;in Dog&gt;) { /* ... */ }
+
+fun printUnknown(items: List&lt;*>) {
+    val first: Any? = items.firstOrNull() // element type is safely unknown
+}</code></pre>
+<p>Declaration-site <code>out/in</code> задає variance для всього типу; use-site projection <code>MutableList&lt;out Animal&gt;</code> або <code>Sink&lt;in Dog&gt;</code> обмежує конкретне використання. <code>*</code> означає «безпечний невідомий type argument», не просто <code>Any?</code>: дозволені операції залежать від declaration variance, а запис довільного значення зазвичай заборонений. <code>Nothing</code> не має значень і корисний для impossible outcomes та covariant <code>emptyList()</code>/<code>Result.Failure</code>, які можуть підставлятися без вигаданого payload.</p>
+
+<h2 id="stage2-uk-value-classes">Value classes і domain IDs<a aria-label="Посилання на розділ: Value classes" class="heading-anchor" href="#stage2-uk-value-classes">#</a></h2>
+<pre><code class="language-kotlin">@JvmInline
+value class ProfileId(val value: String) {
+    init { require(value.isNotBlank()) { "ProfileId must not be blank" } }
+}
+
+fun loadProfile(id: ProfileId) { /* cannot swap with OrderId */ }</code></pre>
+<p>Value class прибирає primitive obsession: <code>ProfileId</code> і <code>OrderId</code> більше не взаємозамінні <code>String</code>. <code>init</code> перевіряє runtime input, але не довіряйте зовнішньому DTO до construction. Не обіцяйте «нуль allocations»: boxing можливий для nullable, generic та interface usage. Referential equality <code>===</code> для value class не має корисної семантики й заборонена; орієнтуйтеся на value equality.</p>
+<p>На JVM functions із value-class parameters зазвичай name-mangle-яться, щоб уникати signature clashes. Це ускладнює Java виклики та reflection/framework interop; для public Java API може знадобитися явний bridge з underlying type. Перевіряйте також serialization contract і hot-path boxing.</p>
+
+<h2 id="stage2-uk-reified">Коротка boundary-нота: inline/reified<a aria-label="Посилання на розділ: inline reified" class="heading-anchor" href="#stage2-uk-reified">#</a></h2>
+<pre><code class="language-kotlin">inline fun &lt;reified T&gt; Any?.isInstanceOf(): Boolean = this is T
+
+val looksLikeStringList = listOf("a").isInstanceOf&lt;List&lt;String&gt;&gt;()
+// Runtime check proves List&lt;*&gt;, not every nested element is String.</code></pre>
+<p>Через JVM erasure звичайний type parameter не можна перевірити як <code>value is T</code>. <code>inline reified</code> підставляє type в call site і дозволяє такі boundary helpers, але не відновлює erased nested arguments на кшталт <code>List&lt;String&gt;</code>. Trade-offs: duplicated bytecode/code size, обмеження public inline API та незручний Java interop. Це точковий інструмент, не заміна schema validation.</p>
+
+<h2 id="stage2-uk-likely-qa">10 ймовірних практичних Q&amp;A<a aria-label="Посилання на розділ: 10 ймовірних практичних Q and A" class="heading-anchor" href="#stage2-uk-likely-qa">#</a></h2>
+<p><em>Це ймовірні питання для практики, а не підтверджений чи гарантований список співбесіди.</em></p>
+<ol>
+<li><strong>Чи можливий NPE у Kotlin?</strong> Так: <code>!!</code>, явний throw, initialization leaks/open calls, platform types і generic pollution із Java лишають escape hatches. Null-safety зменшує простір помилок, але не герметизує зовнішні межі.</li>
+<li><strong>Що таке platform type?</strong> Це flexible, non-denotable Kotlin view Java-типу з невідомою nullability. У своєму API призначте явний nullable/non-null тип, додайте annotations на Java стороні та перевірте недовірене значення в adapter-і.</li>
+<li><strong><code>!!</code> чи validation?</strong> <code>!!</code> — локальний assertion з NPE. Для argument contract використовуйте <code>requireNotNull</code>, для object state — <code>checkNotNull</code>, а для очікувано поганого user/server input часто краще typed mapping result, а не crash.</li>
+<li><strong>Sealed чи enum?</strong> Enum — singleton choices одного типу; sealed variants можуть нести різні payloads і підтримують exhaustive <code>when</code>. Sealed не валідовує невідомі remote values, а API evolution новим subtype змушує downstream recompilation/handling.</li>
+<li><strong>Що саме копіює та порівнює data class?</strong> Generated operations бачать лише primary-constructor properties; <code>copy()</code> shallow і ділить nested mutable references. Body properties виключені, тому це слід врахувати для equality, caches і tests.</li>
+<li><strong>Read-only <code>List</code> означає immutable?</strong> Ні. Інтерфейс не дозволяє mutation через цей reference, але underlying object/елементи можуть змінитися через alias. <code>toList()</code> дає shallow snapshot; persistent collections — сильніша, але дорожча API-залежність.</li>
+<li><strong>Як прибрати invalid UI states?</strong> Використати sealed phases для взаємовиключних станів або validated aggregate state з reducers для orthogonal metadata. Refresh із cache не варто зводити до full-screen <code>Loading</code>, бо це губить корисний content.</li>
+<li><strong>Навіщо <code>out</code> і <code>in</code>?</strong> Invariance захищає від небезпечного запису. <code>out T</code> дозволяє covariant producer, <code>in T</code> — contravariant consumer; projection застосовуйте, коли весь declaration не може бути variant.</li>
+<li><strong>Чим <code>List&lt;*&gt;</code> відрізняється від <code>List&lt;Any?&gt;</code>?</strong> Star projection означає невідомий argument із безпечними операціями за variance-контрактом. Це не твердження, що declaration був <code>Any?</code>, і воно не дозволяє довільний запис у mutable container.</li>
+<li><strong>Де межа value classes і reified?</strong> Value class дає domain distinction та validation, але може boxing-итися й потребує JVM/Java bridge. Reified допомагає перевірити top-level <code>T</code> у inline call site, але не доводить nested <code>List&lt;String&gt;</code>; обидва інструменти не замінюють boundary parsing.</li>
+</ol>
+
+<h2 id="stage2-uk-followups">4 senior follow-ups / edge cases з відповідями<a aria-label="Посилання на розділ: 4 senior follow-ups" class="heading-anchor" href="#stage2-uk-followups">#</a></h2>
+<ol>
+<li><strong>Java API повернуло <code>null</code> всупереч annotation. Що робити?</strong> Вважати boundary недовіреним: прийняти platform value в adapter, явно перевірити й повернути domain error/fallback. Виправити annotation/wrapper; не розносити <code>!!</code> по callers. Якщо invariant справді внутрішній і порушення фатальне, fail fast має бути локальним і діагностованим.</li>
+<li><strong>Додали sealed subtype. Що з API evolution і modules?</strong> Exhaustive <code>when</code> у recompiling clients сигналізує про нову гілку, але binary/independent consumers потребують versioning strategy. Прямий subtype має бути в тому самому package+module; відкритий непрямий subtype послаблює closed-world assumption. На зовнішньому wire-format все одно потрібен unknown policy.</li>
+<li><strong>Чому mutable list у copied state може не оновити observer/Compose?</strong> Shallow copy ділить list; in-place mutation змінює старий snapshot, а equality/reference-based conflation може не побачити нове значення. Створіть новий list і новий state, не експонуйте mutable alias.</li>
+<li><strong>Refresh упав, але cache є. Який state?</strong> Лишити content видимим, завершити <code>isRefreshing</code> і додати non-blocking error/retry affordance. Blocking error доречний без renderable content; trade-off — stale-data marker і product policy щодо максимальної давності cache.</li>
+</ol>
+
+<h2 id="stage2-uk-hypothetical-scenario">Гіпотетичний production-сценарій: Profile<a aria-label="Посилання на розділ: Гіпотетичний production-сценарій" class="heading-anchor" href="#stage2-uk-hypothetical-scenario">#</a></h2>
+<p><strong>Гіпотетично:</strong> Profile screen читає cached model і паралельно refresh-ить Java/JSON DTO, де <code>id</code>, <code>name</code> та <code>tags</code> можуть бути <code>null</code>. Boundary adapter нормалізує/валідує поля, створює <code>ProfileId</code> і immutable <code>Profile(tags = dto.tags.orEmpty().toList())</code>, або повертає typed mapping error. UI одразу рендерить cache з <code>isRefreshing=true</code>. Невдала мережа чи mapping при наявному cache стає non-blocking error; без content — blocking error.</p>
+<p>Tests перевіряють blank/missing ID, null name, mutable input-list alias, success transitions, initial failure та refresh failure зі stale content. Варіант із sealed outer <code>Ready</code> сильніше відділяє initial phase; flat validated data class простіше комбінується з UI controls. Строга відмова від усього DTO запобігає напіввалідному домену, але field-level fallback може дати кращу доступність — це має визначити product contract, а не випадковий Elvis.</p>
+
+<h2 id="stage2-uk-review-trap">Code-review trap: shallow copy і mutation<a aria-label="Посилання на розділ: Code-review trap" class="heading-anchor" href="#stage2-uk-review-trap">#</a></h2>
+<pre><code class="language-kotlin">// Trap: both snapshots share the same mutable list.
+data class CatalogState(val items: MutableList&lt;String&gt;)
+val before = CatalogState(mutableListOf("A"))
+before.items += "B"              // mutates the published snapshot
+val after = before.copy()         // shallow copy; same list reference
+
+// Correct: expose read-only snapshots and reduce to new values.
+data class SafeCatalogState(val items: List&lt;String&gt; = emptyList())
+fun SafeCatalogState.itemAdded(item: String): SafeCatalogState =
+    copy(items = items + item)
+
+val safeBefore = SafeCatalogState(listOf("A"))
+val safeAfter = safeBefore.itemAdded("B")</code></pre>
+<p>На review перевірте не лише <code>val</code>, а ownership кожного nested object. Якщо input приходить як mutable collection, зробіть snapshot на boundary; якщо елементи mutable, потрібні immutable element models або явне deep mapping.</p>
+
+<h2 id="stage2-uk-self-check">5 self-check питань без відповідей<a aria-label="Посилання на розділ: 5 self-check питань" class="heading-anchor" href="#stage2-uk-self-check">#</a></h2>
+<ol>
+<li>Які nullable або Boolean-комбінації у вашому поточному UI state представляють неможливі стани?</li>
+<li>На якій саме межі platform/JSON values стають валідованими domain types?</li>
+<li>Чи може будь-який published snapshot змінитися через alias на mutable collection або mutable element?</li>
+<li>Які ваші generic API лише читають, лише споживають або справді потребують invariance?</li>
+<li>Як ваш refresh state зберігає cached content і відрізняє blocking від non-blocking failure?</li>
+</ol>
+
+<h2 id="stage2-uk-english-skeletons">English interview-ready answer skeletons<a aria-label="Посилання на розділ: English interview-ready answer skeletons" class="heading-anchor" href="#stage2-uk-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you model UI state with Kotlin types?</em></p>
+<h3 id="stage2-uk-answer-30">~30-second answer<a aria-label="Посилання на розділ: 30-second answer" class="heading-anchor" href="#stage2-uk-answer-30">#</a></h3>
+<blockquote><p>I start with domain invariants and trust boundaries. I validate Java or network DTOs before they enter the domain, use non-null and value types where absence is not valid, and sealed types for mutually exclusive states. For a screen with cached data, I usually keep content plus refresh metadata so a refresh does not replace useful content with a spinner. Each update creates a new immutable snapshot, which makes rendering and transition tests predictable.</p></blockquote>
+<h3 id="stage2-uk-answer-2min">~2-minute answer<a aria-label="Посилання на розділ: 2-minute answer" class="heading-anchor" href="#stage2-uk-answer-2min">#</a></h3>
+<blockquote><p>I model UI state from the product invariants rather than starting with a data class full of booleans. At untrusted boundaries, such as Java or JSON, I accept that nullability and values may be wrong. An adapter validates them and either creates domain types, for example a validated <code>ProfileId</code>, or returns a typed error. Inside the domain I keep nullability intentional.</p><p>For mutually exclusive initial phases, a sealed type such as loading, content, and error gives exhaustive handling. Refresh is different because cached content can remain useful. In that case I use a validated aggregate state with content, initial-loading and refreshing metadata, and separate blocking and non-blocking errors. Reducers enforce that refreshing requires content and that a blocking error cannot coexist with renderable content.</p><p>I publish immutable snapshots: constructor properties are <code>val</code>, collections are copied at boundaries, and updates create new lists and use <code>copy</code>. I remember that data-class copy is shallow and Kotlin's read-only <code>List</code> is not automatically deeply immutable. Finally, I keep durable render state separate from one-off effects, and test invalid boundary input plus every important state transition. The exact sealed-versus-flat shape is a trade-off between stronger invariants and mapping complexity.</p></blockquote>
+
+<h2 id="stage2-uk-sources">Офіційні джерела<a aria-label="Посилання на розділ: Офіційні джерела" class="heading-anchor" href="#stage2-uk-sources">#</a></h2>
+<p>Мовні твердження нижче спираються на Kotlin contracts; рекомендації щодо форми UI state — на Android architecture guidance і явно є design choices.</p>
+<ul>
+<li><a href="https://kotlinlang.org/docs/null-safety.html">Kotlin: Null safety</a></li>
+<li><a href="https://kotlinlang.org/docs/java-interop.html#null-safety-and-platform-types">Kotlin: Java interop — null safety and platform types</a></li>
+<li><a href="https://kotlinlang.org/docs/sealed-classes.html">Kotlin: Sealed classes and interfaces</a></li>
+<li><a href="https://kotlinlang.org/docs/data-classes.html">Kotlin: Data classes</a></li>
+<li><a href="https://kotlinlang.org/docs/generics.html">Kotlin: Generics</a></li>
+<li><a href="https://kotlinlang.org/docs/inline-functions.html">Kotlin: Inline functions</a></li>
+<li><a href="https://kotlinlang.org/docs/inline-classes.html">Kotlin: Inline value classes</a></li>
+<li><a href="https://developer.android.com/topic/architecture/ui-layer">Android: UI layer</a></li>
+<li><a href="https://developer.android.com/topic/architecture/ui-layer/stateholders">Android: State holders and UI state</a></li>
 </ul>
 </div></details><details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
 <h2 id="val-vs-var-immutability">val vs var, immutability<a aria-label="Посилання на розділ: val vs var, immutability" class="heading-anchor" href="#val-vs-var-immutability">#</a></h2>
@@ -6212,6 +6413,201 @@ viewLifecycleOwner.lifecycleScope.launch {
 <li><a href="https://developer.android.com/reference/androidx/test/core/app/ActivityScenario">ActivityScenario API reference</a></li>
 <li><a href="https://developer.android.com/develop/ui/compose/testing/common-patterns">Common patterns in Compose testing</a></li>
 <li><a href="https://developer.android.com/codelabs/android-lifecycles">Android lifecycle-aware components codelab</a></li>
+</ul>
+</div></details><details class="major-section" data-key="kotlin-type-system-state-modeling" data-title="Kotlin: type system and state modelling" id="en-kotlin-type-system-state-modeling" open=""><summary class="major-summary"><span class="major-title">Kotlin: type system and state modelling</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<h2 id="en-stage2-objective">Objective and causal map<a aria-label="Link to section: Objective and causal map" class="heading-anchor" href="#en-stage2-objective">#</a></h2>
+<p>The objective is not a syntax encyclopedia. It is to turn requirements into a testable model: <strong>domain invariants and trust boundaries → types → valid states only → exhaustive handling → immutable snapshots → predictable evolution and tests</strong>.</p>
+<blockquote><p><strong>Senior thesis:</strong> types should make invalid states unrepresentable where practical. Typing does not remove the need for runtime validation at untrusted boundaries: Java, JSON, databases, IPC, and servers can violate expectations.</p></blockquote>
+<table><thead><tr><th>Question</th><th>Tool</th><th>Result</th></tr></thead><tbody>
+<tr><td>May a value be absent?</td><td><code>T</code> versus <code>T?</code>, boundary adapter</td><td>An explicit contract and local validation.</td></tr>
+<tr><td>Which states are mutually exclusive?</td><td><code>enum</code>, <code>sealed</code>, value/domain types</td><td>Less Boolean/nullable soup and exhaustive <code>when</code>.</td></tr>
+<tr><td>How does state change?</td><td><code>data class</code>, immutable reduction</td><td>New snapshots and simple transition tests.</td></tr>
+<tr><td>How does an API generalise safely?</td><td>Variance, projections, <code>Nothing</code>, reified boundary tools</td><td>Correct producer/consumer contracts without unsafe casts.</td></tr>
+</tbody></table>
+
+<h2 id="en-stage2-nullability">Nullability and trust boundaries<a aria-label="Link to section: Nullability and trust boundaries" class="heading-anchor" href="#en-stage2-nullability">#</a></h2>
+<p><code>T</code> means Kotlin code expects a value; <code>T?</code> models possible absence. The safe call <code>?.</code> continues a nullable chain, while Elvis <code>?:</code> supplies a fallback or an early return/throw. Do not spread nullable DTOs through the domain: check once in an adapter and return an explicit success or failure.</p>
+<pre><code class="language-kotlin">fun JavaProfileDto.toDomain(): Profile {
+    val rawId = requireNotNull(id) { "profile.id is required" }
+    val displayName = name?.trim()?.takeIf(String::isNotEmpty)
+        ?: throw IllegalArgumentException("profile.name is required")
+    return Profile(ProfileId(rawId), displayName, tags.orEmpty().toList())
+}
+
+class Session(private var token: String?) {
+    fun authenticatedToken(): String =
+        checkNotNull(token) { "Session is not authenticated" }
+}</code></pre>
+<p><code>requireNotNull</code> fits an invalid argument and throws <code>IllegalArgumentException</code>; <code>checkNotNull</code> fits an invalid object state and throws <code>IllegalStateException</code>. <code>value!!</code> is a local assertion that fails with an NPE. It is not proof of an invariant and adds no boundary validation.</p>
+<p>The official NPE escape hatches include an explicit <code>throw NullPointerException()</code>; <code>!!</code>; leaking an uninitialised <code>this</code>; calling an open member during base-class construction; Java/platform types; and generic pollution when Java or other external code inserts <code>null</code> into a structure Kotlin sees as non-null. <code>lateinit</code> also does not give compile-time initialisation safety: early access throws <code>UninitializedPropertyAccessException</code>.</p>
+<p>A platform type such as <code>String!</code> is a flexible type inferred from Java and cannot be explicitly written in Kotlin source. Give your boundary an explicit <code>String?</code> or <code>String</code> contract, add accurate Java nullability annotations, and still validate in an adapter when the source is untrusted.</p>
+<p>A smart cast requires the compiler to prove that a value is stable between the check and use. A mutable, open/custom-getter, or concurrently changeable property may not smart-cast. Take a local snapshot—<code>val local = holder.value</code>—then check and use that value.</p>
+
+<h2 id="en-stage2-valid-states">Model valid states<a aria-label="Link to section: Model valid states" class="heading-anchor" href="#en-stage2-valid-states">#</a></h2>
+<p>A combination of <code>isLoading</code>, <code>hasError</code>, nullable data, and nullable message admits contradictions. Name the states and transitions first. An <code>enum class</code> is a finite set of singleton constants of one type; constants may have properties, but not a distinct per-case payload shape. A <code>sealed interface/class</code> supports variants carrying different data.</p>
+<pre><code class="language-kotlin">enum class SortOrder { NAME, RECENT }
+
+sealed interface InitialProfileState {
+    data object Loading : InitialProfileState
+    data class Content(val profile: Profile) : InitialProfileState
+    data class Error(val error: UiError) : InitialProfileState
+}
+
+fun title(state: InitialProfileState): String = when (state) {
+    InitialProfileState.Loading -> "Loading"
+    is InitialProfileState.Content -> state.profile.name
+    is InitialProfileState.Error -> "Try again"
+}</code></pre>
+<p>A <code>when</code> can be exhaustive without <code>else</code> when the compiler knows all direct variants. Direct subclasses of a sealed type are restricted to the same package and module and are known to the compiler. However, an allowed direct subclass that is not itself <code>sealed</code> may be <code>open</code> and gain further indirect subclasses beyond that closed direct set.</p>
+<p><code>sealed</code> provides compile-time exhaustiveness for a code hierarchy, not runtime truth for remote values. An unknown JSON discriminator or new enum-like server field still needs an adapter/serializer policy: unknown case, fallback, or error according to the product contract.</p>
+
+<h2 id="en-stage2-data-immutability">Data classes and immutability<a aria-label="Link to section: Data classes and immutability" class="heading-anchor" href="#en-stage2-data-immutability">#</a></h2>
+<p>Generated <code>equals/hashCode/toString/componentN/copy</code> functions use only primary-constructor properties. Properties declared in the class body are excluded. Hidden mutable body state can therefore change while generated equality remains the same.</p>
+<pre><code class="language-kotlin">data class User(val id: ProfileId, val name: String) {
+    var debugLabel: String = "" // excluded from generated equality and copy
+}</code></pre>
+<p><code>copy()</code> is shallow: nested objects and mutable collections keep the same references. <code>val</code> prevents reference reassignment but does not make an object deeply immutable. Kotlin's <code>List</code> is a read-only interface, not a persistent or deep-immutability guarantee: another alias may mutate the underlying list or its elements.</p>
+<p>At a boundary, <code>incoming.toList()</code> creates a defensive structural snapshot, but not a deep copy of elements. Avoid <code>var</code> and mutable collections in UI snapshots. Persistent immutable collections can provide structural sharing and efficient updates, but add a library and API cost; choose them based on data size and update frequency.</p>
+
+<h2 id="en-stage2-state-shape">UI state shape: initial load is not refresh<a aria-label="Link to section: UI state shape" class="heading-anchor" href="#en-stage2-state-shape">#</a></h2>
+<p>A single sealed <code>Loading/Content/Error</code> type is useful for mutually exclusive initial states. It is often wrong for refresh: moving from <code>Content</code> to <code>Loading</code> discards stale content and causes a full-screen flicker. When content can remain visible, model orthogonal metadata and enforce its invariants.</p>
+<pre><code class="language-kotlin">sealed interface UiError {
+    data class Message(val text: String) : UiError
+}
+
+data class Profile(val id: ProfileId, val name: String, val tags: List&lt;String&gt;)
+
+data class ProfileUiState(
+    val content: Profile? = null,
+    val isInitialLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
+    val blockingError: UiError? = null,
+    val nonBlockingError: UiError? = null,
+) {
+    init {
+        require(!(isInitialLoading && isRefreshing))
+        require(!isInitialLoading || content == null)
+        require(!isRefreshing || content != null)
+        require(blockingError == null || content == null)
+        require(nonBlockingError == null || content != null)
+    }
+}
+
+fun ProfileUiState.refreshStarted(): ProfileUiState =
+    copy(isInitialLoading = content == null, isRefreshing = content != null,
+         blockingError = null, nonBlockingError = null)
+
+fun ProfileUiState.refreshFailed(error: UiError): ProfileUiState =
+    if (content == null) copy(isInitialLoading = false, blockingError = error)
+    else copy(isRefreshing = false, nonBlockingError = error)</code></pre>
+<p>Reducers or factories should be the only transition path, so callers cannot assemble contradictory flags. An alternative is a sealed outer state for <code>InitialLoading</code>/<code>BlockingError</code>/<code>Ready(content, refresh)</code>. It encodes phases more strongly but adds nesting and mapping.</p>
+<p><strong>Durable render state</strong> describes what the UI must render again when observed. A toast, navigation, or one-time focus request is an effect rather than a durable snapshot. This is a conceptual distinction; Flow/Channel delivery mechanics and guarantees belong to later stages.</p>
+
+<h2 id="en-stage2-variance">Variance, projections, and <code>Nothing</code><a aria-label="Link to section: Variance" class="heading-anchor" href="#en-stage2-variance">#</a></h2>
+<p>Generic types are invariant by default: although <code>Dog : Animal</code>, <code>MutableList&lt;Dog&gt;</code> is not a <code>MutableList&lt;Animal&gt;</code>, because a caller could otherwise insert a <code>Cat</code>. Kotlin's PECS rule is producer <code>out</code>, consumer <code>in</code>.</p>
+<pre><code class="language-kotlin">interface Source&lt;out T&gt; { fun read(): T }
+interface Sink&lt;in T&gt; { fun write(value: T) }
+
+fun renderAnimals(source: Source&lt;Animal&gt;) { /* reads only */ }
+fun sendDogs(target: Sink&lt;Dog&gt;, dogs: List&lt;Dog&gt;) =
+    dogs.forEach(target::write)
+
+// Android boundary: adapter can bind Dog rows, while a sink of Animal accepts them.
+fun bindRows(rows: List&lt;out Animal&gt;, analytics: Sink&lt;in Dog&gt;) { /* ... */ }
+
+fun printUnknown(items: List&lt;*>) {
+    val first: Any? = items.firstOrNull() // element type is safely unknown
+}</code></pre>
+<p>Declaration-site <code>out/in</code> sets variance for the whole type; a use-site projection such as <code>MutableList&lt;out Animal&gt;</code> or <code>Sink&lt;in Dog&gt;</code> restricts one use. <code>*</code> means a safely unknown type argument, not simply <code>Any?</code>: available operations depend on declaration variance, and writing an arbitrary value is normally forbidden. <code>Nothing</code> has no values and is useful for impossible outcomes and covariant <code>emptyList()</code>/<code>Result.Failure</code> values that need no invented payload.</p>
+
+<h2 id="en-stage2-value-classes">Value classes and domain IDs<a aria-label="Link to section: Value classes" class="heading-anchor" href="#en-stage2-value-classes">#</a></h2>
+<pre><code class="language-kotlin">@JvmInline
+value class ProfileId(val value: String) {
+    init { require(value.isNotBlank()) { "ProfileId must not be blank" } }
+}
+
+fun loadProfile(id: ProfileId) { /* cannot swap with OrderId */ }</code></pre>
+<p>A value class reduces primitive obsession: <code>ProfileId</code> and <code>OrderId</code> are no longer interchangeable <code>String</code>s. The <code>init</code> block validates runtime input, but external DTO data remains untrusted until construction. Do not promise zero allocations: boxing can occur for nullable, generic, and interface usage. Referential equality <code>===</code> has no useful value-class meaning and is prohibited; use value equality.</p>
+<p>On the JVM, functions with value-class parameters are normally name-mangled to avoid signature clashes. That complicates Java calls and reflection/framework interoperability; a public Java API may need an explicit bridge using the underlying type. Also verify serialization contracts and hot-path boxing.</p>
+
+<h2 id="en-stage2-reified">Concise boundary note: inline/reified<a aria-label="Link to section: inline reified" class="heading-anchor" href="#en-stage2-reified">#</a></h2>
+<pre><code class="language-kotlin">inline fun &lt;reified T&gt; Any?.isInstanceOf(): Boolean = this is T
+
+val looksLikeStringList = listOf("a").isInstanceOf&lt;List&lt;String&gt;&gt;()
+// Runtime check proves List&lt;*&gt;, not every nested element is String.</code></pre>
+<p>Because of JVM erasure, a normal type parameter cannot be checked with <code>value is T</code>. <code>inline reified</code> makes the type available at the call site for boundary helpers, but does not recover erased nested arguments such as <code>List&lt;String&gt;</code>. Trade-offs include duplicated bytecode/code size, public inline API constraints, and awkward Java interoperability. It is a focused tool, not schema validation.</p>
+
+<h2 id="en-stage2-likely-qa">10 likely practice interview Q&amp;A<a aria-label="Link to section: 10 likely practice interview Q and A" class="heading-anchor" href="#en-stage2-likely-qa">#</a></h2>
+<p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
+<ol>
+<li><strong>Can Kotlin still throw an NPE?</strong> Yes. <code>!!</code>, explicit throws, initialisation leaks/open calls, platform types, and Java generic pollution remain escape hatches. Null safety reduces the error surface; it does not seal foreign boundaries.</li>
+<li><strong>What is a platform type?</strong> It is Kotlin's flexible, non-denotable view of a Java type with unknown nullability. Assign an explicit nullable/non-null type in your API, add Java annotations, and validate an untrusted value in an adapter.</li>
+<li><strong><code>!!</code> or validation?</strong> <code>!!</code> is a local assertion that fails with NPE. Use <code>requireNotNull</code> for an argument contract, <code>checkNotNull</code> for object state, and often a typed mapping result rather than a crash for expected bad user/server input.</li>
+<li><strong>Sealed type or enum?</strong> Enum constants are singleton choices of one type; sealed variants can carry different payloads and support exhaustive <code>when</code>. Sealed does not validate remote values, and API evolution with a new subtype requires downstream handling/recompilation.</li>
+<li><strong>What does a data class copy and compare?</strong> Generated operations use only primary-constructor properties; <code>copy()</code> is shallow and shares nested mutable references. Body properties are excluded, which matters for equality, caches, and tests.</li>
+<li><strong>Does read-only <code>List</code> mean immutable?</strong> No. This reference cannot mutate through that interface, but aliases may change the underlying object or elements. <code>toList()</code> gives a shallow snapshot; persistent collections are a stronger but costlier API choice.</li>
+<li><strong>How do you eliminate invalid UI states?</strong> Use sealed phases for mutually exclusive states or a validated aggregate with reducers for orthogonal metadata. A refresh with cache should not become full-screen <code>Loading</code>, because that discards useful content.</li>
+<li><strong>Why <code>out</code> and <code>in</code>?</strong> Invariance prevents unsafe writes. <code>out T</code> enables a covariant producer and <code>in T</code> a contravariant consumer; use projections when the whole declaration cannot be variant.</li>
+<li><strong>How does <code>List&lt;*&gt;</code> differ from <code>List&lt;Any?&gt;</code>?</strong> A star projection is an unknown argument with operations constrained safely by variance. It does not claim the declaration used <code>Any?</code>, and it does not permit arbitrary writes to a mutable container.</li>
+<li><strong>Where are the boundaries of value classes and reified types?</strong> A value class adds domain distinction and validation but may box and need a JVM/Java bridge. Reified supports a top-level <code>T</code> check at an inline call site but cannot prove nested <code>List&lt;String&gt;</code>; neither replaces boundary parsing.</li>
+</ol>
+
+<h2 id="en-stage2-followups">4 senior follow-ups / edge cases with answers<a aria-label="Link to section: 4 senior follow-ups" class="heading-anchor" href="#en-stage2-followups">#</a></h2>
+<ol>
+<li><strong>A Java API returns <code>null</code> despite its annotation. What do you do?</strong> Treat the boundary as untrusted: accept the platform value in an adapter, check it explicitly, and return a domain error or fallback. Fix the annotation/wrapper rather than spreading <code>!!</code>. If a genuinely internal invariant is fatally broken, keep fail-fast local and diagnosable.</li>
+<li><strong>You add a sealed subtype. What about API evolution and module boundaries?</strong> An exhaustive <code>when</code> in recompiling clients exposes the new branch, but binary or independently released consumers need a versioning strategy. A direct subtype must share package and module; an open indirect subtype weakens the closed-world assumption. A wire format still needs an unknown-value policy.</li>
+<li><strong>Why can a mutable list inside copied state break observers or Compose?</strong> A shallow copy shares the list; in-place mutation changes the old snapshot, while equality/reference-based conflation may see no new value. Create a new list and state and do not expose a mutable alias.</li>
+<li><strong>Refresh fails while cache exists. Which state should render?</strong> Keep content visible, end <code>isRefreshing</code>, and expose a non-blocking error with retry. A blocking error is appropriate when no renderable content exists; the trade-off is a stale-data indicator and a product policy for maximum cache age.</li>
+</ol>
+
+<h2 id="en-stage2-hypothetical-scenario">Hypothetical production scenario: Profile<a aria-label="Link to section: Hypothetical production scenario" class="heading-anchor" href="#en-stage2-hypothetical-scenario">#</a></h2>
+<p><strong>Hypothetically:</strong> a Profile screen reads a cached model while refreshing a Java/JSON DTO whose <code>id</code>, <code>name</code>, and <code>tags</code> may be <code>null</code>. A boundary adapter normalises and validates fields, constructs <code>ProfileId</code> and immutable <code>Profile(tags = dto.tags.orEmpty().toList())</code>, or returns a typed mapping error. The UI renders cache immediately with <code>isRefreshing=true</code>. A network or mapping failure with cache is non-blocking; without content it is blocking.</p>
+<p>Tests cover blank/missing IDs, null names, a mutable input-list alias, success transitions, initial failure, and refresh failure with stale content. A sealed outer <code>Ready</code> phase separates initial state more strongly; a flat validated data class combines with controls more simply. Rejecting the whole invalid DTO protects the domain, while field-level fallback can improve availability—this must come from the product contract, not an accidental Elvis operator.</p>
+
+<h2 id="en-stage2-review-trap">Code-review/design trap: shallow copy and mutation<a aria-label="Link to section: Code-review design trap" class="heading-anchor" href="#en-stage2-review-trap">#</a></h2>
+<pre><code class="language-kotlin">// Trap: both snapshots share the same mutable list.
+data class CatalogState(val items: MutableList&lt;String&gt;)
+val before = CatalogState(mutableListOf("A"))
+before.items += "B"              // mutates the published snapshot
+val after = before.copy()         // shallow copy; same list reference
+
+// Correct: expose read-only snapshots and reduce to new values.
+data class SafeCatalogState(val items: List&lt;String&gt; = emptyList())
+fun SafeCatalogState.itemAdded(item: String): SafeCatalogState =
+    copy(items = items + item)
+
+val safeBefore = SafeCatalogState(listOf("A"))
+val safeAfter = safeBefore.itemAdded("B")</code></pre>
+<p>In review, inspect ownership of every nested object, not only the presence of <code>val</code>. Snapshot mutable collection input at the boundary; if elements are mutable, use immutable element models or explicit deep mapping.</p>
+
+<h2 id="en-stage2-self-check">5 self-check questions without answers<a aria-label="Link to section: 5 self-check questions" class="heading-anchor" href="#en-stage2-self-check">#</a></h2>
+<ol>
+<li>Which nullable or Boolean combinations in your current UI state represent impossible states?</li>
+<li>At exactly which boundary do platform/JSON values become validated domain types?</li>
+<li>Can any published snapshot change through an alias to a mutable collection or mutable element?</li>
+<li>Which generic APIs only produce, only consume, or genuinely require invariance?</li>
+<li>How does your refresh state preserve cached content and distinguish blocking from non-blocking failure?</li>
+</ol>
+
+<h2 id="en-stage2-english-skeletons">English interview-ready answer skeletons<a aria-label="Link to section: English interview-ready answer skeletons" class="heading-anchor" href="#en-stage2-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you model UI state with Kotlin types?</em></p>
+<h3 id="en-stage2-answer-30">~30-second answer<a aria-label="Link to section: 30-second answer" class="heading-anchor" href="#en-stage2-answer-30">#</a></h3>
+<blockquote><p>I start with domain invariants and trust boundaries. I validate Java or network DTOs before they enter the domain, use non-null and value types where absence is not valid, and sealed types for mutually exclusive states. For a screen with cached data, I usually keep content plus refresh metadata so a refresh does not replace useful content with a spinner. Each update creates a new immutable snapshot, which makes rendering and transition tests predictable.</p></blockquote>
+<h3 id="en-stage2-answer-2min">~2-minute answer<a aria-label="Link to section: 2-minute answer" class="heading-anchor" href="#en-stage2-answer-2min">#</a></h3>
+<blockquote><p>I model UI state from the product invariants rather than starting with a data class full of booleans. At untrusted boundaries, such as Java or JSON, I accept that nullability and values may be wrong. An adapter validates them and either creates domain types, for example a validated <code>ProfileId</code>, or returns a typed error. Inside the domain I keep nullability intentional.</p><p>For mutually exclusive initial phases, a sealed type such as loading, content, and error gives exhaustive handling. Refresh is different because cached content can remain useful. In that case I use a validated aggregate state with content, initial-loading and refreshing metadata, and separate blocking and non-blocking errors. Reducers enforce that refreshing requires content and that a blocking error cannot coexist with renderable content.</p><p>I publish immutable snapshots: constructor properties are <code>val</code>, collections are copied at boundaries, and updates create new lists and use <code>copy</code>. I remember that data-class copy is shallow and Kotlin's read-only <code>List</code> is not automatically deeply immutable. Finally, I keep durable render state separate from one-off effects, and test invalid boundary input plus every important state transition. The exact sealed-versus-flat shape is a trade-off between stronger invariants and mapping complexity.</p></blockquote>
+
+<h2 id="en-stage2-sources">Official sources<a aria-label="Link to section: Official sources" class="heading-anchor" href="#en-stage2-sources">#</a></h2>
+<p>Language claims below follow Kotlin contracts; UI-state shapes follow Android architecture guidance and remain design recommendations.</p>
+<ul>
+<li><a href="https://kotlinlang.org/docs/null-safety.html">Kotlin: Null safety</a></li>
+<li><a href="https://kotlinlang.org/docs/java-interop.html#null-safety-and-platform-types">Kotlin: Java interop — null safety and platform types</a></li>
+<li><a href="https://kotlinlang.org/docs/sealed-classes.html">Kotlin: Sealed classes and interfaces</a></li>
+<li><a href="https://kotlinlang.org/docs/data-classes.html">Kotlin: Data classes</a></li>
+<li><a href="https://kotlinlang.org/docs/generics.html">Kotlin: Generics</a></li>
+<li><a href="https://kotlinlang.org/docs/inline-functions.html">Kotlin: Inline functions</a></li>
+<li><a href="https://kotlinlang.org/docs/inline-classes.html">Kotlin: Inline value classes</a></li>
+<li><a href="https://developer.android.com/topic/architecture/ui-layer">Android: UI layer</a></li>
+<li><a href="https://developer.android.com/topic/architecture/ui-layer/stateholders">Android: State holders and UI state</a></li>
 </ul>
 </div></details><details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="en-kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
 <h2 id="en-val-vs-var-and-immutability"><code>val</code> vs <code>var</code> and immutability<a aria-label="Link to section: val vs var and immutability" class="heading-anchor" href="#en-val-vs-var-and-immutability">#</a></h2>
