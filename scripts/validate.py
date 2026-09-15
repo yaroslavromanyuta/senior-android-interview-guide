@@ -15,6 +15,7 @@ MIN_DOCUMENT_BYTES = 1_000
 STAGE2_KEY = "kotlin-type-system-state-modeling"
 STAGE3_KEY = "advanced-kotlin-jvm"
 STAGE4_KEY = "android-tasks-back-stack-deep-links-intents-pending-intent"
+STAGE5_KEY = "android-background-execution"
 
 
 def validate_html(path: Path) -> list[str]:
@@ -67,7 +68,9 @@ def validate_index_structure() -> list[str]:
     if unresolved:
         errors.append(f"index.html: unresolved internal hashes: {', '.join(unresolved)}")
 
-    for stage_number, stage_key in ((2, STAGE2_KEY), (3, STAGE3_KEY), (4, STAGE4_KEY)):
+    for stage_number, stage_key in (
+        (2, STAGE2_KEY), (3, STAGE3_KEY), (4, STAGE4_KEY), (5, STAGE5_KEY)
+    ):
         expected_stage_ids = (stage_key, f"en-{stage_key}")
         if content.count(f'data-key="{stage_key}"') != 2:
             errors.append(
@@ -90,12 +93,13 @@ def validate_index_structure() -> list[str]:
             f'{prefix}{STAGE2_KEY}',
             f'{prefix}{STAGE3_KEY}',
             f'{prefix}{STAGE4_KEY}',
+            f'{prefix}{STAGE5_KEY}',
             f'{prefix}kotlin-for-android',
         )
         positions = [content.find(f'id="{value}"') for value in ordered_ids]
         if -1 in positions or positions != sorted(positions):
             errors.append(
-                f"index.html: {prefix or 'uk-'}Stages 2–4 must follow Stage 1 and precede Kotlin for Android"
+                f"index.html: {prefix or 'uk-'}Stages 2–5 must follow Stage 1 and precede Kotlin for Android"
             )
 
     stage4_contracts = (
@@ -133,6 +137,43 @@ def validate_index_structure() -> list[str]:
                 errors.append(
                     f"index.html: {prefix + suffix!r} must contain exactly {expected} list items; found {count}"
                 )
+
+    stage5_contracts = (
+        "objective", "mental-model", "internals", "services", "broadcasts",
+        "workmanager", "fgs", "alarms", "guarantees", "version-sensitive",
+        "decision-framework", "tradeoffs", "production-scenario", "review-trap",
+        "testing", "likely-qa", "followups", "self-check", "english-skeletons",
+        "answer-30", "answer-2min", "sources",
+    )
+    for prefix in ("stage5-uk-", "en-stage5-"):
+        for suffix in stage5_contracts:
+            stage_id = f"{prefix}{suffix}"
+            if ids.count(stage_id) != 1:
+                errors.append(f"index.html: expected exactly one Stage 5 contract id {stage_id!r}")
+
+    for marker in (
+        "These are likely practice questions, not a confirmed or guaranteed interview list.",
+        "Це likely practice questions, не підтверджений і не гарантований список співбесіди.",
+        "RECEIVER_NOT_EXPORTED", "goAsync()", "APPEND_OR_REPLACE",
+        "MAX_DATA_BYTES = 10,240", "ForegroundServiceStartNotAllowedException",
+        "canScheduleExactAlarms()", "user-initiated data transfer",
+        "at-least-once-like", "adb shell dumpsys jobscheduler",
+    ):
+        if marker not in content:
+            errors.append(f"index.html: Stage 5 focused contract marker is missing: {marker!r}")
+
+    for prefix in ("stage5-uk-", "en-stage5-"):
+        for suffix, expected in (("likely-qa", 10), ("followups", 4), ("self-check", 5)):
+            match = re.search(
+                rf'id="{re.escape(prefix + suffix)}".*?</h2>.*?<ol>(.*?)</ol>',
+                content,
+                re.S,
+            )
+            count = len(re.findall(r"<li>", match.group(1))) if match else 0
+            if count != expected:
+                errors.append(
+                    f"index.html: {prefix + suffix!r} must contain exactly {expected} list items; found {count}"
+                )
     return errors
 
 
@@ -150,7 +191,7 @@ def main() -> int:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
-    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–4 navigation/contracts, and baseline checksum are valid.")
+    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–5 navigation/contracts, and baseline checksum are valid.")
     return 0
 
 

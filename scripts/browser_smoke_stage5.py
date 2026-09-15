@@ -18,8 +18,8 @@ results = []
 try:
     driver.get(url)
     driver.execute_script("document.documentElement.style.scrollBehavior='auto'")
-    uk_id = "android-tasks-back-stack-deep-links-intents-pending-intent"
-    en_id = "en-android-tasks-back-stack-deep-links-intents-pending-intent"
+    uk_id = "android-background-execution"
+    en_id = "en-android-background-execution"
     uk = wait.until(EC.presence_of_element_located((By.ID, uk_id)))
     assert uk.is_displayed()
     uk_link = driver.find_element(By.CSS_SELECTOR, f'a[data-target="{uk_id}"]')
@@ -49,17 +49,21 @@ try:
     assert en.get_attribute("open") is not None
     results.append("EN TOC anchor")
 
-    driver.set_window_size(390, 844)
-    wait.until(lambda d: d.execute_script("return innerWidth") == 390)
+    driver.execute_cdp_cmd(
+        "Emulation.setDeviceMetricsOverride",
+        {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True},
+    )
+    wait.until(lambda d: d.execute_script("return innerWidth === 390 && innerHeight === 844"))
     en_summary = en.find_element(By.CSS_SELECTOR, ":scope > summary")
     driver.execute_script("arguments[0].scrollIntoView({block:'center'})", en_summary)
     en_summary.click()
     wait.until(lambda d: en.get_attribute("open") is None)
     en_summary.click()
     wait.until(lambda d: en.get_attribute("open") is not None)
-    metrics = driver.execute_script("return {w:innerWidth, doc:document.documentElement.scrollWidth, title:document.querySelector('#en-android-tasks-back-stack-deep-links-intents-pending-intent .major-title').getBoundingClientRect().width}")
-    assert metrics["w"] == 390 and metrics["doc"] <= 390, metrics
-    results.append("mobile 390×844 + EN collapsible")
+    metrics = driver.execute_script("return {w:innerWidth, h:innerHeight, doc:document.documentElement.scrollWidth, body:document.body.scrollWidth, title:document.querySelector('#en-android-background-execution .major-title').getBoundingClientRect().width}")
+    assert metrics["w"] == 390 and metrics["h"] == 844, metrics
+    assert metrics["doc"] <= 390 and metrics["body"] <= 390, metrics
+    results.append("mobile 390×844 no overflow + EN collapsible")
 
     print("Browser smoke passed: " + "; ".join(results))
 finally:

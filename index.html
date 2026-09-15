@@ -477,6 +477,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="android-tasks-back-stack-deep-links-intents-pending-intent" href="#android-tasks-back-stack-deep-links-intents-pending-intent">Android tasks, back stack, deep links, intents та PendingIntent</a>
 </li>
 <li class="toc-major">
+<a data-target="android-background-execution" href="#android-background-execution">Android background execution: Services, BroadcastReceiver, WorkManager, FGS та alarms</a>
+</li>
+<li class="toc-major">
 <a data-target="kotlin-for-android" href="#kotlin-for-android">Kotlin for Android</a>
 <ol class="toc-children">
 <li><a data-target="val-vs-var-immutability" href="#val-vs-var-immutability">val vs var, immutability</a></li>
@@ -765,6 +768,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </li>
 <li class="toc-major">
 <a data-target="en-android-tasks-back-stack-deep-links-intents-pending-intent" href="#en-android-tasks-back-stack-deep-links-intents-pending-intent">Android tasks, back stack, deep links, intents, and PendingIntent</a>
+</li>
+<li class="toc-major">
+<a data-target="en-android-background-execution" href="#en-android-background-execution">Android background execution: Services, BroadcastReceiver, WorkManager, foreground services, and alarms</a>
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-for-android" href="#en-kotlin-for-android">Kotlin for Android</a>
@@ -2123,6 +2129,186 @@ adb shell am start -W -n com.example.app/.MainActivity \
 <li><a href="https://developer.android.com/training/app-links">Android App Links</a>, <a href="https://developer.android.com/training/app-links/verify-applinks">Verify App Links</a> та <a href="https://developer.android.com/training/app-links/test-applinks">Test App Links</a></li>
 <li><a href="https://developer.android.com/reference/android/app/PendingIntent">PendingIntent API reference</a> та <a href="https://developer.android.com/privacy-and-security/risks/pending-intent">PendingIntent security risks</a></li>
 <li><a href="https://developer.android.com/develop/ui/views/notifications/navigation">Start an Activity from a notification</a> та <a href="https://developer.android.com/guide/navigation/design/deep-link">Navigation deep links</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="android-background-execution" data-title="Android background execution: Services, BroadcastReceiver, WorkManager, FGS та alarms" id="android-background-execution" open=""><summary class="major-summary"><span class="major-title">Android background execution: Services, BroadcastReceiver, WorkManager, FGS та alarms</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<h2 id="stage5-uk-objective">Learning objective<a aria-label="Посилання на розділ: Learning objective" class="heading-anchor" href="#stage5-uk-objective">#</a></h2>
+<p>Після цього етапу ви маєте вміти вибрати механізм за <strong>latency, durability, user visibility і точністю часу</strong>, пояснити його реальні гарантії, спроєктувати повторювану/переривану роботу після process death або reboot та перевірити scheduler state, а не лише факт виклику API. Це поглиблення надійності виконання, а не повтор базового переліку Android components.</p>
+
+<h2 id="stage5-uk-mental-model">Senior mental model<a aria-label="Посилання на розділ: Senior mental model" class="heading-anchor" href="#stage5-uk-mental-model">#</a></h2>
+<blockquote><p><strong>Компонент — entry point, не гарантія ресурсу.</strong> Process lifetime, component lifetime, thread lifetime і durable job lifetime — різні речі. Система може відкласти старт, зупинити component/job, убити process або втратити alarm після reboot. Коректність походить із durable source of truth, idempotent effects, checkpoints і reconciliation, а не з надії, що callback завершиться.</p></blockquote>
+<ul>
+<li><strong>Process ≠ component:</strong> system підвищує process importance, поки component виконує callback/має активний зв’язок, але процес не стає безсмертним. Після callback не покладайтеся на thread, singleton чи coroutine у process scope.</li>
+<li><strong>Scheduling ≠ execution time:</strong> enqueue/setting alarm означає намір. Constraints, Doze, App Standby, quota, battery restriction, thermal state та OEM policy впливають на фактичний запуск.</li>
+<li><strong>Persistence ≠ exactly once:</strong> WorkManager зберігає запит і намагається виконати eligible work, але crash між зовнішнім side effect і локальним commit може спричинити повтор. Проєктуйте <em>at-least-once-like</em> handling без твердження про формальну delivery guarantee: stable operation ID, idempotency key, transactional outbox/inbox, upsert і resumable checkpoints.</li>
+</ul>
+
+<h2 id="stage5-uk-internals">Internals: ownership, scheduling і interruption<a aria-label="Посилання на розділ: Internals" class="heading-anchor" href="#stage5-uk-internals">#</a></h2>
+<h3 id="stage5-uk-services">Started і bound Services<a aria-label="Посилання на розділ: Started and bound Services" class="heading-anchor" href="#stage5-uk-services">#</a></h3>
+<p><code>Service</code> за замовчуванням виконує callbacks у <strong>main thread свого hosting process</strong>; він не створює background thread і не є окремим process. Blocking I/O/CPU робота в callback може дати ANR — потрібна явно керована coroutine/executor і cancellation.</p>
+<ul>
+<li><strong>Started:</strong> <code>startService()</code>/<code>startForegroundService()</code> веде до <code>onStartCommand(intent, flags, startId)</code>; service живе незалежно від caller, доки <code>stopSelf(startId)</code>/<code>stopService()</code> або system не зупинить його. Кілька starts дають кілька start IDs, але один Service instance; <code>START_NOT_STICKY</code>, <code>START_STICKY</code> і <code>START_REDELIVER_INTENT</code> — restart policy після kill, не гарантія завершення чи exact-once.</li>
+<li><strong>Bound:</strong> <code>bindService()</code> дає <code>IBinder</code>; lifecycle зазвичай прив’язаний до clients. Local Binder calls можуть виконуватися на caller thread, remote Binder calls — на Binder pool, тож thread-safety і non-blocking contract явні. <code>onServiceDisconnected()</code> сигналізує не normal unbind, а втрату connection через crash/kill.</li>
+<li>Service може бути одночасно started і bound: unbind не зупинить started lifetime, а <code>stopSelf()</code> не знищить його, поки є bindings. Окремий <code>android:process</code> додає IPC, failure boundary і memory cost, але не робить execution durable.</li>
+</ul>
+<p>Background-service limits з Android 8 (API 26) обмежують background apps: після grace window звичайні background services мають бути зупинені; для deferrable durable work зазвичай WorkManager/JobScheduler, для user-visible ongoing work — законний FGS.</p>
+
+<h3 id="stage5-uk-broadcasts">BroadcastReceiver: registration, trust і time budget<a aria-label="Посилання на розділ: BroadcastReceiver registration and time budget" class="heading-anchor" href="#stage5-uk-broadcasts">#</a></h3>
+<ul>
+<li><strong>Manifest receiver</strong> може запустити process для дозволеної broadcast; з target API 26 більшість implicit broadcasts не можна реєструвати в manifest, крім documented exceptions. <strong>Context receiver</strong> активний лише протягом lifetime реєструючого context; реєструйте/відписуйте на симетричному lifecycle, щоб не leaked Activity.</li>
+<li>Для runtime registration явно оберіть <code>ContextCompat.RECEIVER_NOT_EXPORTED</code> для app-only broadcasts або <code>RECEIVER_EXPORTED</code>, якщо потрібні інші apps/усі privileged system senders. Exported визначає reachability, не authorization: для sensitive action потрібні permission, explicit package/component і validation payload.</li>
+<li><code>onReceive()</code> працює на main thread, якщо не задано scheduler, і має швидко завершитися. <code>goAsync()</code> лише продовжує lifetime broadcast через <code>PendingResult</code>; викликайте <code>finish()</code> у <code>finally</code>. Документація очікує завершення дуже швидко, орієнтовно <strong>до 10 секунд</strong>; це не механізм довгої роботи. Для durable continuation receiver enqueue-ить WorkManager/JobScheduler і повертається.</li>
+</ul>
+
+<h3 id="stage5-uk-workmanager">WorkManager: durable intent, policy і data flow<a aria-label="Посилання на розділ: WorkManager durable intent policy and data flow" class="heading-anchor" href="#stage5-uk-workmanager">#</a></h3>
+<p>WorkManager — рекомендований Jetpack scheduler для <strong>deferrable, guaranteed-to-be-scheduled persistent work</strong>: request зберігається у внутрішній DB та переживає process death і reboot. Це не точний timer і не гарантія безперервного process. Платформний backend залежить від API (зокрема JobScheduler на modern Android), а eligible start визначають constraints і system optimization.</p>
+<table><thead><tr><th>Механізм</th><th>Senior-level наслідок</th></tr></thead><tbody>
+<tr><td>Constraints</td><td>Network/charging/battery/storage/device-idle — умови запуску та продовження, не snapshot. Якщо constraint зникає, Worker можуть stop-нути й спробувати пізніше.</td></tr>
+<tr><td>Unique work</td><td><code>KEEP</code> ігнорує новий request за наявності unfinished chain; <code>REPLACE</code> cancels existing; <code>APPEND</code> успадковує failure/cancellation prerequisite; <code>APPEND_OR_REPLACE</code> створює нову sequence після failed/cancelled chain. Unique name дедуплікує scheduling, але не external side effect.</td></tr>
+<tr><td>Retry/backoff</td><td><code>Result.retry()</code> застосовує linear/exponential inexact backoff; minimum initial delay 10 s, default — exponential 30 s. Permanent/domain errors мають повертати failure/success-with-record, не нескінченний retry.</td></tr>
+<tr><td>Expedited</td><td>Для короткої user-important latency-sensitive роботи; subject to system quota. <code>OutOfQuotaPolicy</code> явно downgrade-ить до regular work або drop-ить request; «expedited» не означає негайно за будь-яких умов.</td></tr>
+<tr><td>Foreground worker</td><td><code>setForeground()</code> запускає керований WorkManager FGS з notification для long-running work. Він усе ще підпадає під FGS rules; з Android 16 long-running workers можуть витрачати job quota.</td></tr>
+<tr><td>Cancellation/stop</td><td>Cancellation змінює state і викликає stop signal; <code>CoroutineWorker</code> повинен не ковтати cancellation, blocking loops перевіряють <code>isStopped</code>. Result після stop ігнорується. Закрийте files/DB/network і робіть операції resumable.</td></tr>
+<tr><td>Data/chains</td><td><code>Data</code> — lightweight primitives/arrays із serialized limit <code>MAX_DATA_BYTES = 10,240</code> для input/output, не datastore. Передавайте IDs/URIs; payload — у DB/file. Success розблоковує dependents; failure/cancel поширюється вниз; InputMerger має explicit conflict semantics.</td></tr>
+</tbody></table>
+<p>Для side effects збережіть operation row до enqueue, використовуйте unique logical name, а Worker атомарно claim-ить/читає актуальний state. Серверний idempotency key закриває crash window між HTTP success і local commit; локальний unique work alone цього не робить.</p>
+
+<h3 id="stage5-uk-fgs">Foreground services: видимий ongoing task, не escape hatch<a aria-label="Посилання на розділ: Foreground services" class="heading-anchor" href="#stage5-uk-fgs">#</a></h3>
+<ul>
+<li>FGS призначений для роботи, яку користувач <strong>помічає</strong>. Виклик <code>startForegroundService()</code> створює service, але service має швидко викликати <code>ServiceCompat.startForeground()</code> (platform deadline — кілька секунд, традиційно описується як 5 s) з ongoing notification; інакше system зупиняє app/service.</li>
+<li>Apps targeting Android 12 / API 31+ зазвичай не можуть стартувати FGS з background, крім documented exemptions; порушення дає <code>ForegroundServiceStartNotAllowedException</code>. While-in-use camera/microphone/location/body-sensor prerequisites мають додаткові background-start обмеження.</li>
+<li>Declare <code>android:foregroundServiceType</code>, базовий <code>FOREGROUND_SERVICE</code> і type-specific permissions/prerequisites. Для target API 34+ type/permission enforcement суворіше. Тип має відповідати реальній роботі; notification channel/permission UX не скасовує обов’язок notification.</li>
+<li>Android 14 (API 34) додав <strong>user-initiated data transfer jobs</strong> для довгих upload/download, які user явно почав; це JobScheduler API, потрібен ongoing notification і fallback на старих API. Для короткої transfer — expedited WorkManager; для system download розгляньте purpose-built DownloadManager.</li>
+</ul>
+
+<h3 id="stage5-uk-alarms">AlarmManager, Doze і civil time<a aria-label="Посилання на розділ: AlarmManager Doze and civil time" class="heading-anchor" href="#stage5-uk-alarms">#</a></h3>
+<ul>
+<li>Вибирайте <strong>inexact</strong> alarm за замовчуванням: <code>set()</code>, <code>setWindow()</code>, <code>setInexactRepeating()</code> дають batching і економлять battery. Alarm відкриває коротке execution window; receiver має enqueue durable work, а не робити network loop.</li>
+<li><code>setExact*</code>/<code>setAlarmClock()</code> лише для справді user-facing precise time. Android 12 / target 31+ вимагає exact-alarm special access для <code>SCHEDULE_EXACT_ALARM</code>; Android 13+ дозволяє альтернативний restricted <code>USE_EXACT_ALARM</code> лише для qualifying core use cases. Завжди перевіряйте <code>canScheduleExactAlarms()</code>; revocation cancels future exact alarms.</li>
+<li>Doze відкладає звичайні alarms/jobs/network. <code>setAndAllowWhileIdle()</code>/<code>setExactAndAllowWhileIdle()</code> мають throttling і не дають довгу network execution; <code>setAlarmClock()</code> — найбільш disruptive user alarm. App Standby/battery restriction/OEM policy можуть ще сильніше обмежити фонову роботу.</li>
+<li><code>ELAPSED_REALTIME</code> стійкий до зміни wall clock/timezone, але reset-иться на reboot; <code>RTC</code> прив’язаний до wall clock. Усі alarms видаляються при shutdown: після <code>BOOT_COMPLETED</code> відновіть їх із durable domain schedule. Для «09:00 local» зберігайте timezone/civil rule, реагуйте на time/timezone change і перераховуйте next occurrence; не додавайте 24h milliseconds.</li>
+</ul>
+
+<h2 id="stage5-uk-guarantees">Guarantee / non-guarantee matrix<a aria-label="Посилання на розділ: Guarantee non guarantee matrix" class="heading-anchor" href="#stage5-uk-guarantees">#</a></h2>
+<table><thead><tr><th>Можна стверджувати</th><th>Не можна обіцяти</th></tr></thead><tbody>
+<tr><td>Service callbacks за замовчуванням приходять на main thread hosting process.</td><td>Service автоматично є thread, окремим process або переживе kill.</td></tr>
+<tr><td><code>goAsync()</code> утримує broadcast pending до <code>finish()</code> у короткому budget.</td><td>Receiver може надійно завершити довгу upload після повернення.</td></tr>
+<tr><td>WorkManager persists scheduled request і повторно планує eligible work.</td><td>Точний час, exactly-once side effect, необмежений runtime чи виконання після force-stop.</td></tr>
+<tr><td>FGS робить ongoing work видимим і підвищує process importance.</td><td>Безсмертність, обхід quota/background-start rules або unlimited duration.</td></tr>
+<tr><td>Exact alarm за наявності access зменшує timing tolerance.</td><td>Виконання довільної довгої роботи точно в мілісекунду за всіх system/OEM умов.</td></tr>
+<tr><td>Reconciliation + idempotency роблять повтор безпечним.</td><td>Усі scheduler-и формально дають at-least-once або exactly-once delivery.</td></tr>
+</tbody></table>
+
+<h2 id="stage5-uk-version-sensitive">Version-sensitive behavior<a aria-label="Посилання на розділ: Version sensitive behavior" class="heading-anchor" href="#stage5-uk-version-sensitive">#</a></h2>
+<ul>
+<li><strong>API 26 / Android 8:</strong> background-service limits і manifest implicit-broadcast restrictions; legacy <code>IntentService</code> не є modern replacement.</li>
+<li><strong>API 31 / Android 12 target+:</strong> background FGS starts заборонені за замовчуванням; exact alarms потребують special access. Перевіряйте runtime state, не лише manifest.</li>
+<li><strong>API 33 / Android 13 target+:</strong> notification runtime permission впливає на видимість app notifications, але FGS усе одно мусить надати notification; <code>USE_EXACT_ALARM</code> доступний лише обмеженим категоріям.</li>
+<li><strong>API 34 / Android 14 target+:</strong> required FGS types/type-specific permissions та runtime prerequisites; UIDT jobs з API 34. Cached apps можуть отримувати деякі менш важливі broadcasts відкладено.</li>
+<li><strong>API 35 / Android 15 target+:</strong> <code>dataSync</code> і <code>mediaProcessing</code> FGS мають shared per-type limit 6 годин у rolling 24h та <code>onTimeout()</code>; частину FGS types не можна запускати з <code>BOOT_COMPLETED</code>.</li>
+<li><strong>Android 16:</strong> long-running WorkManager workers з FGS можуть витрачати JobScheduler quota; cross-process broadcast priority більше не гарантується. Перевіряйте target-SDK behavior і актуальну документацію, а не лише <code>SDK_INT</code>.</li>
+</ul>
+
+<h2 id="stage5-uk-decision-framework">Decision framework<a aria-label="Посилання на розділ: Decision framework" class="heading-anchor" href="#stage5-uk-decision-framework">#</a></h2>
+<table><thead><tr><th>Потреба</th><th>Default</th><th>Чому / caveat</th></tr></thead><tbody>
+<tr><td>Лише поки екран видимий</td><td>Lifecycle scope / bound service лише за shared IPC/resource</td><td>Не робіть durable scheduler з UI work.</td></tr>
+<tr><td>Deferrable, має пережити process/reboot</td><td>WorkManager</td><td>Constraints, unique policy, retry, idempotent Worker; timing inexact.</td></tr>
+<tr><td>Коротка важлива user-triggered робота</td><td>Expedited WorkManager</td><td>Quota + explicit out-of-quota policy.</td></tr>
+<tr><td>Ongoing, user-visible session (media/location/device)</td><td>Typed FGS або purpose-built API</td><td>Visible notification, start eligibility, permissions, stop action.</td></tr>
+<tr><td>Довгий user-initiated upload/download</td><td>UIDT job на API 34+, versioned fallback</td><td>User-visible transfer; JobScheduler, не Jetpack wrapper.</td></tr>
+<tr><td>Точна user-facing подія</td><td>Exact AlarmManager тільки за необхідності</td><td>Special access + reboot/timezone reschedule.</td></tr>
+<tr><td>Подія може бути batched</td><td>Inexact alarm або WorkManager</td><td>Вибір залежить від clock trigger проти durable constrained work.</td></tr>
+<tr><td>Коротка реакція на system/app event</td><td>Receiver → validate → enqueue</td><td><code>goAsync()</code> лише для короткого completion.</td></tr>
+</tbody></table>
+
+<h2 id="stage5-uk-tradeoffs">Trade-offs і failure modes<a aria-label="Посилання на розділ: Trade offs and failure modes" class="heading-anchor" href="#stage5-uk-tradeoffs">#</a></h2>
+<ul>
+<li>Нижча latency коштує quota/battery/user interruption; більша durability додає DB state, retries, deduplication і migrations.</li>
+<li>Constraints зменшують waste, але можуть спричинити starvation. Показуйте «pending/last synced», давайте manual retry і reconciler при app open.</li>
+<li><code>REPLACE</code> може втратити progress, <code>KEEP</code> — залишити stale inputs, <code>APPEND</code> — утворити довгий poisoned chain. Нехай Worker читає current durable state, а policy відповідає domain semantics.</li>
+<li>Force-stop, user battery restriction, permission revocation, low storage, reboot і OEM task killer — окремі test states. Жоден app API не може обіцяти виконання, якщо platform/user свідомо блокує app.</li>
+<li>Retry без taxonomy перетворює 401/validation error на battery-draining loop; cancellation без cooperative cleanup лишає partial files/locks; FGS без stop path стає UX і policy defect.</li>
+</ul>
+
+<h2 id="stage5-uk-production-scenario">Production scenario: offline outbox + user-visible attachment<a aria-label="Посилання на розділ: Production scenario" class="heading-anchor" href="#stage5-uk-production-scenario">#</a></h2>
+<p><strong>Гіпотетично:</strong> chat зберігає message та stable <code>operationId</code> в Room outbox однією transaction, потім enqueue-ить unique WorkManager sync. Worker під network constraint claim-ить pending rows, надсилає server idempotency key, atomically записує acknowledgement і повертає retry лише для transient failure. Process death у будь-якому місці веде до повторного reconcile, а не duplicate message.</p>
+<p>Невелике повідомлення використовує expedited request із downgrade policy. Велике вкладення, яке user явно почав, на API 34+ переходить у UIDT job з progress notification; fallback versioned і documented. User cancel позначає domain operation cancelled, cancels scheduler handle та cooperative abort видаляє partial temp file. Після reboot pending outbox лишається source of truth; UI показує pending/failed, не вигадує delivery.</p>
+
+<h2 id="stage5-uk-review-trap">Code-review/debugging trap<a aria-label="Посилання на розділ: Code review debugging trap" class="heading-anchor" href="#stage5-uk-review-trap">#</a></h2>
+<pre><code class="language-kotlin">override fun onReceive(context: Context, intent: Intent) {
+    GlobalScope.launch { api.upload(intent.getStringExtra("path")!!) }
+}
+
+class UploadWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p) {
+    override suspend fun doWork(): Result {
+        api.upload(inputData.getString("path")!!) // no idempotency/checkpoint
+        return Result.success()
+    }
+}</code></pre>
+<p>Receiver process може померти одразу після return; raw path — untrusted/stale, GlobalScope не durable, Worker може повторитися після remote success, cancellation може бути swallowed. Review asks: де durable operation row; чи sender/URI validated; який unique policy; які transient/permanent errors; server idempotency key; checkpoint і cleanup; що видно user; як відтворити stop/reboot/quota. Fix: короткий receiver → transaction/outbox → WorkManager з ID, cooperative cancellation і reconciliation.</p>
+
+<h2 id="stage5-uk-testing">Testing і debugging<a aria-label="Посилання на розділ: Testing and debugging" class="heading-anchor" href="#stage5-uk-testing">#</a></h2>
+<pre><code class="language-bash">adb shell dumpsys activity services com.example.app
+adb shell dumpsys jobscheduler
+adb shell dumpsys alarm
+adb shell am force-stop com.example.app
+adb shell am kill com.example.app
+adb shell cmd jobscheduler run -f com.example.app JOB_ID
+adb shell cmd jobscheduler get-job-state com.example.app JOB_ID
+adb shell dumpsys deviceidle force-idle
+adb shell am set-standby-bucket com.example.app rare
+# Android 15 device: exercise FGS timeout path
+adb shell am compat enable FGS_INTRODUCE_TIME_LIMITS com.example.app</code></pre>
+<p>Для WorkManager використовуйте <code>work-testing</code>: <code>TestWorkerBuilder</code> для Worker logic і <code>WorkManagerTestInitHelper</code>/<code>TestDriver</code> для delays, periods та constraints. На device assert-те не лише «callback стався», а DB transition, idempotency key, retry classification, duplicate enqueue, constraint loss mid-run, cancel cleanup, process kill, reboot/reschedule, denied exact-alarm access, Doze/standby і notification/stop action. Після manual power tests поверніть device state.</p>
+
+<h2 id="stage5-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice Q and A" class="heading-anchor" href="#stage5-uk-likely-qa">#</a></h2>
+<p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
+<ol>
+<li><strong>Чому Service не є background thread?</strong> Це component/lifecycle entry point; callbacks за замовчуванням виконуються на main thread hosting process. Threading і cancellation треба організувати окремо.</li>
+<li><strong>Started і bound Service?</strong> Started живе до stop policy незалежно від caller; bound обслуговує clients. Service може мати обидва lifetimes, і зупиниться лише коли обидва завершені.</li>
+<li><strong>Коли receiver використовує <code>goAsync()</code>?</strong> Для короткого async завершення в приблизно 10-second budget із гарантованим <code>finish()</code>; довгу durable роботу enqueue-ять.</li>
+<li><strong>Що WorkManager гарантує?</strong> Persistent scheduling та виконання, коли constraints/system дозволять; не exact timing і не exactly-once external effect.</li>
+<li><strong>Навіщо unique work, якщо Worker idempotent?</strong> Воно контролює scheduler duplication/chain policy; idempotency окремо захищає domain side effects і crash windows. Потрібні обидва рівні.</li>
+<li><strong>Retry чи failure?</strong> Retry для transient condition з backoff; failure для permanent input/domain error. Auth може вимагати explicit refresh/user action, а не безкінечний retry.</li>
+<li><strong>Expedited work проти FGS?</strong> Expedited — коротка latency-sensitive queued work із quota; FGS — ongoing user-visible operation з notification, type, permissions і start restrictions.</li>
+<li><strong>Коли exact alarm виправданий?</strong> Лише коли core user-facing function вимагає точного часу. Інакше inexact alarm/WorkManager дає batching і кращу battery behavior.</li>
+<li><strong>Що переживає reboot?</strong> WorkManager request і ваш durable DB state; AlarmManager alarms — ні, їх відновлюють із source of truth після boot. In-memory service/coroutine не переживають.</li>
+<li><strong>Як уникнути duplicate execution?</strong> Stable operation identity, transactional state transition, server idempotency key/upsert, checkpoints і reconciliation; не називати scheduler formally exactly-once.</li>
+</ol>
+
+<h2 id="stage5-uk-followups">4 senior follow-ups з відповідями<a aria-label="Посилання на розділ: 4 senior follow ups" class="heading-anchor" href="#stage5-uk-followups">#</a></h2>
+<ol>
+<li><strong>HTTP 200 отримано, але process помер до DB commit.</strong> Наступний run повторить call; server idempotency key повертає той самий result, Worker reconcile-ить acknowledgement atomically.</li>
+<li><strong>Constraint зник під час upload.</strong> WorkManager stop signal не rollback-ить network. Abort cooperatively, збережіть resumable offset/session, закрийте resource; повтор продовжує або безпечно починає знову.</li>
+<li><strong>«Щодня о 09:00» після DST спрацювало о 08:00.</strong> Було збережено elapsed/24h interval замість civil-time rule. Зберігайте zone + local time, обчислюйте наступний instant після кожного fire/timezone change/reboot.</li>
+<li><strong>Foreground Worker на Android 16 перестав стартувати під load.</strong> Long-running worker може вичерпати job quota. Перевірте stop reason/quota; для user-started transfer — UIDT, для lawful direct ongoing case — typed FGS, або chunk/defer.</li>
+</ol>
+
+<h2 id="stage5-uk-self-check">5 self-check без відповідей<a aria-label="Посилання на розділ: 5 self check without answers" class="heading-anchor" href="#stage5-uk-self-check">#</a></h2>
+<ol>
+<li>Який durable record і idempotency key захищають ваш найважливіший background side effect?</li>
+<li>Що станеться, якщо process помре до start, посеред I/O і після remote success?</li>
+<li>Який API ви оберете для latency, durability, visibility і clock accuracy вашого кейсу?</li>
+<li>Як ваш код реагує на constraint loss, cancel, force-stop, reboot і timezone change?</li>
+<li>Які <code>dumpsys</code>/test-driver assertions доводять state transition, а не лише callback?</li>
+</ol>
+
+<h2 id="stage5-uk-english-skeletons">Interview-ready English answer skeletons<a aria-label="Посилання на розділ: Interview ready English answer skeletons" class="heading-anchor" href="#stage5-uk-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you choose and design reliable background execution on Android?</em></p>
+<h3 id="stage5-uk-answer-30">~30-second answer<a aria-label="Посилання на розділ: 30 second answer" class="heading-anchor" href="#stage5-uk-answer-30">#</a></h3>
+<blockquote><p>I separate process, component, and durable-work lifetimes. For deferrable work that must survive process death or reboot I default to WorkManager with constraints, unique-work policy, bounded retries, and idempotent effects. A service is not a thread; a foreground service is only for ongoing user-visible work and must satisfy start, type, permission, and notification rules. Broadcast receivers stay short and enqueue durable work. Alarms are for clock events, exact only when the user-facing requirement justifies special access. I test cancellation, duplicates, Doze, process death, and reboot.</p></blockquote>
+<h3 id="stage5-uk-answer-2min">~2-minute answer<a aria-label="Посилання на розділ: 2 minute answer" class="heading-anchor" href="#stage5-uk-answer-2min">#</a></h3>
+<blockquote><p>I begin with four requirements: latency, durability across process death or reboot, user visibility, and clock precision. UI-scoped work remains lifecycle-scoped. Deferrable persistent work goes to WorkManager; short important work may be expedited, but quota and out-of-quota behavior are explicit. Ongoing user-visible work may require a correctly typed foreground service or a purpose-built API such as a user-initiated data-transfer job.</p><p>A Service is an Android component, not a background thread. Its callbacks normally run on the process main thread. Started and bound lifetimes are independent, and neither makes the process immortal. A receiver is also a short entry point: goAsync extends the broadcast only briefly, so durable continuation is persisted and enqueued.</p><p>For WorkManager I model constraints, unique-work conflict policy, transient versus permanent failure, backoff, cooperative stop, and chain failure propagation. Data carries small IDs, not payloads. Persistence still does not make an external side effect exactly once: a crash after server success but before local commit can replay it. I use an operation ID, transactional outbox, server idempotency key, checkpoints, and reconciliation.</p><p>AlarmManager is for clock-driven delivery. I prefer inexact alarms, reserve exact alarms for justified user-facing precision, check special access, and rebuild schedules after reboot or civil-time changes. Finally, I verify DB transitions and stop reasons with WorkManager test drivers, adb and dumpsys under constraint loss, quota, Doze, cancellation, process death, reboot, and OEM-restricted conditions.</p></blockquote>
+
+<h2 id="stage5-uk-sources">Офіційні джерела<a aria-label="Посилання на розділ: Офіційні джерела" class="heading-anchor" href="#stage5-uk-sources">#</a></h2>
+<ul>
+<li><a href="https://developer.android.com/develop/background-work/services">Services overview</a> та <a href="https://developer.android.com/develop/background-work/services/bound-services">Bound services overview</a></li>
+<li><a href="https://developer.android.com/develop/background-work/background-tasks/broadcasts">Broadcasts overview</a></li>
+<li><a href="https://developer.android.com/develop/background-work/background-tasks/persistent">Task scheduling / WorkManager</a>, <a href="https://developer.android.com/develop/background-work/background-tasks/persistent/getting-started/define-work">Define work requests</a>, <a href="https://developer.android.com/develop/background-work/background-tasks/persistent/how-to/manage-work">Managing work</a>, <a href="https://developer.android.com/develop/background-work/background-tasks/persistent/how-to/chain-work">Chaining work</a> та <a href="https://developer.android.com/reference/androidx/work/Data">WorkManager Data API</a></li>
+<li><a href="https://developer.android.com/develop/background-work/background-tasks/persistent/how-to/long-running">Long-running workers</a>, <a href="https://developer.android.com/develop/background-work/services/fgs">Foreground services overview</a>, <a href="https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start">Background-start restrictions</a>, <a href="https://developer.android.com/develop/background-work/services/fgs/service-types">FGS types</a> та <a href="https://developer.android.com/develop/background-work/services/fgs/timeout">FGS timeouts</a></li>
+<li><a href="https://developer.android.com/develop/background-work/background-tasks/uidt">User-initiated data transfer</a> та <a href="https://developer.android.com/about/versions/15/changes/foreground-service-types">Android 15 FGS changes</a></li>
+<li><a href="https://developer.android.com/develop/background-work/services/alarms">Schedule alarms</a> та <a href="https://developer.android.com/topic/performance/power/power-details">Power-management resource limits</a></li>
+<li><a href="https://developer.android.com/develop/background-work/background-tasks/testing/persistent/debug">Debug WorkManager</a>, <a href="https://developer.android.com/develop/background-work/background-tasks/testing/persistent/integration-testing">WorkManager integration testing</a> та <a href="https://developer.android.com/topic/performance/power/test-power">Test power-related issues</a></li>
 </ul>
 </div></details>
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
@@ -7369,6 +7555,186 @@ adb shell am start -W -n com.example.app/.MainActivity \
 <li><a href="https://developer.android.com/training/app-links">Android App Links</a>, <a href="https://developer.android.com/training/app-links/verify-applinks">Verify App Links</a>, and <a href="https://developer.android.com/training/app-links/test-applinks">Test App Links</a></li>
 <li><a href="https://developer.android.com/reference/android/app/PendingIntent">PendingIntent API reference</a> and <a href="https://developer.android.com/privacy-and-security/risks/pending-intent">PendingIntent security risks</a></li>
 <li><a href="https://developer.android.com/develop/ui/views/notifications/navigation">Start an Activity from a notification</a> and <a href="https://developer.android.com/guide/navigation/design/deep-link">Navigation deep links</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="android-background-execution" data-title="Android background execution: Services, BroadcastReceiver, WorkManager, foreground services, and alarms" id="en-android-background-execution" open=""><summary class="major-summary"><span class="major-title">Android background execution: Services, BroadcastReceiver, WorkManager, foreground services, and alarms</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<h2 id="en-stage5-objective">Learning objective<a aria-label="Link to section: Learning objective" class="heading-anchor" href="#en-stage5-objective">#</a></h2>
+<p>After this stage, you should be able to choose an API by <strong>latency, durability, user visibility, and clock precision</strong>, explain its real guarantees, design repeatable and interruptible work across process death or reboot, and inspect scheduler state rather than merely proving that an API was called. This section deepens execution reliability instead of repeating the base component catalogue.</p>
+
+<h2 id="en-stage5-mental-model">Senior mental model<a aria-label="Link to section: Senior mental model" class="heading-anchor" href="#en-stage5-mental-model">#</a></h2>
+<blockquote><p><strong>A component is an entry point, not a resource guarantee.</strong> Process lifetime, component lifetime, thread lifetime, and durable-job lifetime are distinct. The system may defer a start, stop a component or job, kill the process, or lose alarms at reboot. Correctness comes from a durable source of truth, idempotent effects, checkpoints, and reconciliation—not from hoping that a callback completes.</p></blockquote>
+<ul>
+<li><strong>Process ≠ component:</strong> the system raises process importance while a component handles a callback or active binding, but the process is not immortal. After the callback, do not rely on a thread, singleton, or process-scoped coroutine.</li>
+<li><strong>Scheduling ≠ execution time:</strong> enqueueing work or setting an alarm records intent. Constraints, Doze, App Standby, quota, battery restriction, thermal state, and OEM policy influence the actual start.</li>
+<li><strong>Persistence ≠ exactly once:</strong> WorkManager stores the request and attempts eligible execution, but a crash between an external side effect and a local commit can cause replay. Design <em>at-least-once-like</em> handling without claiming a formal delivery guarantee: stable operation IDs, idempotency keys, transactional outbox/inbox, upsert, and resumable checkpoints.</li>
+</ul>
+
+<h2 id="en-stage5-internals">Internals: ownership, scheduling, and interruption<a aria-label="Link to section: Internals" class="heading-anchor" href="#en-stage5-internals">#</a></h2>
+<h3 id="en-stage5-services">Started and bound Services<a aria-label="Link to section: Started and bound Services" class="heading-anchor" href="#en-stage5-services">#</a></h3>
+<p>By default, a <code>Service</code> runs callbacks on the <strong>main thread of its hosting process</strong>; it does not create a background thread or a separate process. Blocking I/O or CPU work in a callback can cause an ANR, so use explicitly managed coroutines or executors with cancellation.</p>
+<ul>
+<li><strong>Started:</strong> <code>startService()</code>/<code>startForegroundService()</code> leads to <code>onStartCommand(intent, flags, startId)</code>. The service continues independently of the caller until <code>stopSelf(startId)</code>/<code>stopService()</code> or the system stops it. Repeated starts produce start IDs but share one Service instance. <code>START_NOT_STICKY</code>, <code>START_STICKY</code>, and <code>START_REDELIVER_INTENT</code> are restart policies after a kill, not completion or exactly-once guarantees.</li>
+<li><strong>Bound:</strong> <code>bindService()</code> exposes an <code>IBinder</code>, and lifetime usually follows clients. Local Binder calls can run on the caller thread; remote calls use Binder threads, so thread safety and a non-blocking contract must be explicit. <code>onServiceDisconnected()</code> reports a lost connection after crash/kill, not a normal unbind.</li>
+<li>A Service may be both started and bound: unbinding does not end the started lifetime, while <code>stopSelf()</code> does not destroy it while bindings remain. A separate <code>android:process</code> adds IPC, a failure boundary, and memory cost, but not durability.</li>
+</ul>
+<p>Background-service limits introduced in Android 8 (API 26) constrain background apps: after a grace window, ordinary background services must stop. Prefer WorkManager/JobScheduler for deferrable durable work and a lawful FGS for ongoing user-visible work.</p>
+
+<h3 id="en-stage5-broadcasts">BroadcastReceiver: registration, trust, and time budget<a aria-label="Link to section: BroadcastReceiver registration trust and time budget" class="heading-anchor" href="#en-stage5-broadcasts">#</a></h3>
+<ul>
+<li>A <strong>manifest receiver</strong> can start the process for an allowed broadcast. For apps targeting API 26+, most implicit broadcasts cannot be declared in the manifest except documented exceptions. A <strong>context receiver</strong> exists only while its registering context is valid; register and unregister symmetrically to avoid leaking an Activity.</li>
+<li>For runtime registration, explicitly choose <code>ContextCompat.RECEIVER_NOT_EXPORTED</code> for app-only broadcasts or <code>RECEIVER_EXPORTED</code> when other apps or all privileged system senders are required. Exported controls reachability, not authorisation: sensitive actions still require permissions, explicit package/component where applicable, and payload validation.</li>
+<li><code>onReceive()</code> uses the main thread unless a scheduler is supplied and must finish quickly. <code>goAsync()</code> only extends the broadcast lifetime through a <code>PendingResult</code>; call <code>finish()</code> in <code>finally</code>. Official guidance still expects very quick completion, roughly <strong>under 10 seconds</strong>. It is not a long-work mechanism. For durable continuation, enqueue WorkManager/JobScheduler and return.</li>
+</ul>
+
+<h3 id="en-stage5-workmanager">WorkManager: durable intent, policy, and data flow<a aria-label="Link to section: WorkManager durable intent policy and data flow" class="heading-anchor" href="#en-stage5-workmanager">#</a></h3>
+<p>WorkManager is the recommended Jetpack scheduler for <strong>deferrable, guaranteed-to-be-scheduled persistent work</strong>. It stores requests in its internal database so they survive process death and reboot. It is not an exact timer and does not preserve a continuous process. Platform backends vary by API, including JobScheduler on modern Android, and constraints plus system optimisation determine eligible starts.</p>
+<table><thead><tr><th>Mechanism</th><th>Senior-level consequence</th></tr></thead><tbody>
+<tr><td>Constraints</td><td>Network, charging, battery, storage, and idle are conditions for starting and continuing, not a snapshot. If a constraint disappears, the Worker may stop and run later.</td></tr>
+<tr><td>Unique work</td><td><code>KEEP</code> ignores a new request while an unfinished chain exists; <code>REPLACE</code> cancels existing work; <code>APPEND</code> inherits prerequisite failure/cancellation; <code>APPEND_OR_REPLACE</code> starts a new sequence after a failed/cancelled chain. A unique name deduplicates scheduling, not the external side effect.</td></tr>
+<tr><td>Retry/backoff</td><td><code>Result.retry()</code> applies linear or exponential inexact backoff. The minimum initial delay is 10 seconds; the default is exponential with 30 seconds. Permanent input/domain errors should not retry forever.</td></tr>
+<tr><td>Expedited</td><td>For short, user-important, latency-sensitive work and subject to system quota. <code>OutOfQuotaPolicy</code> explicitly downgrades to regular work or drops the request. “Expedited” never means immediate under every condition.</td></tr>
+<tr><td>Foreground worker</td><td><code>setForeground()</code> runs a WorkManager-managed FGS with a notification for long work. FGS rules still apply; from Android 16, long-running workers can consume job quota.</td></tr>
+<tr><td>Cancellation/stop</td><td>Cancellation changes state and sends a stop signal. A <code>CoroutineWorker</code> must not swallow cancellation; blocking loops check <code>isStopped</code>. A Result produced after stop is ignored. Close files, DB, and network resources and keep operations resumable.</td></tr>
+<tr><td>Data/chains</td><td><code>Data</code> is a lightweight primitives/arrays container with serialized <code>MAX_DATA_BYTES = 10,240</code> for input/output, not a datastore. Pass IDs or URIs; keep payload in a DB/file. Success unblocks dependents; failure/cancellation propagates downstream; an InputMerger needs explicit conflict semantics.</td></tr>
+</tbody></table>
+<p>For side effects, persist an operation row before enqueueing, use a logical unique name, and let the Worker claim and read current durable state transactionally. A server idempotency key closes the crash window between HTTP success and local commit; local unique work alone cannot.</p>
+
+<h3 id="en-stage5-fgs">Foreground services: visible ongoing work, not an escape hatch<a aria-label="Link to section: Foreground services" class="heading-anchor" href="#en-stage5-fgs">#</a></h3>
+<ul>
+<li>An FGS is for work the user can <strong>notice</strong>. <code>startForegroundService()</code> creates the service, but the service must promptly call <code>ServiceCompat.startForeground()</code> (the platform deadline is a few seconds, traditionally described as 5 seconds) with an ongoing notification or the system stops the app/service.</li>
+<li>Apps targeting Android 12 / API 31+ generally cannot start an FGS from the background except documented exemptions; violation throws <code>ForegroundServiceStartNotAllowedException</code>. While-in-use camera, microphone, location, and body-sensor prerequisites add further restrictions.</li>
+<li>Declare <code>android:foregroundServiceType</code>, the base <code>FOREGROUND_SERVICE</code> permission, and type-specific permissions/prerequisites. Target API 34+ enforces types and permissions more strictly. The type must match real work; notification-channel or notification-permission UX does not remove the notification obligation.</li>
+<li>Android 14 (API 34) introduced <strong>user-initiated data transfer jobs</strong> for long uploads/downloads explicitly started by the user. This is a JobScheduler API, requires an ongoing notification, and needs a fallback on older APIs. Use expedited WorkManager for short transfers and consider DownloadManager where its purpose-built model fits.</li>
+</ul>
+
+<h3 id="en-stage5-alarms">AlarmManager, Doze, and civil time<a aria-label="Link to section: AlarmManager Doze and civil time" class="heading-anchor" href="#en-stage5-alarms">#</a></h3>
+<ul>
+<li>Prefer an <strong>inexact</strong> alarm: <code>set()</code>, <code>setWindow()</code>, and <code>setInexactRepeating()</code> permit batching and save battery. An alarm opens only a short execution window; its receiver should enqueue durable work instead of running a network loop.</li>
+<li>Use <code>setExact*</code>/<code>setAlarmClock()</code> only for genuinely user-facing precise time. Android 12 / target 31+ requires exact-alarm special access for <code>SCHEDULE_EXACT_ALARM</code>. Android 13+ offers the restricted <code>USE_EXACT_ALARM</code> alternative only for qualifying core use cases. Check <code>canScheduleExactAlarms()</code>; revocation cancels future exact alarms.</li>
+<li>Doze defers ordinary alarms, jobs, and network. <code>setAndAllowWhileIdle()</code>/<code>setExactAndAllowWhileIdle()</code> are throttled and do not grant long network execution; <code>setAlarmClock()</code> is the most disruptive user-alarm option. App Standby, battery restriction, and OEM policy can constrain work further.</li>
+<li><code>ELAPSED_REALTIME</code> resists wall-clock/time-zone changes but resets at reboot; <code>RTC</code> follows wall-clock time. All alarms disappear on shutdown: rebuild from a durable domain schedule after <code>BOOT_COMPLETED</code>. For “09:00 local,” store the time zone and civil-time rule, handle time/time-zone changes, and compute the next occurrence rather than adding 24-hour milliseconds.</li>
+</ul>
+
+<h2 id="en-stage5-guarantees">Guarantee / non-guarantee matrix<a aria-label="Link to section: Guarantee non guarantee matrix" class="heading-anchor" href="#en-stage5-guarantees">#</a></h2>
+<table><thead><tr><th>Safe claim</th><th>Do not promise</th></tr></thead><tbody>
+<tr><td>Service callbacks normally arrive on the hosting process main thread.</td><td>A Service automatically creates a thread/process or survives a kill.</td></tr>
+<tr><td><code>goAsync()</code> keeps a broadcast pending until <code>finish()</code> within a short budget.</td><td>A receiver can reliably finish a long upload after returning.</td></tr>
+<tr><td>WorkManager persists the scheduled request and reschedules eligible work.</td><td>Exact time, exactly-once side effects, unlimited runtime, or execution after force-stop.</td></tr>
+<tr><td>An FGS exposes ongoing work and raises process importance.</td><td>Immortality, bypassing quota/start rules, or unlimited duration.</td></tr>
+<tr><td>An exact alarm with access narrows timing tolerance.</td><td>Arbitrary long work at an exact millisecond under all system/OEM conditions.</td></tr>
+<tr><td>Reconciliation and idempotency make replay safe.</td><td>Every scheduler formally provides at-least-once or exactly-once delivery.</td></tr>
+</tbody></table>
+
+<h2 id="en-stage5-version-sensitive">Version-sensitive behavior<a aria-label="Link to section: Version sensitive behavior" class="heading-anchor" href="#en-stage5-version-sensitive">#</a></h2>
+<ul>
+<li><strong>API 26 / Android 8:</strong> background-service limits and manifest implicit-broadcast restrictions; legacy <code>IntentService</code> is not a modern replacement.</li>
+<li><strong>API 31 / Android 12 target+:</strong> background FGS starts are denied by default and exact alarms require special access. Inspect runtime state, not only the manifest.</li>
+<li><strong>API 33 / Android 13 target+:</strong> notification runtime permission affects app-notification visibility, but an FGS must still supply a notification; <code>USE_EXACT_ALARM</code> is restricted to qualifying categories.</li>
+<li><strong>API 34 / Android 14 target+:</strong> required FGS types, type-specific permissions, and runtime prerequisites; UIDT jobs start at API 34. Cached apps can receive some less important broadcasts later.</li>
+<li><strong>API 35 / Android 15 target+:</strong> <code>dataSync</code> and <code>mediaProcessing</code> FGS types share a per-type six-hours-in-a-rolling-24-hours limit and receive <code>onTimeout()</code>; several FGS types cannot start from <code>BOOT_COMPLETED</code>.</li>
+<li><strong>Android 16:</strong> long-running WorkManager workers using an FGS can consume JobScheduler quota; cross-process broadcast priority is no longer guaranteed. Check target-SDK behavior and current documentation, not only <code>SDK_INT</code>.</li>
+</ul>
+
+<h2 id="en-stage5-decision-framework">Decision framework<a aria-label="Link to section: Decision framework" class="heading-anchor" href="#en-stage5-decision-framework">#</a></h2>
+<table><thead><tr><th>Requirement</th><th>Default</th><th>Why / caveat</th></tr></thead><tbody>
+<tr><td>Only while a screen is visible</td><td>Lifecycle scope; bound service only for shared IPC/resource</td><td>Do not turn UI work into a durable job.</td></tr>
+<tr><td>Deferrable and survives process/reboot</td><td>WorkManager</td><td>Constraints, unique policy, retry, idempotent Worker; timing is inexact.</td></tr>
+<tr><td>Short important user-triggered work</td><td>Expedited WorkManager</td><td>Quota and explicit out-of-quota policy.</td></tr>
+<tr><td>Ongoing visible session (media/location/device)</td><td>Typed FGS or purpose-built API</td><td>Visible notification, start eligibility, permission, and stop action.</td></tr>
+<tr><td>Long user-initiated upload/download</td><td>UIDT job on API 34+, versioned fallback</td><td>User-visible transfer; JobScheduler rather than a Jetpack wrapper.</td></tr>
+<tr><td>Precise user-facing clock event</td><td>Exact AlarmManager only if necessary</td><td>Special access and reboot/time-zone reconstruction.</td></tr>
+<tr><td>Event may be batched</td><td>Inexact alarm or WorkManager</td><td>Choose clock trigger versus durable constrained work.</td></tr>
+<tr><td>Short reaction to a system/app event</td><td>Receiver → validate → enqueue</td><td><code>goAsync()</code> only for brief completion.</td></tr>
+</tbody></table>
+
+<h2 id="en-stage5-tradeoffs">Trade-offs and failure modes<a aria-label="Link to section: Trade offs and failure modes" class="heading-anchor" href="#en-stage5-tradeoffs">#</a></h2>
+<ul>
+<li>Lower latency costs quota, battery, or user interruption; stronger durability adds database state, retries, deduplication, and migrations.</li>
+<li>Constraints reduce waste but can starve work. Expose pending/last-synced state, allow manual retry, and reconcile when the app opens.</li>
+<li><code>REPLACE</code> can lose progress, <code>KEEP</code> can retain stale inputs, and <code>APPEND</code> can create a long poisoned chain. Make the Worker read current durable state and choose policy from domain semantics.</li>
+<li>Force-stop, user battery restriction, permission revocation, low storage, reboot, and an OEM task killer are distinct test states. No app API can promise execution when platform or user deliberately blocks the app.</li>
+<li>Retry without failure taxonomy turns a 401 or validation error into a battery-draining loop; cancellation without cooperative cleanup leaves partial files or locks; an FGS without a stop path is a UX and policy defect.</li>
+</ul>
+
+<h2 id="en-stage5-production-scenario">Production scenario: offline outbox plus user-visible attachment<a aria-label="Link to section: Production scenario" class="heading-anchor" href="#en-stage5-production-scenario">#</a></h2>
+<p><strong>Hypothetically:</strong> a chat app stores a message and stable <code>operationId</code> in a Room outbox transaction, then enqueues unique WorkManager sync. Under a network constraint, the Worker claims pending rows, sends a server idempotency key, atomically records the acknowledgement, and retries only transient failure. Process death anywhere leads to reconciliation rather than a duplicate message.</p>
+<p>A small message uses an expedited request with downgrade policy. A large attachment explicitly started by the user uses a UIDT job on API 34+, with progress notification and a documented versioned fallback. User cancel marks the domain operation cancelled, cancels the scheduler handle, and cooperative abort deletes the partial temporary file. After reboot the outbox remains the source of truth; UI reports pending or failed rather than inventing delivery.</p>
+
+<h2 id="en-stage5-review-trap">Code-review/debugging trap<a aria-label="Link to section: Code review debugging trap" class="heading-anchor" href="#en-stage5-review-trap">#</a></h2>
+<pre><code class="language-kotlin">override fun onReceive(context: Context, intent: Intent) {
+    GlobalScope.launch { api.upload(intent.getStringExtra("path")!!) }
+}
+
+class UploadWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p) {
+    override suspend fun doWork(): Result {
+        api.upload(inputData.getString("path")!!) // no idempotency/checkpoint
+        return Result.success()
+    }
+}</code></pre>
+<p>The receiver process can die immediately after return; a raw path is untrusted or stale, GlobalScope is not durable, the Worker can replay after remote success, and cancellation may be swallowed. Ask where the durable operation row lives, how sender/URI is validated, which unique policy applies, how transient and permanent errors differ, where the server idempotency key and checkpoint live, what cleanup and user visibility exist, and how stop/reboot/quota is reproduced. Fix with a short receiver → transaction/outbox → ID-based WorkManager pipeline, cooperative cancellation, and reconciliation.</p>
+
+<h2 id="en-stage5-testing">Testing and debugging<a aria-label="Link to section: Testing and debugging" class="heading-anchor" href="#en-stage5-testing">#</a></h2>
+<pre><code class="language-bash">adb shell dumpsys activity services com.example.app
+adb shell dumpsys jobscheduler
+adb shell dumpsys alarm
+adb shell am force-stop com.example.app
+adb shell am kill com.example.app
+adb shell cmd jobscheduler run -f com.example.app JOB_ID
+adb shell cmd jobscheduler get-job-state com.example.app JOB_ID
+adb shell dumpsys deviceidle force-idle
+adb shell am set-standby-bucket com.example.app rare
+# Android 15 device: exercise the FGS timeout path
+adb shell am compat enable FGS_INTRODUCE_TIME_LIMITS com.example.app</code></pre>
+<p>Use WorkManager's <code>work-testing</code>: <code>TestWorkerBuilder</code> for Worker logic and <code>WorkManagerTestInitHelper</code>/<code>TestDriver</code> for delays, periods, and constraints. On devices, assert database transitions, idempotency keys, retry classification, duplicate enqueue, constraint loss during a run, cancellation cleanup, process kill, reboot/reschedule, denied exact-alarm access, Doze/standby, and notification stop actions—not merely “the callback happened.” Restore device state after manual power tests.</p>
+
+<h2 id="en-stage5-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice Q and A" class="heading-anchor" href="#en-stage5-likely-qa">#</a></h2>
+<p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
+<ol>
+<li><strong>Why is a Service not a background thread?</strong> It is a component and lifecycle entry point; callbacks normally use the hosting process main thread. Threading and cancellation are separate design choices.</li>
+<li><strong>Started versus bound Service?</strong> A started Service follows explicit stop policy independently of the caller; a bound Service serves clients. Both lifetimes may coexist and both must end before destruction.</li>
+<li><strong>When should a receiver use <code>goAsync()</code>?</strong> For brief asynchronous completion within roughly a ten-second budget and with <code>finish()</code> guaranteed. Enqueue long durable work.</li>
+<li><strong>What does WorkManager guarantee?</strong> Persistent scheduling and execution when constraints and the system permit—not exact timing or an exactly-once external effect.</li>
+<li><strong>Why unique work if the Worker is idempotent?</strong> Unique work controls scheduler duplication and chain policy; idempotency separately protects domain effects and crash windows. Both layers matter.</li>
+<li><strong>Retry or failure?</strong> Retry transient conditions with backoff; fail permanent input/domain errors. Authentication can require refresh or user action rather than infinite retry.</li>
+<li><strong>Expedited work versus FGS?</strong> Expedited work is short, latency-sensitive queued work under quota; an FGS is ongoing user-visible work with notification, type, permissions, and start restrictions.</li>
+<li><strong>When is an exact alarm justified?</strong> Only when a core user-facing function needs precise time. Otherwise an inexact alarm or WorkManager gives batching and better battery behavior.</li>
+<li><strong>What survives reboot?</strong> A WorkManager request and your durable database state; AlarmManager alarms do not and must be reconstructed. An in-memory service or coroutine does not survive.</li>
+<li><strong>How do you prevent duplicate execution?</strong> Stable operation identity, transactional state transitions, a server idempotency key or upsert, checkpoints, and reconciliation—without calling the scheduler formally exactly once.</li>
+</ol>
+
+<h2 id="en-stage5-followups">4 senior follow-ups with answers<a aria-label="Link to section: 4 senior follow ups" class="heading-anchor" href="#en-stage5-followups">#</a></h2>
+<ol>
+<li><strong>HTTP 200 arrived, then the process died before the DB commit.</strong> The next run can repeat the call; a server idempotency key returns the same result and the Worker reconciles the acknowledgement atomically.</li>
+<li><strong>A network constraint disappears during upload.</strong> WorkManager's stop signal does not roll back the network. Abort cooperatively, store a resumable offset/session, close resources, and safely continue or restart.</li>
+<li><strong>“Every day at 09:00” fires at 08:00 after DST.</strong> The implementation stored an elapsed or 24-hour interval rather than a civil-time rule. Store zone plus local time and recompute the next instant after each fire, time-zone change, and reboot.</li>
+<li><strong>A foreground Worker on Android 16 stops starting under load.</strong> Long-running workers can exhaust job quota. Inspect stop reason and quota; use UIDT for a user-started transfer, a lawful typed FGS for a direct ongoing case, or chunk/defer the work.</li>
+</ol>
+
+<h2 id="en-stage5-self-check">5 self-check questions without answers<a aria-label="Link to section: 5 self check questions without answers" class="heading-anchor" href="#en-stage5-self-check">#</a></h2>
+<ol>
+<li>Which durable record and idempotency key protect your most important background side effect?</li>
+<li>What happens if the process dies before start, during I/O, and after remote success?</li>
+<li>Which API fits the latency, durability, visibility, and clock precision of your case?</li>
+<li>How does your code react to constraint loss, cancellation, force-stop, reboot, and a time-zone change?</li>
+<li>Which <code>dumpsys</code> or test-driver assertions prove a state transition rather than merely a callback?</li>
+</ol>
+
+<h2 id="en-stage5-english-skeletons">Interview-ready English answer skeletons<a aria-label="Link to section: Interview ready English answer skeletons" class="heading-anchor" href="#en-stage5-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you choose and design reliable background execution on Android?</em></p>
+<h3 id="en-stage5-answer-30">~30-second answer<a aria-label="Link to section: 30 second answer" class="heading-anchor" href="#en-stage5-answer-30">#</a></h3>
+<blockquote><p>I separate process, component, and durable-work lifetimes. For deferrable work that must survive process death or reboot I default to WorkManager with constraints, unique-work policy, bounded retries, and idempotent effects. A service is not a thread; a foreground service is only for ongoing user-visible work and must satisfy start, type, permission, and notification rules. Broadcast receivers stay short and enqueue durable work. Alarms are for clock events, exact only when the user-facing requirement justifies special access. I test cancellation, duplicates, Doze, process death, and reboot.</p></blockquote>
+<h3 id="en-stage5-answer-2min">~2-minute answer<a aria-label="Link to section: 2 minute answer" class="heading-anchor" href="#en-stage5-answer-2min">#</a></h3>
+<blockquote><p>I begin with four requirements: latency, durability across process death or reboot, user visibility, and clock precision. UI-scoped work remains lifecycle-scoped. Deferrable persistent work goes to WorkManager; short important work may be expedited, but quota and out-of-quota behavior are explicit. Ongoing user-visible work may require a correctly typed foreground service or a purpose-built API such as a user-initiated data-transfer job.</p><p>A Service is an Android component, not a background thread. Its callbacks normally run on the process main thread. Started and bound lifetimes are independent, and neither makes the process immortal. A receiver is also a short entry point: goAsync extends the broadcast only briefly, so durable continuation is persisted and enqueued.</p><p>For WorkManager I model constraints, unique-work conflict policy, transient versus permanent failure, backoff, cooperative stop, and chain failure propagation. Data carries small IDs, not payloads. Persistence still does not make an external side effect exactly once: a crash after server success but before local commit can replay it. I use an operation ID, transactional outbox, server idempotency key, checkpoints, and reconciliation.</p><p>AlarmManager is for clock-driven delivery. I prefer inexact alarms, reserve exact alarms for justified user-facing precision, check special access, and rebuild schedules after reboot or civil-time changes. Finally, I verify DB transitions and stop reasons with WorkManager test drivers, adb and dumpsys under constraint loss, quota, Doze, cancellation, process death, reboot, and OEM-restricted conditions.</p></blockquote>
+
+<h2 id="en-stage5-sources">Official sources<a aria-label="Link to section: Official sources" class="heading-anchor" href="#en-stage5-sources">#</a></h2>
+<ul>
+<li><a href="https://developer.android.com/develop/background-work/services">Services overview</a> and <a href="https://developer.android.com/develop/background-work/services/bound-services">Bound services overview</a></li>
+<li><a href="https://developer.android.com/develop/background-work/background-tasks/broadcasts">Broadcasts overview</a></li>
+<li><a href="https://developer.android.com/develop/background-work/background-tasks/persistent">Task scheduling / WorkManager</a>, <a href="https://developer.android.com/develop/background-work/background-tasks/persistent/getting-started/define-work">Define work requests</a>, <a href="https://developer.android.com/develop/background-work/background-tasks/persistent/how-to/manage-work">Managing work</a>, <a href="https://developer.android.com/develop/background-work/background-tasks/persistent/how-to/chain-work">Chaining work</a>, and <a href="https://developer.android.com/reference/androidx/work/Data">WorkManager Data API</a></li>
+<li><a href="https://developer.android.com/develop/background-work/background-tasks/persistent/how-to/long-running">Long-running workers</a>, <a href="https://developer.android.com/develop/background-work/services/fgs">Foreground services overview</a>, <a href="https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start">Background-start restrictions</a>, <a href="https://developer.android.com/develop/background-work/services/fgs/service-types">FGS types</a>, and <a href="https://developer.android.com/develop/background-work/services/fgs/timeout">FGS timeouts</a></li>
+<li><a href="https://developer.android.com/develop/background-work/background-tasks/uidt">User-initiated data transfer</a> and <a href="https://developer.android.com/about/versions/15/changes/foreground-service-types">Android 15 FGS changes</a></li>
+<li><a href="https://developer.android.com/develop/background-work/services/alarms">Schedule alarms</a> and <a href="https://developer.android.com/topic/performance/power/power-details">Power-management resource limits</a></li>
+<li><a href="https://developer.android.com/develop/background-work/background-tasks/testing/persistent/debug">Debug WorkManager</a>, <a href="https://developer.android.com/develop/background-work/background-tasks/testing/persistent/integration-testing">WorkManager integration testing</a>, and <a href="https://developer.android.com/topic/performance/power/test-power">Test power-related issues</a></li>
 </ul>
 </div></details>
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="en-kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
