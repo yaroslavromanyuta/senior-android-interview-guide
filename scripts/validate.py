@@ -25,6 +25,7 @@ STAGE11_KEY = "advanced-kotlin-flow-production"
 STAGE12_KEY = "android-ui-architecture-state-modeling"
 STAGE13_KEY = "clean-architecture-android-modularization"
 STAGE14_KEY = "jetpack-compose-runtime-state"
+STAGE15_KEY = "compose-effects-navigation-viewmodel"
 
 
 def validate_html(path: Path) -> list[str]:
@@ -81,7 +82,7 @@ def validate_index_structure() -> list[str]:
         (2, STAGE2_KEY), (3, STAGE3_KEY), (4, STAGE4_KEY), (5, STAGE5_KEY),
         (6, STAGE6_KEY), (7, STAGE7_KEY), (8, STAGE8_KEY), (9, STAGE9_KEY),
         (10, STAGE10_KEY), (11, STAGE11_KEY), (12, STAGE12_KEY), (13, STAGE13_KEY),
-        (14, STAGE14_KEY),
+        (14, STAGE14_KEY), (15, STAGE15_KEY),
     ):
         expected_stage_ids = (stage_key, f"en-{stage_key}")
         if content.count(f'data-key="{stage_key}"') != 2:
@@ -115,12 +116,13 @@ def validate_index_structure() -> list[str]:
             f'{prefix}{STAGE12_KEY}',
             f'{prefix}{STAGE13_KEY}',
             f'{prefix}{STAGE14_KEY}',
+            f'{prefix}{STAGE15_KEY}',
             f'{prefix}kotlin-for-android',
         )
         positions = [content.find(f'id="{value}"') for value in ordered_ids]
         if -1 in positions or positions != sorted(positions):
             errors.append(
-                f"index.html: {prefix or 'uk-'}Stages 2–14 must follow Stage 1 and precede Kotlin for Android"
+                f"index.html: {prefix or 'uk-'}Stages 2–15 must follow Stage 1 and precede Kotlin for Android"
             )
 
         stage5_id = f"{prefix}{STAGE5_KEY}"
@@ -133,6 +135,7 @@ def validate_index_structure() -> list[str]:
         stage12_id = f"{prefix}{STAGE12_KEY}"
         stage13_id = f"{prefix}{STAGE13_KEY}"
         stage14_id = f"{prefix}{STAGE14_KEY}"
+        stage15_id = f"{prefix}{STAGE15_KEY}"
         major_ids = re.findall(
             r'<details\s+class="major-section"[^>]*\bid="([^"]+)"',
             content,
@@ -149,6 +152,7 @@ def validate_index_structure() -> list[str]:
             or stage12_id not in major_ids
             or stage13_id not in major_ids
             or stage14_id not in major_ids
+            or stage15_id not in major_ids
             or major_ids.index(stage6_id) != major_ids.index(stage5_id) + 1
             or major_ids.index(stage7_id) != major_ids.index(stage6_id) + 1
             or major_ids.index(stage8_id) != major_ids.index(stage7_id) + 1
@@ -158,6 +162,7 @@ def validate_index_structure() -> list[str]:
             or major_ids.index(stage12_id) != major_ids.index(stage11_id) + 1
             or major_ids.index(stage13_id) != major_ids.index(stage12_id) + 1
             or major_ids.index(stage14_id) != major_ids.index(stage13_id) + 1
+            or major_ids.index(stage15_id) != major_ids.index(stage14_id) + 1
         ):
             errors.append(
                 f"index.html: {stage6_id!r} must immediately follow {stage5_id!r}, "
@@ -168,7 +173,8 @@ def validate_index_structure() -> list[str]:
                 f"{stage11_id!r} must immediately follow {stage10_id!r}, and "
                 f"{stage12_id!r} must immediately follow {stage11_id!r}, and "
                 f"{stage13_id!r} must immediately follow {stage12_id!r}, and "
-                f"{stage14_id!r} must immediately follow {stage13_id!r}"
+                f"{stage14_id!r} must immediately follow {stage13_id!r}, and "
+                f"{stage15_id!r} must immediately follow {stage14_id!r}"
             )
 
         toc_adjacency = re.search(
@@ -268,6 +274,17 @@ def validate_index_structure() -> list[str]:
         if not stage14_toc_adjacency:
             errors.append(
                 f"index.html: TOC link {stage14_id!r} must be immediately after {stage13_id!r}"
+            )
+
+        stage15_toc_adjacency = re.search(
+            rf'<li class="toc-major">\s*<a data-target="{re.escape(stage14_id)}"[^>]*>.*?</a>\s*'
+            rf'</li>\s*<li class="toc-major">\s*<a data-target="{re.escape(stage15_id)}"[^>]*>',
+            content,
+            re.S,
+        )
+        if not stage15_toc_adjacency:
+            errors.append(
+                f"index.html: TOC link {stage15_id!r} must be immediately after {stage14_id!r}"
             )
 
     stage4_contracts = (
@@ -992,6 +1009,82 @@ def validate_index_structure() -> list[str]:
                     errors.append(
                         f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}"
                     )
+
+    stage15_contracts = (
+        "objective", "mental-model", "topology", "effects", "keys-snapshotflow",
+        "lifecycle-collection", "route-content", "viewmodel-scoping", "savedstate",
+        "navigation-stack", "outcomes", "guarantees", "version-sensitive",
+        "decision-framework", "tradeoffs", "production-scenario", "review-trap",
+        "testing", "likely-qa", "followups", "self-check", "english-skeletons",
+        "answer-30", "answer-2min", "sources",
+    )
+    for prefix in ("stage15-uk-", "en-stage15-"):
+        for suffix in stage15_contracts:
+            stage_id = f"{prefix}{suffix}"
+            if ids.count(stage_id) != 1:
+                errors.append(f"index.html: expected exactly one Stage 15 contract id {stage_id!r}")
+
+    stage15_sections: dict[str, str] = {}
+    for stage_id in (STAGE15_KEY, f"en-{STAGE15_KEY}"):
+        match = re.search(
+            rf'<details\s+class="major-section"[^>]*\bid="{re.escape(stage_id)}"[^>]*>(.*?)</div></details>',
+            content,
+            re.I | re.S,
+        )
+        stage15_sections[stage_id] = match.group(1) if match else ""
+        if not match:
+            errors.append(f"index.html: unable to isolate Stage 15 section {stage_id!r}")
+
+    common_stage15_markers = (
+        "SideEffect", "LaunchedEffect", "DisposableEffect", "rememberCoroutineScope",
+        "rememberUpdatedState", "produceState", "snapshotFlow", "semantic", "cooperative",
+        "abandoned", "collectAsStateWithLifecycle", "stateless", "ViewModelStoreOwner",
+        "CreationExtras", "createSavedStateHandle", "hiltViewModel", "SavedStateHandle",
+        "NavHost", "NavController", "back-stack", "composable&lt;T&gt;", "toRoute&lt;T&gt;",
+        "popUpTo", "inclusive", "launchSingleTop", "saveState", "restoreState",
+        "multiple back stacks", "Deep links are untrusted", "SharedFlow", "Channel",
+        "durable exactly-once", "process death", "TestNavHostController", "ComposeNavigator",
+        "Navigation 3", "Stage 17",
+    )
+    language_stage15_markers = {
+        STAGE15_KEY: (
+            "Це likely practice questions, не підтверджений і не гарантований список співбесіди.",
+            "ViewModel survives configuration change, але не process death",
+            "Key controls restart, not “handled once forever”",
+            "NavController</code> destination на source of truth",
+        ),
+        f"en-{STAGE15_KEY}": (
+            "These are likely practice questions, not a confirmed or guaranteed interview list.",
+            "A ViewModel survives configuration change of its owner, not process death",
+            "A key controls restart, not “handled once forever.”",
+            "NavController</code> destination into the source of truth",
+        ),
+    }
+    for stage_id, section in stage15_sections.items():
+        for marker in (*common_stage15_markers, *language_stage15_markers[stage_id]):
+            if marker not in section:
+                errors.append(
+                    f"index.html: Stage 15 section {stage_id!r} is missing focused marker {marker!r}"
+                )
+
+    for prefix in ("stage15-uk-", "en-stage15-"):
+        for suffix, expected in (("likely-qa", 10), ("followups", 4), ("self-check", 4)):
+            match = re.search(
+                rf'id="{re.escape(prefix + suffix)}".*?</h2>.*?<ol>(.*?)</ol>',
+                content,
+                re.S,
+            )
+            count = len(re.findall(r"<li>", match.group(1))) if match else 0
+            if count != expected:
+                errors.append(
+                    f"index.html: {prefix + suffix!r} must contain exactly {expected} list items; found {count}"
+                )
+            if suffix == "likely-qa" and match:
+                labelled = len(re.findall(r"<li>\s*<strong>.*?</strong>", match.group(1), re.S))
+                if labelled != expected:
+                    errors.append(
+                        f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}"
+                    )
     return errors
 
 
@@ -1009,7 +1102,7 @@ def main() -> int:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
-    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–14 navigation/contracts, and baseline checksum are valid.")
+    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–15 navigation/contracts, and baseline checksum are valid.")
     return 0
 
 

@@ -507,6 +507,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="jetpack-compose-runtime-state" href="#jetpack-compose-runtime-state">Jetpack Compose runtime та state</a>
 </li>
 <li class="toc-major">
+<a data-target="compose-effects-navigation-viewmodel" href="#compose-effects-navigation-viewmodel">Compose effects, navigation та ViewModel integration</a>
+</li>
+<li class="toc-major">
 <a data-target="kotlin-for-android" href="#kotlin-for-android">Kotlin for Android</a>
 <ol class="toc-children">
 <li><a data-target="val-vs-var-immutability" href="#val-vs-var-immutability">val vs var, immutability</a></li>
@@ -825,6 +828,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </li>
 <li class="toc-major">
 <a data-target="en-jetpack-compose-runtime-state" href="#en-jetpack-compose-runtime-state">Jetpack Compose runtime and state</a>
+</li>
+<li class="toc-major">
+<a data-target="en-compose-effects-navigation-viewmodel" href="#en-compose-effects-navigation-viewmodel">Compose effects, navigation, and ViewModel integration</a>
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-for-android" href="#en-kotlin-for-android">Kotlin for Android</a>
@@ -4210,6 +4216,254 @@ class CartUiState(val lines: MutableList&lt;Line&gt;) // false stability promise
 <li><a href="https://developer.android.com/reference/kotlin/androidx/compose/runtime/SnapshotMutationPolicy">SnapshotMutationPolicy API</a> та <a href="https://developer.android.com/reference/kotlin/androidx/compose/runtime/saveable/package-summary">runtime-saveable API</a></li>
 <li><a href="https://developer.android.com/develop/ui/compose/performance/stability">Stability in Compose</a> та <a href="https://developer.android.com/develop/ui/compose/compiler">Compose compiler</a></li>
 <li><a href="https://developer.android.com/develop/ui/compose/libraries">Compose and other libraries</a> та <a href="https://developer.android.com/reference/kotlin/androidx/lifecycle/compose/package-summary">Lifecycle Compose API</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="compose-effects-navigation-viewmodel" data-title="Compose effects, navigation та ViewModel integration" id="compose-effects-navigation-viewmodel" open=""><summary class="major-summary"><span class="major-title">Compose effects, navigation та ViewModel integration</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<h2 id="stage15-uk-objective">Learning objective<a aria-label="Посилання на розділ: Learning objective" class="heading-anchor" href="#stage15-uk-objective">#</a></h2>
+<p>Після етапу ви маєте тримати composable body pure та idempotent; вибирати effect API за lifecycle роботи; проєктувати semantic keys, cancellation, cleanup і stale-capture policy; інтегрувати lifecycle-aware state, stateless content, ViewModel та Navigation Compose; моделювати back stack, deep links і transient UI actions без неправдивої exactly-once обіцянки; та тестувати boundaries окремо. Stage 10 вже пояснює event primitives, Stage 12 — architecture/state ownership, Stage 14 — runtime, а Stage 17 — повну DI; тут лише їх Compose wiring.</p>
+
+<h2 id="stage15-uk-mental-model">Senior mental model<a aria-label="Посилання на розділ: Senior mental model" class="heading-anchor" href="#stage15-uk-mental-model">#</a></h2>
+<blockquote><p><strong>Composition описує бажаний UI; effect прив’язує imperative work до конкретного composition identity/lifecycle; ViewModel володіє screen state; NavController володіє UI back stack, але не domain truth.</strong> Composable body може rerun, skip або бути abandoned до commit, тому зовнішня дія в body некоректна. Effect стартує тільки після успішного входу instance у composition, а key визначає restart identity, не business exactly-once.</p></blockquote>
+<ul>
+<li>Розділяйте composition-driven synchronization, user-event work і durable business transition: це три різні trigger/lifetime/delivery contracts.</li>
+<li>Малюйте topology: producer → lifecycle gate → route/state holder → stateless content; окремо effect source → collector → UI imperative target; окремо NavController/back stack.</li>
+<li>Cancellation зупиняє cooperative coroutine, але не відкочує вже відправлений HTTP request, payment або запис зовнішньої системи.</li>
+</ul>
+
+<h2 id="stage15-uk-topology">Effects, navigation та ViewModel internals/topology<a aria-label="Посилання на розділ: Effects navigation and ViewModel topology" class="heading-anchor" href="#stage15-uk-topology">#</a></h2>
+<pre><code class="language-text">repository/domain truth → ViewModel-owned StateFlow
+    → collectAsStateWithLifecycle() in Route
+    → immutable UiState + callbacks → stateless Content
+
+composition identity + effect keys → effect instance/job/cleanup
+user callback → rememberCoroutineScope job (UI-owned)
+
+NavHost graph ↔ NavController ↔ back-stack entries
+                               ↳ destination/graph ViewModelStoreOwner
+deep link → parse + validate/authorize ID → repository truth</code></pre>
+<p><code>NavHost</code> materializes destinations from a graph against a <code>NavController</code>. Each back-stack entry can provide lifecycle, saved state and a <code>ViewModelStoreOwner</code>; popping an owner clears its scoped ViewModels. A nested graph entry can share one ViewModel across child destinations; Activity ownership intentionally outlives all destinations. Choose the narrowest owner that must share the state, and never use wider scope merely to avoid passing a contract.</p>
+
+<h2 id="stage15-uk-effects">Effect API selection та lifecycle<a aria-label="Посилання на розділ: Effect API selection and lifecycle" class="heading-anchor" href="#stage15-uk-effects">#</a></h2>
+<table><thead><tr><th>API</th><th>Правильний contract</th><th>Типова пастка</th></tr></thead><tbody>
+<tr><td><code>SideEffect</code></td><td>Publish Compose state до non-Compose object після кожної успішної recomposition.</td><td>Використати для one-shot analytics: отримаєте повтори.</td></tr>
+<tr><td><code>LaunchedEffect(keys)</code></td><td>Composition-driven suspend work; job cancel/restart, коли instance leaves composition або key змінюється.</td><td><code>Unit</code> із changing input або broad/volatile key.</td></tr>
+<tr><td><code>DisposableEffect(keys)</code></td><td>Paired register/unregister; <code>onDispose</code> при key/instance removal.</td><td>Вважати cleanup process-shutdown hook.</td></tr>
+<tr><td><code>rememberCoroutineScope()</code></td><td>Launch suspend UI work із click/gesture callback; scope скасовується, коли owner leaves composition.</td><td>Створити event flag лише для запуску <code>LaunchedEffect</code>.</td></tr>
+<tr><td><code>rememberUpdatedState(value)</code></td><td>Long-lived effect не restart-иться, але callback/value читається latest у deferred execution.</td><td>Ховати input, зміна якого повинна restart-нути work.</td></tr>
+<tr><td><code>produceState</code></td><td>Адаптувати suspend/callback source до Compose <code>State</code>; producer cancel-иться з keys/instance, values conflate.</td><td>Дублювати repository/ViewModel state або забути <code>awaitDispose</code> для callback.</td></tr>
+<tr><td><code>snapshotFlow</code></td><td>Перетворити snapshot reads на cold Flow всередині coroutine.</td><td>Очікувати emission кожного write або будувати chain без terminal collection.</td></tr>
+</tbody></table>
+<p>Abandoned composition не повинна залишити зовнішній effect: body ще не є committed lifecycle. <code>DisposableEffect</code> setup/cleanup і post-commit <code>SideEffect</code> існують саме для межі успішної composition. Але crash/process kill може не дати виконати cleanup, тому correctness зовнішньої системи не може залежати лише від <code>onDispose</code>.</p>
+
+<h2 id="stage15-uk-keys-snapshotflow">Semantic keys, stale capture та snapshotFlow topology<a aria-label="Посилання на розділ: Semantic keys stale capture and snapshotFlow" class="heading-anchor" href="#stage15-uk-keys-snapshotflow">#</a></h2>
+<pre><code class="language-kotlin">@Composable
+fun SearchRoute(queryId: String, onExpired: () -&gt; Unit) {
+    val latestOnExpired by rememberUpdatedState(onExpired)
+    LaunchedEffect(queryId) {              // identity follows the query
+        delay(30_000)
+        latestOnExpired()                  // latest callback; no timer restart
+    }
+}
+
+LaunchedEffect(listState) {
+    snapshotFlow { listState.firstVisibleItemIndex }
+        .map { it &gt; 0 }
+        .distinctUntilChanged()
+        .collectLatest { visible -&gt; analytics.setScrolled(visible) }
+}</code></pre>
+<ul>
+<li>Key — semantic identity залежності: <code>userId</code>, <code>queryId</code>, <code>lifecycleOwner</code>. Key change спершу cancel/dispose old instance, потім запускає new; cancellation cooperative.</li>
+<li><code>rememberUpdatedState</code> потрібен, коли effect lifetime не змінюється, але delayed callback має бути latest. Якщо <code>userId</code> змінює source/lifetime, він має бути key.</li>
+<li><code>snapshotFlow</code> records snapshot reads під час block, re-runs після relevant applied change і emits unequal result (подібно до <code>distinctUntilChanged</code>). Це observation, не audit log: intermediate/equal values можуть не з’явитися.</li>
+<li>Backpressure topology залишається Flow topology: <code>debounce</code>, <code>buffer</code>, <code>conflate</code>, <code>collectLatest</code> свідомо змінюють latency, cancellation і loss. Slow analytics collector без operator може suspend observation; external exactly-once не виникає.</li>
+</ul>
+
+<h2 id="stage15-uk-lifecycle-collection">Lifecycle-aware collection та duplicated collectors<a aria-label="Посилання на розділ: Lifecycle aware collection" class="heading-anchor" href="#stage15-uk-lifecycle-collection">#</a></h2>
+<p>Android route зазвичай читає render state через <code>collectAsStateWithLifecycle()</code>; underlying collection active лише на заданому minimum lifecycle і може unsubscribe/re-subscribe. Це економить work, але cold upstream може restart-нути, replay/current state може бути read знову, а transient emission під час неактивності може загубитися. Для platform-neutral Compose використовуйте відповідний <code>collectAsState</code> contract. Не запускайте паралельно два collectors одного UI effect у route і Activity: lifecycle re-entry або duplicate composition створить дублікати.</p>
+<p>Lifecycle collection не є acknowledgement. Якщо payment завершився, durable order/payment status має жити в repository/state і після resubscription визначати UI; snackbar про completion може бути best-effort. SharedFlow/Channel — in-memory coordination, не durable exactly-once queue.</p>
+
+<h2 id="stage15-uk-route-content">Stateless content + route/state-holder wiring<a aria-label="Посилання на розділ: Stateless content and route wiring" class="heading-anchor" href="#stage15-uk-route-content">#</a></h2>
+<pre><code class="language-kotlin">@Composable
+fun CheckoutRoute(
+    onReceipt: (String) -&gt; Unit,
+    viewModel: CheckoutViewModel = viewModel(),
+) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    CheckoutContent(
+        state = state,
+        onPay = viewModel::pay,
+        onReceipt = { onReceipt(state.orderId) },
+    )
+}
+
+@Composable
+fun CheckoutContent(
+    state: CheckoutUiState,
+    onPay: () -&gt; Unit,
+    onReceipt: () -&gt; Unit,
+) { /* layout only; preview/test with plain values */ }</code></pre>
+<p>Route отримує ViewModel/controller, collect-ить state та перетворює navigation у callbacks. Content приймає immutable UI contract і user-event lambdas; він не знає про DI, repositories, <code>NavController</code> або lifecycle. Не передавайте controller глибоко: <code>onProductClick(id)</code> легше тестувати й перевикористовувати.</p>
+
+<h2 id="stage15-uk-viewmodel-scoping">ViewModel ownership, factories та scoping<a aria-label="Посилання на розділ: ViewModel ownership factories and scoping" class="heading-anchor" href="#stage15-uk-viewmodel-scoping">#</a></h2>
+<ul>
+<li>Destination-scoped ViewModel живе, доки відповідний back-stack entry у stack. Graph-scoped ділить flow state між destinations nested graph. Activity-scoped переживає destination pop і підходить лише для справді Activity-wide state.</li>
+<li><code>viewModel()</code> використовує найближчий <code>ViewModelStoreOwner</code>; для parent graph явно отримайте stable parent entry через <code>getBackStackEntry(graphRoute)</code> і використайте його owner. Scope choice має бути видимою design decision.</li>
+<li>ViewModel survives configuration change, але не process death. Після recreation новий instance реконструюється з minimal saved input та durable repository truth.</li>
+<li>Constructor dependencies створюються через <code>ViewModelProvider.Factory</code>/<code>CreationExtras</code>; <code>createSavedStateHandle()</code> бере handle із extras. Hilt може згенерувати factory та надати <code>hiltViewModel()</code>. Тут важливий owner/extras boundary, не container setup Stage 17.</li>
+</ul>
+
+<h2 id="stage15-uk-savedstate">SavedStateHandle, arguments та recreation boundaries<a aria-label="Посилання на розділ: SavedStateHandle arguments and recreation" class="heading-anchor" href="#stage15-uk-savedstate">#</a></h2>
+<p><code>SavedStateHandle</code> — key/value state для ViewModel recreation, не durable business storage. Navigation arguments можуть бути доступні через handle; type-safe routes можуть decode через <code>toRoute&lt;T&gt;()</code> у сумісних версіях. Передавайте stable identifier/primitives (<code>productId</code>, <code>orderId</code>), а не domain object: destination заново читає авторитетну модель з repository. Після process death server/database могла змінитися, argument міг бути відсутній/старий, тому parse, validate і handle not-found.</p>
+
+<h2 id="stage15-uk-navigation-stack">Navigation graph, type-safe routes та back-stack policy<a aria-label="Посилання на розділ: Navigation graph routes and back stack" class="heading-anchor" href="#stage15-uk-navigation-stack">#</a></h2>
+<pre><code class="language-kotlin">@Serializable data object Home
+@Serializable data class Receipt(val orderId: String)
+
+NavHost(navController, startDestination = Home) {
+    composable&lt;Home&gt; { HomeRoute(onReceipt = { navController.navigate(Receipt(it)) }) }
+    composable&lt;Receipt&gt; { entry -&gt;
+        val route = entry.toRoute&lt;Receipt&gt;()
+        ReceiptRoute(orderId = route.orderId)
+    }
+}
+
+navController.navigate(Home) {
+    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+    launchSingleTop = true
+    restoreState = true
+}</code></pre>
+<ul>
+<li><code>popUpTo</code> removes entries up to target; <code>inclusive = true</code> removes target too. Wrong target/inclusive can erase expected Back history.</li>
+<li><code>launchSingleTop</code> avoids another copy only when target is already on top; it is not global deduplication.</li>
+<li><code>saveState</code>/<code>restoreState</code> can preserve/restore navigator destination state for tab-like flows. Multiple back stacks require deliberate top-level destination policy, stable routes and tests; they are not domain persistence.</li>
+<li>Deep links are untrusted input. Restrict scheme/host/path, decode safely, validate format/range, authorize access, and load by ID. A valid route does not grant domain permission.</li>
+</ul>
+
+<h2 id="stage15-uk-outcomes">Navigation/UI actions vs durable outcomes<a aria-label="Посилання на розділ: UI actions versus durable outcomes" class="heading-anchor" href="#stage15-uk-outcomes">#</a></h2>
+<p>Direct click navigation is a UI action: callback can call navigator once for that click. Composition-driven navigation needs explicit consumption/idempotency semantics; <code>if (state.paid) navController.navigate(...)</code> у body або naive <code>LaunchedEffect(state.paid)</code> може повторитися після recreation/resubscription. Key controls restart, not “handled once forever”.</p>
+<table><thead><tr><th>Факт</th><th>Модель</th><th>Trade-off</th></tr></thead><tbody>
+<tr><td>Payment/order completed</td><td>Durable repository status + idempotent command/request ID.</td><td>Survives process death; UI derives next safe screen, але transition policy must avoid loops.</td></tr>
+<tr><td>Navigate after click</td><td>UI callback/navigator contract.</td><td>Simple; protect against double tap and define stack options.</td></tr>
+<tr><td>Snackbar</td><td>Best-effort UI effect, or render durable message state with explicit acknowledgement if loss is unacceptable.</td><td>SharedFlow/Channel can lose or duplicate around lifecycle/process boundaries.</td></tr>
+</tbody></table>
+<p>Не перетворюйте <code>NavController</code> destination на source of truth для payment/auth. Domain outcome authoritatively exists outside navigation; route selection is a projection. Якщо effect stream використовується, документуйте loss, replay, duplicate collection і acknowledgement policy без claims про durable exactly-once.</p>
+
+<h2 id="stage15-uk-guarantees">Guarantees vs explicit non-guarantees<a aria-label="Посилання на розділ: Guarantees and non guarantees" class="heading-anchor" href="#stage15-uk-guarantees">#</a></h2>
+<table><thead><tr><th>Корисний contract</th><th>Не гарантує</th></tr></thead><tbody>
+<tr><td><code>LaunchedEffect</code> job cancel-иться при key/instance removal.</td><td>Preemption non-cooperative code, rollback external effects або exactly-once execution.</td></tr>
+<tr><td>Effect key задає restart identity.</td><td>Одне виконання за process/session/business operation.</td></tr>
+<tr><td><code>rememberCoroutineScope</code> cancel-иться, коли owner leaves composition.</td><td>Завершення job після navigation away або durable business delivery.</td></tr>
+<tr><td><code>DisposableEffect.onDispose</code> викликається, коли key/instance leaves composition.</td><td>Process-crash/shutdown cleanup guarantee.</td></tr>
+<tr><td>ViewModel зберігається через configuration change свого owner.</td><td>Survival after process death або після clear owner-а.</td></tr>
+<tr><td><code>SavedStateHandle</code> допомагає recreation.</td><td>Durable/large/authoritative business storage.</td></tr>
+<tr><td>Lifecycle-aware collector stop/start-иться з lifecycle.</td><td>Безперервна subscription або delivery emissions під час inactivity.</td></tr>
+<tr><td>SharedFlow/Channel координують in-memory consumers.</td><td>Durable exactly-once queue.</td></tr>
+<tr><td>NavController керує UI stack.</td><td>Domain source of truth.</td></tr>
+</tbody></table>
+
+<h2 id="stage15-uk-version-sensitive">Version-sensitive behavior<a aria-label="Посилання на розділ: Version sensitive behavior" class="heading-anchor" href="#stage15-uk-version-sensitive">#</a></h2>
+<ul>
+<li>Generic type-safe Navigation Compose routes (<code>composable&lt;T&gt;</code>, object/data-class routes, <code>toRoute&lt;T&gt;</code>, typed <code>navigate</code>/<code>popUpTo</code>) are Navigation 2.8-era APIs and evolve with Navigation/Kotlin serialization. Pin artifacts/plugin, read current release notes and do not present legacy string-route examples as identical.</li>
+<li>Navigation 3 is a separate, evolving Compose-first library with different back-stack ownership/API; do not mix its contracts with Navigation 2 examples.</li>
+<li><code>collectAsStateWithLifecycle</code> comes from <code>androidx.lifecycle:lifecycle-runtime-compose</code>; overloads, minimum lifecycle constraints and platform availability depend on Lifecycle version. Compose Multiplatform may use another collector.</li>
+<li><code>viewModel()</code>, <code>hiltViewModel()</code>, CreationExtras/default factory and SavedState integration depend on Activity/Lifecycle/Navigation/Hilt versions. Verify owner and factory in the pinned dependency graph.</li>
+<li>Effect semantics must follow current Compose runtime docs; implementation scheduling is not a public exactly-once protocol.</li>
+</ul>
+
+<h2 id="stage15-uk-decision-framework">Decision framework<a aria-label="Посилання на розділ: Decision framework" class="heading-anchor" href="#stage15-uk-decision-framework">#</a></h2>
+<ol>
+<li>Назвіть trigger: successful composition, key identity, user event, lifecycle visibility чи durable domain transition.</li>
+<li>Назвіть owner/lifetime: composition instance, destination, nested graph, Activity, ViewModel чи repository.</li>
+<li>Оберіть найвужчий API: body для description; <code>SideEffect</code> publish; <code>DisposableEffect</code> pair; <code>LaunchedEffect</code> keyed suspend; remembered scope для callback; <code>produceState</code> adapter; <code>snapshotFlow</code> snapshot observation.</li>
+<li>Запишіть semantic keys, stale-value policy, cooperative cancellation points, cleanup і external idempotency.</li>
+<li>Для state оберіть lifecycle collector; для event/action запишіть loss/duplicate/replay/acknowledgement semantics.</li>
+<li>Для navigation визначте route ID validation, owner scope, stack transform, deep-link trust boundary і post-process-death reconstruction.</li>
+<li>Тестуйте pure content, effect contract, ViewModel reducer/recreation і graph/back stack на відповідному boundary.</li>
+</ol>
+
+<h2 id="stage15-uk-tradeoffs">Trade-offs та failure modes<a aria-label="Посилання на розділ: Trade offs and failure modes" class="heading-anchor" href="#stage15-uk-tradeoffs">#</a></h2>
+<ul>
+<li>Надто broad key restart-ить дорогий collector; constant key stale-capture-ить dependency; random key руйнує lifecycle.</li>
+<li><code>rememberUpdatedState</code> зберігає latest callback без restart, але приховує bug, якщо source мав змінитися.</li>
+<li><code>collectLatest</code> зменшує lag, скасовуючи previous handling; для non-idempotent external write це може залишити partial effect.</li>
+<li>Activity-scoped ViewModel полегшує sharing, але створює stale cross-screen state і не clear-иться після graph exit.</li>
+<li>Передача domain object route-ом дає stale/oversized/serialization-coupled snapshot; ID вимагає reload, зате зберігає truth та authorization.</li>
+<li><code>launchSingleTop</code> і multiple-stack restore покращують tabs, але неправильний <code>popUpTo</code> губить history або накопичує duplicate entries.</li>
+<li>Lifecycle resubscription може restart-нути cold upstream; duplicated route/effect collectors можуть двічі показати snackbar або navigate.</li>
+</ul>
+
+<h2 id="stage15-uk-production-scenario">Production scenario: payment completion<a aria-label="Посилання на розділ: Production payment scenario" class="heading-anchor" href="#stage15-uk-production-scenario">#</a></h2>
+<p><strong>Гіпотетично:</strong> user натискає Pay; ViewModel надсилає command з idempotency key, repository persist-ить order/payment status, а <code>StateFlow</code> показує Processing/Completed. Route collect-ить через <code>collectAsStateWithLifecycle</code>; stateless content лише викликає <code>onPay</code>. Навігація до <code>Receipt(orderId)</code> — UI policy з guard/consumption, а receipt screen reload-ить order за ID. Після process death app читає durable Completed і безпечно вирішує destination; SharedFlow completion не є єдиним доказом.</p>
+<p>Snackbar “Payment complete” best-effort: вона може загубитися при background або повторитися після collector restart. Якщо повідомлення юридично/операційно важливе, це acknowledged durable notification state, не ephemeral snackbar. Bottom tabs використовують <code>popUpTo(start) { saveState = true }</code>, <code>launchSingleTop</code>, <code>restoreState</code>; deep-linked <code>orderId</code> format-check-иться й authorize-иться до показу.</p>
+
+<h2 id="stage15-uk-review-trap">Code-review/debug trap<a aria-label="Посилання на розділ: Code review and debugging trap" class="heading-anchor" href="#stage15-uk-review-trap">#</a></h2>
+<pre><code class="language-kotlin">@Composable
+fun Checkout(vm: CheckoutViewModel, nav: NavController) {
+    val state by vm.state.collectAsStateWithLifecycle()
+    if (state.paid) nav.navigate("receipt/${state.order}") // side effect in body
+    LaunchedEffect(Unit) { vm.events.collect { nav.navigate(it.route) } }
+    DisposableEffect(Unit) {
+        gateway.addListener { vm.refresh() }
+        onDispose { } // leaked listener
+    }
+}</code></pre>
+<p>Trap: body navigation can run repeatedly; <code>Unit</code> collector may retain wrong VM/nav owner and duplicate with another collector; domain object/string route is stale/untrusted; listener lacks symmetric removal. Debug with effect-instance logs (key, owner, start/cancel/dispose), back-stack snapshots, collector counts and process/lifecycle recreation. Fix: route/content split, typed route with stable <code>orderId</code>, direct click callback or explicit outcome consumption, semantic keys/latest callbacks, paired cleanup, durable payment truth and idempotent command.</p>
+
+<h2 id="stage15-uk-testing">Testing effects, navigation та ViewModel boundaries<a aria-label="Посилання на розділ: Testing effects navigation and ViewModel boundaries" class="heading-anchor" href="#stage15-uk-testing">#</a></h2>
+<ul>
+<li>Pure Compose tests render <code>Content(state, callbacks)</code> and assert semantics/callback IDs without real ViewModel/NavController.</li>
+<li>Effect tests control keys and composition presence: assert restart cancellation, latest callback, listener registration/removal and no body side effect; use deterministic coroutine time where applicable.</li>
+<li>ViewModel unit tests assert state transitions, idempotency/retry and reconstruction from minimal <code>SavedStateHandle</code>; do not infer process-death safety from configuration-change tests.</li>
+<li>Graph integration can use <code>TestNavHostController</code> plus <code>ComposeNavigator</code> to verify start destination, typed destination/back stack, <code>popUpTo</code> and restore policy. Prefer a small Navigator contract fake for route callback tests; test deep-link validation/authorization separately.</li>
+</ul>
+
+<h2 id="stage15-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice questions and answers" class="heading-anchor" href="#stage15-uk-likely-qa">#</a></h2>
+<p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
+<ol>
+<li><strong>Чому не можна запускати effect у composable body?</strong> Body може rerun, skip або бути abandoned; external work не має committed lifecycle. Оберіть post-commit/keyed effect або user callback.</li>
+<li><strong>Як вибрати <code>LaunchedEffect</code> key?</strong> Key має бути semantic identity source/work. Його зміна означає cancel old і start new, але не exactly-once.</li>
+<li><strong><code>LaunchedEffect</code> чи <code>rememberCoroutineScope</code>?</strong> Перший — composition-driven keyed lifecycle; другий — suspend work із click/gesture callback, cancelled із owner.</li>
+<li><strong>Коли <code>rememberUpdatedState</code>?</strong> Коли long-lived effect не повинен restart, але delayed callback/value має бути latest; не для source identity.</li>
+<li><strong>Що гарантує <code>DisposableEffect</code>?</strong> Paired disposal при key/instance removal; не cleanup після process kill.</li>
+<li><strong>Що робить <code>snapshotFlow</code>?</strong> Спостерігає snapshot reads і emits unequal results у cold Flow; це не журнал кожного write, а downstream operators визначають backpressure/loss.</li>
+<li><strong>Як scope-ити ViewModel?</strong> До narrowest <code>ViewModelStoreOwner</code>: destination, shared nested graph або справді Activity-wide owner; pop owner-а clear-ить instance.</li>
+<li><strong>Що зберігати у route/SavedStateHandle?</strong> Мінімальні stable IDs/primitives для reconstruction; не domain objects і не durable truth.</li>
+<li><strong>Чи SharedFlow гарантує navigation once?</strong> Ні. Lifecycle/process gaps і duplicate collectors дають loss/duplication; durable outcomes моделюйте state + idempotent policy.</li>
+<li><strong>Як тестувати Navigation Compose?</strong> Content тестуйте callbacks; graph — <code>TestNavHostController</code>/<code>ComposeNavigator</code> або contract fake, перевіряючи destination і stack options.</li>
+</ol>
+
+<h2 id="stage15-uk-followups">4 senior follow-ups з відповідями<a aria-label="Посилання на розділ: 4 senior follow ups" class="heading-anchor" href="#stage15-uk-followups">#</a></h2>
+<ol>
+<li><strong>Effect cancel-ився після HTTP submit.</strong> Cancellation не undo-ить server side effect. Використайте idempotency key, query durable result і reconcile unknown outcome.</li>
+<li><strong>Bottom-tab state інколи зникає.</strong> Перевірте однаковий top-level route, <code>popUpTo(findStartDestination())</code>, paired <code>saveState/restoreState</code>, singleTop і navigator/version-specific restoration tests.</li>
+<li><strong>Graph-shared ViewModel створюється двічі.</strong> Обидва destinations мають явно використовувати той самий parent graph back-stack entry як owner; логувати owner/entry lifecycle, не лише class name.</li>
+<li><strong>Completion navigate дублюється після rotation.</strong> Не робіть boolean state одноразовою командою. Durable completion лишається state; navigation policy має guard/acknowledgement/idempotent stack transform і тест recreation.</li>
+</ol>
+
+<h2 id="stage15-uk-self-check">4 unanswered self-checks<a aria-label="Посилання на розділ: 4 unanswered self checks" class="heading-anchor" href="#stage15-uk-self-check">#</a></h2>
+<ol>
+<li>Для кожного effect: який trigger, semantic key, cancellation point, stale-capture policy і cleanup?</li>
+<li>Що станеться з кожним state/effect collector при STOP→START, destination duplicate, pop і process death?</li>
+<li>Який exact owner має кожний ViewModel, коли він clear-иться, і що реконструює його після process recreation?</li>
+<li>Які navigation inputs untrusted, яка back-stack transform очікується і де живе durable domain truth?</li>
+</ol>
+
+<h2 id="stage15-uk-english-skeletons">Interview-ready English answer skeletons<a aria-label="Посилання на розділ: Interview ready English answer skeletons" class="heading-anchor" href="#stage15-uk-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you integrate Compose effects, Navigation, and ViewModels without duplicate work or lost outcomes?</em></p>
+<h3 id="stage15-uk-answer-30">~30-second answer<a aria-label="Посилання на розділ: 30 second answer" class="heading-anchor" href="#stage15-uk-answer-30">#</a></h3>
+<blockquote><p>I keep composable bodies pure and choose an effect by ownership: SideEffect for post-commit publishing, DisposableEffect for paired registration, LaunchedEffect for composition-driven keyed work, and a remembered scope for user events. Keys define restart identity, not exactly-once delivery, and cancellation cannot undo external effects. A route collects ViewModel state with lifecycle awareness and passes immutable state and callbacks to stateless content. I scope ViewModels to the narrowest destination, graph, or Activity owner, pass stable IDs through typed routes, treat deep links as untrusted, and keep durable outcomes in repositories rather than SharedFlow, SavedStateHandle, or NavController.</p></blockquote>
+<h3 id="stage15-uk-answer-2min">~2-minute answer<a aria-label="Посилання на розділ: 2 minute answer" class="heading-anchor" href="#stage15-uk-answer-2min">#</a></h3>
+<blockquote><p>My starting rule is that composition describes UI and can rerun, skip, or be abandoned, so it cannot perform external work. I use SideEffect to publish after successful recomposition, DisposableEffect for symmetric setup and cleanup, LaunchedEffect for suspend work whose lifetime follows semantic keys, and rememberCoroutineScope when a click starts UI-owned suspend work. rememberUpdatedState keeps a callback fresh without restarting a long-lived effect; produceState adapts an external producer to State; snapshotFlow observes snapshot reads as a cold Flow. Effect cancellation is cooperative, disposal is not a process-shutdown hook, and no key gives business exactly-once.</p><p>On Android, the route layer collects StateFlow with collectAsStateWithLifecycle and passes plain immutable state and callbacks to stateless content. Collection can stop and restart with lifecycle, so cold upstreams may restart and transient emissions may be lost. I avoid duplicate collectors and treat SharedFlow or Channel as in-memory delivery, not durable queues. A completed payment or order is repository state with idempotent commands; a snackbar is usually best-effort.</p><p>I scope a ViewModel to the narrowest ViewModelStoreOwner: a destination by default, a nested graph for intentional sharing, or the Activity only for Activity-wide state. It survives configuration change, not process death. Factories and CreationExtras reconstruct dependencies and SavedStateHandle; Hilt can generate that wiring, but scope remains an explicit decision. SavedStateHandle stores minimal restorable input, not authoritative business data.</p><p>Navigation Compose owns a UI graph and back stack. I prefer version-compatible typed serializable routes, pass stable IDs rather than objects, validate and authorize deep links, and reload truth from a repository. I specify popUpTo and inclusive carefully; launchSingleTop only deduplicates the top; saveState and restoreState support deliberate multiple-back-stack policies. NavController is never my domain source of truth. I test pure content with callbacks, ViewModel state and recreation separately, effects by key/disposal, and graph behavior with TestNavHostController or a navigator contract fake.</p></blockquote>
+
+<h2 id="stage15-uk-sources">Офіційні джерела<a aria-label="Посилання на розділ: Офіційні джерела" class="heading-anchor" href="#stage15-uk-sources">#</a></h2>
+<ul>
+<li><a href="https://developer.android.com/develop/ui/compose/side-effects">Side-effects in Compose</a> та <a href="https://developer.android.com/develop/ui/compose/mental-model">Thinking in Compose</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/libraries">Compose and other libraries</a> та <a href="https://developer.android.com/reference/kotlin/androidx/lifecycle/compose/package-summary">Lifecycle Compose API</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/navigation">Navigation with Compose</a> та <a href="https://developer.android.com/guide/navigation/design/type-safety">Type safety in Kotlin DSL and Navigation Compose</a></li>
+<li><a href="https://developer.android.com/guide/navigation/backstack/multi-back-stacks">Support multiple back stacks</a> та <a href="https://developer.android.com/guide/navigation/design/deep-link">Create a deep link for a destination</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/viewmodel">ViewModel overview</a>, <a href="https://developer.android.com/topic/libraries/architecture/viewmodel/viewmodel-apis">ViewModel scoping APIs</a>, <a href="https://developer.android.com/topic/libraries/architecture/viewmodel/viewmodel-factories">Create ViewModels with dependencies</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/viewmodel/viewmodel-savedstate">Saved State module for ViewModel</a> та <a href="https://developer.android.com/guide/navigation/use-graph/pass-data">Pass data between destinations</a></li>
+<li><a href="https://developer.android.com/guide/navigation/testing/compose">Test Navigation Compose</a> та <a href="https://developer.android.com/jetpack/androidx/releases/navigation">Navigation release notes</a></li>
 </ul>
 </div></details>
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
@@ -11243,6 +11497,254 @@ class CartUiState(val lines: MutableList&lt;Line&gt;) // false stability promise
 <li><a href="https://developer.android.com/reference/kotlin/androidx/compose/runtime/SnapshotMutationPolicy">SnapshotMutationPolicy API</a> and <a href="https://developer.android.com/reference/kotlin/androidx/compose/runtime/saveable/package-summary">runtime-saveable API</a></li>
 <li><a href="https://developer.android.com/develop/ui/compose/performance/stability">Stability in Compose</a> and <a href="https://developer.android.com/develop/ui/compose/compiler">Compose compiler</a></li>
 <li><a href="https://developer.android.com/develop/ui/compose/libraries">Compose and other libraries</a> and <a href="https://developer.android.com/reference/kotlin/androidx/lifecycle/compose/package-summary">Lifecycle Compose API</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="compose-effects-navigation-viewmodel" data-title="Compose effects, navigation, and ViewModel integration" id="en-compose-effects-navigation-viewmodel" open=""><summary class="major-summary"><span class="major-title">Compose effects, navigation, and ViewModel integration</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<h2 id="en-stage15-objective">Learning objective<a aria-label="Link to section: Learning objective" class="heading-anchor" href="#en-stage15-objective">#</a></h2>
+<p>After this stage, you should keep composable bodies pure and idempotent; choose an effect API by work lifecycle; design semantic keys, cancellation, cleanup, and stale-capture policy; integrate lifecycle-aware state, stateless content, ViewModels, and Navigation Compose; model back stacks, deep links, and transient UI actions without a false exactly-once promise; and test each boundary. Stage 10 owns event primitives, Stage 12 architecture/state ownership, Stage 14 runtime, and Stage 17 full DI; this stage covers their Compose wiring.</p>
+
+<h2 id="en-stage15-mental-model">Senior mental model<a aria-label="Link to section: Senior mental model" class="heading-anchor" href="#en-stage15-mental-model">#</a></h2>
+<blockquote><p><strong>Composition describes desired UI; an effect binds imperative work to a composition identity and lifecycle; a ViewModel owns screen state; a NavController owns a UI back stack, not domain truth.</strong> A composable body can rerun, be skipped, or be abandoned before commit, so external work in the body is invalid. An effect starts for a successfully composed instance, and its key defines restart identity, not business exactly-once execution.</p></blockquote>
+<ul>
+<li>Separate composition-driven synchronization, user-event work, and a durable business transition: each has a different trigger, lifetime, and delivery contract.</li>
+<li>Draw the topology: producer → lifecycle gate → route/state holder → stateless content; effect source → collector → imperative UI target; and NavController → back stack separately.</li>
+<li>Cancellation stops cooperative coroutine work; it cannot roll back an HTTP request, payment, or other external effect already accepted.</li>
+</ul>
+
+<h2 id="en-stage15-topology">Effects, navigation, and ViewModel internals/topology<a aria-label="Link to section: Effects navigation and ViewModel topology" class="heading-anchor" href="#en-stage15-topology">#</a></h2>
+<pre><code class="language-text">repository/domain truth → ViewModel-owned StateFlow
+    → collectAsStateWithLifecycle() in Route
+    → immutable UiState + callbacks → stateless Content
+
+composition identity + effect keys → effect instance/job/cleanup
+user callback → rememberCoroutineScope job (UI-owned)
+
+NavHost graph ↔ NavController ↔ back-stack entries
+                               ↳ destination/graph ViewModelStoreOwner
+deep link → parse + validate/authorize ID → repository truth</code></pre>
+<p><code>NavHost</code> materializes graph destinations against a <code>NavController</code>. A back-stack entry can provide lifecycle, saved state, and a <code>ViewModelStoreOwner</code>; popping its owner clears scoped ViewModels. A nested graph entry can share a ViewModel across child destinations, while Activity scope intentionally outlives all destinations. Use the narrowest owner that must share the state rather than widening scope to avoid a proper contract.</p>
+
+<h2 id="en-stage15-effects">Effect API selection and lifecycle<a aria-label="Link to section: Effect API selection and lifecycle" class="heading-anchor" href="#en-stage15-effects">#</a></h2>
+<table><thead><tr><th>API</th><th>Correct contract</th><th>Typical trap</th></tr></thead><tbody>
+<tr><td><code>SideEffect</code></td><td>Publish Compose state to non-Compose code after every successful recomposition.</td><td>One-shot analytics repeats.</td></tr>
+<tr><td><code>LaunchedEffect(keys)</code></td><td>Composition-driven suspend work; cancel/restart when the instance leaves or a key changes.</td><td><code>Unit</code> captures a changing input, or a broad/volatile key churns.</td></tr>
+<tr><td><code>DisposableEffect(keys)</code></td><td>Paired registration/removal through <code>onDispose</code>.</td><td>Treating disposal as a process-shutdown hook.</td></tr>
+<tr><td><code>rememberCoroutineScope()</code></td><td>Launch suspending UI work from a click/gesture; scope cancels when its owner leaves composition.</td><td>Creating an event flag solely to trigger <code>LaunchedEffect</code>.</td></tr>
+<tr><td><code>rememberUpdatedState(value)</code></td><td>Read the latest callback/value from deferred code without restarting the long-lived effect.</td><td>Hiding an input that should change work identity.</td></tr>
+<tr><td><code>produceState</code></td><td>Adapt a suspend/callback producer into Compose <code>State</code>; producer follows keys and values conflate.</td><td>Duplicating ViewModel state or omitting <code>awaitDispose</code> for a callback.</td></tr>
+<tr><td><code>snapshotFlow</code></td><td>Turn snapshot reads into a cold Flow inside a coroutine.</td><td>Expecting every write, or building a chain with no terminal collection.</td></tr>
+</tbody></table>
+<p>An abandoned composition must not leak an external effect: a body is not a committed lifecycle. Post-commit <code>SideEffect</code> and the setup/disposal boundary of <code>DisposableEffect</code> exist for this reason. A crash or process kill can still skip cleanup, so external correctness cannot depend only on <code>onDispose</code>.</p>
+
+<h2 id="en-stage15-keys-snapshotflow">Semantic keys, stale capture, and snapshotFlow topology<a aria-label="Link to section: Semantic keys stale capture and snapshotFlow" class="heading-anchor" href="#en-stage15-keys-snapshotflow">#</a></h2>
+<pre><code class="language-kotlin">@Composable
+fun SearchRoute(queryId: String, onExpired: () -&gt; Unit) {
+    val latestOnExpired by rememberUpdatedState(onExpired)
+    LaunchedEffect(queryId) {              // work identity follows queryId
+        delay(30_000)
+        latestOnExpired()                  // latest callback, timer not restarted
+    }
+}
+
+LaunchedEffect(listState) {
+    snapshotFlow { listState.firstVisibleItemIndex }
+        .map { it &gt; 0 }
+        .distinctUntilChanged()
+        .collectLatest { visible -&gt; analytics.setScrolled(visible) }
+}</code></pre>
+<ul>
+<li>A key is semantic work identity: <code>userId</code>, <code>queryId</code>, or <code>lifecycleOwner</code>. A key change cancels/disposes the old instance and starts a new one; cancellation is cooperative.</li>
+<li>Use <code>rememberUpdatedState</code> when effect lifetime stays fixed but a delayed callback must be current. If a new <code>userId</code> means a new source, make it a key.</li>
+<li><code>snapshotFlow</code> records snapshot reads in its block, reruns after relevant applied changes, and emits an unequal result, like <code>distinctUntilChanged</code>. It is observation, not an audit log; equal/intermediate values need not appear.</li>
+<li>Backpressure remains Flow topology. <code>debounce</code>, <code>buffer</code>, <code>conflate</code>, and <code>collectLatest</code> intentionally change latency, cancellation, or loss. A slow collector can suspend progress, and no operator creates external exactly-once delivery.</li>
+</ul>
+
+<h2 id="en-stage15-lifecycle-collection">Lifecycle-aware collection and duplicate collectors<a aria-label="Link to section: Lifecycle aware collection" class="heading-anchor" href="#en-stage15-lifecycle-collection">#</a></h2>
+<p>An Android route normally reads render state with <code>collectAsStateWithLifecycle()</code>. Collection is active only at the configured minimum lifecycle and can unsubscribe and re-subscribe. That saves work, but a cold upstream can restart, current/replayed state can be read again, and transient emissions while inactive can be lost. Use an appropriate <code>collectAsState</code> contract where Android Lifecycle is unavailable. Do not collect the same UI effect independently in both an Activity and route: lifecycle re-entry or duplicate composition creates duplicate handlers.</p>
+<p>Lifecycle collection is not acknowledgement. A completed payment belongs in durable order/payment state so resubscription can reconstruct UI; a completion snackbar may be best-effort. SharedFlow and Channel are in-memory coordination mechanisms, not durable exactly-once queues.</p>
+
+<h2 id="en-stage15-route-content">Stateless content + route/state-holder wiring<a aria-label="Link to section: Stateless content and route wiring" class="heading-anchor" href="#en-stage15-route-content">#</a></h2>
+<pre><code class="language-kotlin">@Composable
+fun CheckoutRoute(
+    onReceipt: (String) -&gt; Unit,
+    viewModel: CheckoutViewModel = viewModel(),
+) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    CheckoutContent(
+        state = state,
+        onPay = viewModel::pay,
+        onReceipt = { onReceipt(state.orderId) },
+    )
+}
+
+@Composable
+fun CheckoutContent(
+    state: CheckoutUiState,
+    onPay: () -&gt; Unit,
+    onReceipt: () -&gt; Unit,
+) { /* layout only; preview/test with plain values */ }</code></pre>
+<p>The route obtains the ViewModel/controller, collects state, and turns navigation into callbacks. Content accepts an immutable UI contract and user-event lambdas; it knows nothing about DI, repositories, <code>NavController</code>, or lifecycle. Avoid passing a controller down the tree: <code>onProductClick(id)</code> is easier to test and reuse.</p>
+
+<h2 id="en-stage15-viewmodel-scoping">ViewModel ownership, factories, and scoping<a aria-label="Link to section: ViewModel ownership factories and scoping" class="heading-anchor" href="#en-stage15-viewmodel-scoping">#</a></h2>
+<ul>
+<li>A destination-scoped ViewModel lives while its back-stack entry remains. A graph-scoped ViewModel intentionally shares flow state across nested destinations. An Activity-scoped one survives destination pops and is appropriate only for genuinely Activity-wide state.</li>
+<li><code>viewModel()</code> uses the nearest <code>ViewModelStoreOwner</code>. For a parent graph, explicitly obtain its stable entry with <code>getBackStackEntry(graphRoute)</code> and use that owner. Scope must be a visible design decision.</li>
+<li>A ViewModel survives configuration change of its owner, not process death. A new instance after recreation rebuilds from minimal saved input and durable repository truth.</li>
+<li>Constructor dependencies come from <code>ViewModelProvider.Factory</code>/<code>CreationExtras</code>; <code>createSavedStateHandle()</code> derives a handle from extras. Hilt can generate the factory and provide <code>hiltViewModel()</code>. The concern here is owner/extras integration, not Stage 17 container setup.</li>
+</ul>
+
+<h2 id="en-stage15-savedstate">SavedStateHandle, arguments, and recreation boundaries<a aria-label="Link to section: SavedStateHandle arguments and recreation" class="heading-anchor" href="#en-stage15-savedstate">#</a></h2>
+<p><code>SavedStateHandle</code> is key/value state for ViewModel recreation, not durable business storage. Navigation arguments can be present in the handle; compatible type-safe route APIs can decode them with <code>toRoute&lt;T&gt;()</code>. Pass stable identifiers and primitives such as <code>productId</code> or <code>orderId</code>, not domain objects. The destination reloads authoritative data from a repository. After process death, server/database truth may have changed and an argument can be missing or old, so parse, validate, and handle not-found explicitly.</p>
+
+<h2 id="en-stage15-navigation-stack">Navigation graph, type-safe routes, and back-stack policy<a aria-label="Link to section: Navigation graph routes and back stack" class="heading-anchor" href="#en-stage15-navigation-stack">#</a></h2>
+<pre><code class="language-kotlin">@Serializable data object Home
+@Serializable data class Receipt(val orderId: String)
+
+NavHost(navController, startDestination = Home) {
+    composable&lt;Home&gt; { HomeRoute(onReceipt = { navController.navigate(Receipt(it)) }) }
+    composable&lt;Receipt&gt; { entry -&gt;
+        val route = entry.toRoute&lt;Receipt&gt;()
+        ReceiptRoute(orderId = route.orderId)
+    }
+}
+
+navController.navigate(Home) {
+    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+    launchSingleTop = true
+    restoreState = true
+}</code></pre>
+<ul>
+<li><code>popUpTo</code> removes entries up to a target; <code>inclusive = true</code> removes the target too. A wrong target or inclusive flag destroys expected Back history.</li>
+<li><code>launchSingleTop</code> avoids another instance only when the target is already on top; it is not global deduplication.</li>
+<li><code>saveState</code>/<code>restoreState</code> can preserve navigator destination state for tab-like flows. Multiple back stacks require deliberate top-level route policy and tests; they are not domain persistence.</li>
+<li>Deep links are untrusted input. Restrict scheme/host/path, decode safely, validate format/range, authorize access, and load by ID. A syntactically valid route grants no domain permission.</li>
+</ul>
+
+<h2 id="en-stage15-outcomes">Navigation/UI actions versus durable outcomes<a aria-label="Link to section: UI actions versus durable outcomes" class="heading-anchor" href="#en-stage15-outcomes">#</a></h2>
+<p>Direct click navigation is a UI action: a callback can invoke a navigator for that click. Composition-driven navigation needs explicit consumption or idempotency semantics. <code>if (state.paid) navController.navigate(...)</code> in the body, or a naive <code>LaunchedEffect(state.paid)</code>, can repeat after recreation or resubscription. A key controls restart, not “handled once forever.”</p>
+<table><thead><tr><th>Fact</th><th>Model</th><th>Trade-off</th></tr></thead><tbody>
+<tr><td>Payment/order completed</td><td>Durable repository status and idempotent command/request ID.</td><td>Survives process death; UI can derive a safe destination, but transition policy must prevent loops.</td></tr>
+<tr><td>Navigate after click</td><td>UI callback/navigator contract.</td><td>Simple; debounce double taps and define stack options.</td></tr>
+<tr><td>Snackbar</td><td>Best-effort effect, or durable message state with explicit acknowledgement if loss is unacceptable.</td><td>SharedFlow/Channel can lose or duplicate around lifecycle/process boundaries.</td></tr>
+</tbody></table>
+<p>Never turn the current <code>NavController</code> destination into the source of truth for payment or auth. The domain outcome exists authoritatively outside navigation; route selection is only a projection. When an effect stream is used, document loss, replay, duplicate collection, and acknowledgement policy without durable exactly-once claims.</p>
+
+<h2 id="en-stage15-guarantees">Guarantees versus explicit non-guarantees<a aria-label="Link to section: Guarantees and non guarantees" class="heading-anchor" href="#en-stage15-guarantees">#</a></h2>
+<table><thead><tr><th>Useful contract</th><th>Does not guarantee</th></tr></thead><tbody>
+<tr><td>A <code>LaunchedEffect</code> job is cancelled when its key/instance leaves.</td><td>Preemption of non-cooperative code, rollback of external effects, or exactly-once execution.</td></tr>
+<tr><td>An effect key defines restart identity.</td><td>One execution per process, session, or business operation.</td></tr>
+<tr><td><code>rememberCoroutineScope</code> cancels when its composition owner leaves.</td><td>Completion after navigation away or durable business delivery.</td></tr>
+<tr><td><code>DisposableEffect.onDispose</code> runs when the key/instance leaves composition.</td><td>Cleanup on process crash or shutdown.</td></tr>
+<tr><td>A ViewModel survives its owner's configuration change.</td><td>Survival after process death or after its owner is cleared.</td></tr>
+<tr><td><code>SavedStateHandle</code> supports recreation.</td><td>Durable, large, or authoritative business storage.</td></tr>
+<tr><td>Lifecycle-aware collection stops and starts with lifecycle.</td><td>Continuous subscription or delivery while inactive.</td></tr>
+<tr><td>SharedFlow/Channel coordinate in-memory consumers.</td><td>A durable exactly-once queue.</td></tr>
+<tr><td>NavController manages a UI stack.</td><td>A domain source of truth.</td></tr>
+</tbody></table>
+
+<h2 id="en-stage15-version-sensitive">Version-sensitive behavior<a aria-label="Link to section: Version sensitive behavior" class="heading-anchor" href="#en-stage15-version-sensitive">#</a></h2>
+<ul>
+<li>Generic type-safe Navigation Compose routes—<code>composable&lt;T&gt;</code>, object/data-class routes, <code>toRoute&lt;T&gt;</code>, typed <code>navigate</code>/<code>popUpTo</code>—are Navigation 2.8-era APIs and evolve with Navigation and Kotlin serialization. Pin artifacts/plugins, read current release notes, and do not treat legacy string routes as identical.</li>
+<li>Navigation 3 is a separate evolving Compose-first library with different back-stack ownership and APIs; do not mix its contracts into Navigation 2 examples.</li>
+<li><code>collectAsStateWithLifecycle</code> is in <code>androidx.lifecycle:lifecycle-runtime-compose</code>; overloads, minimum-lifecycle constraints, and platform availability depend on Lifecycle version. Compose Multiplatform can require another collector.</li>
+<li><code>viewModel()</code>, <code>hiltViewModel()</code>, CreationExtras/default factories, and SavedState integration depend on Activity/Lifecycle/Navigation/Hilt versions. Verify the owner and factory in the pinned graph.</li>
+<li>Follow current Compose runtime documentation for effect semantics; scheduling implementation is not a public exactly-once protocol.</li>
+</ul>
+
+<h2 id="en-stage15-decision-framework">Decision framework<a aria-label="Link to section: Decision framework" class="heading-anchor" href="#en-stage15-decision-framework">#</a></h2>
+<ol>
+<li>Name the trigger: successful composition, key identity, user event, lifecycle visibility, or durable domain transition.</li>
+<li>Name the owner/lifetime: composition instance, destination, nested graph, Activity, ViewModel, or repository.</li>
+<li>Choose the narrowest API: body for description; <code>SideEffect</code> to publish; <code>DisposableEffect</code> to pair; <code>LaunchedEffect</code> for keyed suspend work; remembered scope for callbacks; <code>produceState</code> for an adapter; <code>snapshotFlow</code> for snapshot observation.</li>
+<li>Write down semantic keys, stale-value policy, cooperative cancellation points, cleanup, and external idempotency.</li>
+<li>For state, choose a lifecycle collector; for an action/event, specify loss, duplication, replay, and acknowledgement semantics.</li>
+<li>For navigation, define ID validation, owner scope, stack transform, deep-link trust boundary, and post-process-death reconstruction.</li>
+<li>Test pure content, effect contract, ViewModel state/recreation, and graph/back-stack behavior at their respective boundaries.</li>
+</ol>
+
+<h2 id="en-stage15-tradeoffs">Trade-offs and failure modes<a aria-label="Link to section: Trade offs and failure modes" class="heading-anchor" href="#en-stage15-tradeoffs">#</a></h2>
+<ul>
+<li>A broad key restarts an expensive collector; a constant key captures a stale dependency; a random key destroys lifecycle.</li>
+<li><code>rememberUpdatedState</code> keeps a callback current without restart, but hides a defect if the source itself should change.</li>
+<li><code>collectLatest</code> reduces lag by cancelling prior handling; non-idempotent external writes can be left partially complete.</li>
+<li>Activity-scoped ViewModels simplify sharing but retain stale cross-screen state after a graph exit.</li>
+<li>Passing a domain object creates a stale, oversized, serialization-coupled route snapshot; an ID requires reload but preserves truth and authorization.</li>
+<li><code>launchSingleTop</code> and multiple-stack restoration improve tabs, but a wrong <code>popUpTo</code> loses history or accumulates duplicate entries.</li>
+<li>Lifecycle resubscription can restart cold upstreams; duplicate route/effect collectors can show a snackbar or navigate twice.</li>
+</ul>
+
+<h2 id="en-stage15-production-scenario">Production scenario: payment completion<a aria-label="Link to section: Production payment scenario" class="heading-anchor" href="#en-stage15-production-scenario">#</a></h2>
+<p><strong>Hypothetical:</strong> the user taps Pay; the ViewModel sends a command with an idempotency key, the repository persists order/payment status, and a <code>StateFlow</code> exposes Processing/Completed. The route uses <code>collectAsStateWithLifecycle</code>; stateless content only calls <code>onPay</code>. Navigation to <code>Receipt(orderId)</code> is a guarded/consumed UI policy, and the receipt reloads the order by ID. After process death, the app reads durable Completed state and chooses a safe destination; a SharedFlow completion is not the sole proof.</p>
+<p>A “Payment complete” snackbar is best-effort: it can be lost in background or repeat after collector restart. If the message is legally or operationally important, model acknowledged durable notification state instead. Bottom tabs use <code>popUpTo(start) { saveState = true }</code>, <code>launchSingleTop</code>, and <code>restoreState</code>; a deep-linked <code>orderId</code> is format-checked and authorized before display.</p>
+
+<h2 id="en-stage15-review-trap">Code-review/debug trap<a aria-label="Link to section: Code review and debugging trap" class="heading-anchor" href="#en-stage15-review-trap">#</a></h2>
+<pre><code class="language-kotlin">@Composable
+fun Checkout(vm: CheckoutViewModel, nav: NavController) {
+    val state by vm.state.collectAsStateWithLifecycle()
+    if (state.paid) nav.navigate("receipt/${state.order}") // side effect in body
+    LaunchedEffect(Unit) { vm.events.collect { nav.navigate(it.route) } }
+    DisposableEffect(Unit) {
+        gateway.addListener { vm.refresh() }
+        onDispose { } // leaked listener
+    }
+}</code></pre>
+<p>Navigation in the body can repeat; a <code>Unit</code> collector can retain the wrong VM/nav owner and duplicate another collector; a domain object/string route is stale or untrusted; and listener cleanup is missing. Debug with effect-instance logs for key, owner, start/cancel/dispose; back-stack snapshots; collector counts; and lifecycle/process recreation. Fix with route/content separation, a typed stable <code>orderId</code>, direct click navigation or explicit outcome consumption, semantic keys/latest callbacks, symmetric cleanup, durable payment truth, and an idempotent command.</p>
+
+<h2 id="en-stage15-testing">Testing effects, navigation, and ViewModel boundaries<a aria-label="Link to section: Testing effects navigation and ViewModel boundaries" class="heading-anchor" href="#en-stage15-testing">#</a></h2>
+<ul>
+<li>Pure Compose tests render <code>Content(state, callbacks)</code> and assert semantics and callback IDs without a real ViewModel or NavController.</li>
+<li>Effect tests control keys and composition presence: assert restart cancellation, latest callback, listener registration/removal, and absence of body effects; use deterministic coroutine time where relevant.</li>
+<li>ViewModel unit tests cover state transitions, idempotency/retry, and reconstruction from minimal <code>SavedStateHandle</code>. A configuration-change test is not proof of process-death safety.</li>
+<li>Graph integration can use <code>TestNavHostController</code> plus <code>ComposeNavigator</code> to verify start destination, typed destination/back stack, <code>popUpTo</code>, and restoration policy. Use a small Navigator contract fake for route callbacks and test deep-link validation/authorization separately.</li>
+</ul>
+
+<h2 id="en-stage15-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice questions and answers" class="heading-anchor" href="#en-stage15-likely-qa">#</a></h2>
+<p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
+<ol>
+<li><strong>Why not run an effect in a composable body?</strong> The body can rerun, skip, or be abandoned and has no committed external lifecycle. Use a post-commit/keyed effect or user callback.</li>
+<li><strong>How do you choose a <code>LaunchedEffect</code> key?</strong> Use semantic source/work identity. Change means cancel old and start new; it does not mean exactly-once.</li>
+<li><strong><code>LaunchedEffect</code> or <code>rememberCoroutineScope</code>?</strong> The former is composition-driven and keyed; the latter starts suspending UI work from a user callback and cancels with its owner.</li>
+<li><strong>When should you use <code>rememberUpdatedState</code>?</strong> When a long-lived effect must not restart but deferred code needs the latest callback/value, not for source identity.</li>
+<li><strong>What does <code>DisposableEffect</code> guarantee?</strong> Paired disposal when the key/instance leaves composition, not cleanup after process kill.</li>
+<li><strong>What does <code>snapshotFlow</code> do?</strong> It observes snapshot reads and emits unequal results into a cold Flow; it is not a log of every write, and downstream operators define backpressure/loss.</li>
+<li><strong>How do you scope a ViewModel?</strong> To the narrowest <code>ViewModelStoreOwner</code>: destination, intentionally shared nested graph, or genuinely Activity-wide owner.</li>
+<li><strong>What belongs in a route or SavedStateHandle?</strong> Minimal stable IDs/primitives needed for reconstruction, not domain objects or durable truth.</li>
+<li><strong>Does SharedFlow guarantee navigation once?</strong> No. Lifecycle/process gaps and duplicate collectors permit loss or duplication; model durable outcomes as state with an idempotent policy.</li>
+<li><strong>How do you test Navigation Compose?</strong> Test content callbacks directly; test the graph with <code>TestNavHostController</code>/<code>ComposeNavigator</code> or a navigator contract fake and assert stack options.</li>
+</ol>
+
+<h2 id="en-stage15-followups">4 senior follow-ups with answers<a aria-label="Link to section: 4 senior follow ups" class="heading-anchor" href="#en-stage15-followups">#</a></h2>
+<ol>
+<li><strong>An effect was cancelled after HTTP submit.</strong> Cancellation cannot undo the server effect. Use an idempotency key, query durable status, and reconcile an unknown outcome.</li>
+<li><strong>Bottom-tab state sometimes disappears.</strong> Verify a stable top-level route, <code>popUpTo(findStartDestination())</code>, paired <code>saveState/restoreState</code>, singleTop, and version-specific navigator restoration tests.</li>
+<li><strong>A graph-shared ViewModel is created twice.</strong> Both destinations must explicitly use the same parent graph back-stack entry as owner; log owner and entry lifecycle, not only class name.</li>
+<li><strong>Completion navigation duplicates after rotation.</strong> Do not use Boolean state as a one-time command. Keep completion durable and make route transition guarded, acknowledged, or an idempotent stack transform; test recreation.</li>
+</ol>
+
+<h2 id="en-stage15-self-check">4 unanswered self-checks<a aria-label="Link to section: 4 unanswered self checks" class="heading-anchor" href="#en-stage15-self-check">#</a></h2>
+<ol>
+<li>For every effect, what are its trigger, semantic key, cancellation points, stale-capture policy, and cleanup?</li>
+<li>What happens to each state/effect collector across STOP→START, duplicate destination, pop, and process death?</li>
+<li>What exact owner holds each ViewModel, when is it cleared, and what reconstructs it after process recreation?</li>
+<li>Which navigation inputs are untrusted, what stack transform is expected, and where does durable domain truth live?</li>
+</ol>
+
+<h2 id="en-stage15-english-skeletons">Interview-ready English answer skeletons<a aria-label="Link to section: Interview ready English answer skeletons" class="heading-anchor" href="#en-stage15-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you integrate Compose effects, Navigation, and ViewModels without duplicate work or lost outcomes?</em></p>
+<h3 id="en-stage15-answer-30">~30-second answer<a aria-label="Link to section: 30 second answer" class="heading-anchor" href="#en-stage15-answer-30">#</a></h3>
+<blockquote><p>I keep composable bodies pure and choose an effect by ownership: SideEffect for post-commit publishing, DisposableEffect for paired registration, LaunchedEffect for composition-driven keyed work, and a remembered scope for user events. Keys define restart identity, not exactly-once delivery, and cancellation cannot undo external effects. A route collects ViewModel state with lifecycle awareness and passes immutable state and callbacks to stateless content. I scope ViewModels to the narrowest destination, graph, or Activity owner, pass stable IDs through typed routes, treat deep links as untrusted, and keep durable outcomes in repositories rather than SharedFlow, SavedStateHandle, or NavController.</p></blockquote>
+<h3 id="en-stage15-answer-2min">~2-minute answer<a aria-label="Link to section: 2 minute answer" class="heading-anchor" href="#en-stage15-answer-2min">#</a></h3>
+<blockquote><p>My starting rule is that composition describes UI and can rerun, skip, or be abandoned, so it cannot perform external work. I use SideEffect to publish after successful recomposition, DisposableEffect for symmetric setup and cleanup, LaunchedEffect for suspend work whose lifetime follows semantic keys, and rememberCoroutineScope when a click starts UI-owned suspend work. rememberUpdatedState keeps a callback fresh without restarting a long-lived effect; produceState adapts an external producer to State; snapshotFlow observes snapshot reads as a cold Flow. Effect cancellation is cooperative, disposal is not a process-shutdown hook, and no key gives business exactly-once.</p><p>On Android, the route layer collects StateFlow with collectAsStateWithLifecycle and passes plain immutable state and callbacks to stateless content. Collection can stop and restart with lifecycle, so cold upstreams may restart and transient emissions may be lost. I avoid duplicate collectors and treat SharedFlow or Channel as in-memory delivery, not durable queues. A completed payment or order is repository state with idempotent commands; a snackbar is usually best-effort.</p><p>I scope a ViewModel to the narrowest ViewModelStoreOwner: a destination by default, a nested graph for intentional sharing, or the Activity only for Activity-wide state. It survives configuration change, not process death. Factories and CreationExtras reconstruct dependencies and SavedStateHandle; Hilt can generate that wiring, but scope remains explicit. SavedStateHandle stores minimal restorable input, not authoritative business data.</p><p>Navigation Compose owns a UI graph and back stack. I prefer version-compatible typed serializable routes, pass stable IDs rather than objects, validate and authorize deep links, and reload truth from a repository. I specify popUpTo and inclusive carefully; launchSingleTop only deduplicates the top; saveState and restoreState support deliberate multiple-back-stack policies. NavController is never my domain source of truth. I test pure content with callbacks, ViewModel state and recreation separately, effects by key/disposal, and graph behavior with TestNavHostController or a navigator contract fake.</p></blockquote>
+
+<h2 id="en-stage15-sources">Official references<a aria-label="Link to section: Official references" class="heading-anchor" href="#en-stage15-sources">#</a></h2>
+<ul>
+<li><a href="https://developer.android.com/develop/ui/compose/side-effects">Side-effects in Compose</a> and <a href="https://developer.android.com/develop/ui/compose/mental-model">Thinking in Compose</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/libraries">Compose and other libraries</a> and <a href="https://developer.android.com/reference/kotlin/androidx/lifecycle/compose/package-summary">Lifecycle Compose API</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/navigation">Navigation with Compose</a> and <a href="https://developer.android.com/guide/navigation/design/type-safety">Type safety in Kotlin DSL and Navigation Compose</a></li>
+<li><a href="https://developer.android.com/guide/navigation/backstack/multi-back-stacks">Support multiple back stacks</a> and <a href="https://developer.android.com/guide/navigation/design/deep-link">Create a deep link for a destination</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/viewmodel">ViewModel overview</a>, <a href="https://developer.android.com/topic/libraries/architecture/viewmodel/viewmodel-apis">ViewModel scoping APIs</a>, and <a href="https://developer.android.com/topic/libraries/architecture/viewmodel/viewmodel-factories">Create ViewModels with dependencies</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/viewmodel/viewmodel-savedstate">Saved State module for ViewModel</a> and <a href="https://developer.android.com/guide/navigation/use-graph/pass-data">Pass data between destinations</a></li>
+<li><a href="https://developer.android.com/guide/navigation/testing/compose">Test Navigation Compose</a> and <a href="https://developer.android.com/jetpack/androidx/releases/navigation">Navigation release notes</a></li>
 </ul>
 </div></details>
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="en-kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
