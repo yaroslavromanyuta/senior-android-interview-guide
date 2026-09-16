@@ -519,6 +519,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="android-networking-fundamentals" href="#android-networking-fundamentals">Android networking fundamentals</a>
 </li>
 <li class="toc-major">
+<a data-target="authentication-token-refresh-android-mobile-security" href="#authentication-token-refresh-android-mobile-security">Authentication, token refresh та Android mobile security</a>
+</li>
+<li class="toc-major">
 <a data-target="kotlin-for-android" href="#kotlin-for-android">Kotlin for Android</a>
 <ol class="toc-children">
 <li><a data-target="val-vs-var-immutability" href="#val-vs-var-immutability">val vs var, immutability</a></li>
@@ -849,6 +852,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </li>
 <li class="toc-major">
 <a data-target="en-android-networking-fundamentals" href="#en-android-networking-fundamentals">Android networking fundamentals</a>
+</li>
+<li class="toc-major">
+<a data-target="en-authentication-token-refresh-android-mobile-security" href="#en-authentication-token-refresh-android-mobile-security">Authentication, token refresh, and Android mobile security</a>
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-for-android" href="#en-kotlin-for-android">Kotlin for Android</a>
@@ -5127,6 +5133,284 @@ val client = OkHttpClient.Builder()
 <li><a href="https://lysine.dev/okhttp/5.x/okhttp/okhttp3/-dispatcher/">OkHttp Dispatcher API</a>, <a href="https://lysine.dev/okhttp/5.x/okhttp/okhttp3/-event-listener/">EventListener API</a> та <a href="https://lysine.dev/okhttp/5.x/mockwebserver/okhttp3.mockwebserver/-mock-web-server/">MockWebServer API</a></li>
 <li><a href="https://developer.android.com/develop/connectivity/network-ops">Android network operations</a>, <a href="https://developer.android.com/training/monitoring-device-state/connectivity-status-type">Connectivity monitoring</a> та <a href="https://developer.android.com/privacy-and-security/security-config">Network Security Configuration</a></li>
 <li><a href="https://datatracker.ietf.org/doc/html/rfc9110">RFC 9110: HTTP Semantics</a>, <a href="https://datatracker.ietf.org/doc/html/rfc9111">RFC 9111: HTTP Caching</a> та <a href="https://datatracker.ietf.org/doc/html/rfc6585">RFC 6585: Additional HTTP Status Codes</a></li>
+</ul>
+</div></details>
+
+<details class="major-section" data-key="authentication-token-refresh-android-mobile-security" data-title="Authentication, token refresh та Android mobile security" id="authentication-token-refresh-android-mobile-security" open=""><summary class="major-summary"><span class="major-title">Authentication, token refresh та Android mobile security</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<h2 id="stage19-uk-objective">Learning objective<a aria-label="Посилання на розділ: Learning objective" class="heading-anchor" href="#stage19-uk-objective">#</a></h2>
+<p>Після етапу ви маєте спроєктувати native OAuth 2.x/OIDC sign-in, провести credential через Android та OkHttp boundaries, серіалізувати concurrent refresh без race/deadlock, і побудувати defense-in-depth для token storage, transport, IPC та incident response. Це продовження Stage 18: тут не повторюємо базову HTTP topology і не заглиблюємося в майбутню durable persistence.</p>
+
+<h2 id="stage19-uk-mental-model">Senior threat / mental model<a aria-label="Посилання на розділ: Senior threat model" class="heading-anchor" href="#stage19-uk-mental-model">#</a></h2>
+<blockquote><p><strong>Мобільний застосунок — public client у hostile environment, а authentication — distributed state machine.</strong> Розділяйте browser authorization session, app session, access до resource server, local key use і device/app integrity signal. Для кожної межі назвіть attacker, asset, trust root, lifetime, replay surface, cancellation та recovery.</p></blockquote>
+<ul>
+<li>Модель загроз охоплює malicious app, link hijack, phishing, stolen backup/device, proxy/CA compromise, rooted або instrumented process, leaked telemetry, replay та compromised backend account.</li>
+<li>Authorization server автентифікує user/consent і видає grants/tokens; client ініціює flow; resource owner делегує; resource server валідовує access. OIDC додає identity layer, але не робить access token UI-profile object.</li>
+<li>Mobile client не може безпечно вбудувати universal secret. Obfuscation, NDK або remote config лише підвищують cost extraction; shared client secret у distributed binary не доводить client identity.</li>
+<li>Defense-in-depth зменшує blast radius; жоден Keystore, biometric, pin, root check або integrity verdict не робить compromised process trusted.</li>
+</ul>
+
+<h2 id="stage19-uk-topology">Auth / refresh / security topology та internals<a aria-label="Посилання на розділ: Auth refresh topology" class="heading-anchor" href="#stage19-uk-topology">#</a></h2>
+<pre><code class="language-text">App → external user-agent (browser / Custom Tabs)
+  → authorization server: authenticate + consent
+  → exact redirect URI / verified App Link → app callback
+  → validate state + issuer + code context
+  → token endpoint: authorization code + PKCE verifier
+  → access token → resource server
+  → ID token validation → local identity assertion
+  → refresh token rotation → new token family / session state
+
+Request → credential Interceptor reads atomic session snapshot
+  → resource server → 401 challenge
+  → OkHttp Authenticator → RefreshCoordinator single-flight
+  → dedicated refresh client (no app Authenticator)
+  → compare generation/version → install or discard
+  → one replayable follow-up request with new access token</code></pre>
+<p>Session owner тримає immutable snapshot: <code>sessionId/generation</code>, token values, access expiry, refresh family/version і server subject/issuer metadata. Atomic read дає request узгоджену версію; compare-and-set запобігає old refresh response overwrite після logout або нового login.</p>
+
+<h2 id="stage19-uk-oauth-oidc">OAuth 2.x / OIDC roles і token semantics<a aria-label="Посилання на розділ: OAuth and OIDC" class="heading-anchor" href="#stage19-uk-oauth-oidc">#</a></h2>
+<table><thead><tr><th>Artifact</th><th>Audience / purpose</th><th>Client policy</th></tr></thead><tbody>
+<tr><td>Authorization code</td><td>Короткий one-time grant для token endpoint.</td><td>Не API credential; bind до redirect/client і PKCE verifier; швидко exchange.</td></tr>
+<tr><td>Access token</td><td>Resource server authorization: audience, scopes, expiry.</td><td>Надсилати лише intended API через HTTPS; не читати як profile, якщо contract цього не визначає.</td></tr>
+<tr><td>Refresh token</td><td>Authorization server видає новий access token; довший lifetime.</td><td>Ніколи не resource API; rotation/reuse detection, revocation і secure-at-rest policy.</td></tr>
+<tr><td>ID token</td><td>OIDC assertion про authentication event для client.</td><td>Перевірити signature, issuer, audience/authorized party, expiry, nonce; не використовувати як access token.</td></tr>
+</tbody></table>
+<p>Opaque та JWT tokens мають різні validation boundaries: mobile client зазвичай не є authority щодо access token; resource server робить signature/introspection та authorization. JWT decode без signature/claim validation не створює trust. Scope описує delegated capability, але endpoint все одно застосовує subject, tenant та object-level authorization.</p>
+
+<h2 id="stage19-uk-native-flow">Authorization Code + PKCE для native app<a aria-label="Посилання на розділ: Authorization Code with PKCE" class="heading-anchor" href="#stage19-uk-native-flow">#</a></h2>
+<ol>
+<li>Згенерувати high-entropy <code>code_verifier</code>, похідний S256 <code>code_challenge</code>, random <code>state</code> і OIDC <code>nonce</code>; прив’язати до одного pending transaction.</li>
+<li>Відкрити authorization endpoint у external user-agent — системному browser або Custom Tabs — щоб зберегти origin/UI і shared security context; не збирати password у app.</li>
+<li>Прийняти лише зареєстрований exact redirect URI. Для HTTPS App Link перевірити domain association; custom scheme може бути перехоплений іншим app і потребує PKCE та strict routing.</li>
+<li>На callback спочатку звірити transaction, <code>state</code>, redirect scheme/host/path та очікуваного issuer; code exchange робити один раз з початковим verifier.</li>
+<li>Для OIDC валідовувати ID token та <code>nonce</code>; після цього створити local session generation і очистити pending artifacts.</li>
+</ol>
+<p><strong>PKCE зменшує ризик перехоплення authorization code, але не усуває весь phishing або compromise пристрою.</strong> External user-agent зменшує credential exposure до app, але fake browser/UI, malicious accessibility, account compromise та authorization-server bugs лишаються.</p>
+
+<h2 id="stage19-uk-redirect-boundaries">Redirect, deep-link, App Link, state та nonce boundaries<a aria-label="Посилання на розділ: Redirect and link boundaries" class="heading-anchor" href="#stage19-uk-redirect-boundaries">#</a></h2>
+<ul>
+<li><code>state</code> корелює authorization response з browser transaction і захищає від CSRF/session swap; <code>nonce</code> bind-ить ID token до OIDC request/replay context. Вони не взаємозамінні.</li>
+<li>Exact redirect URI matching має включати scheme, normalized host, port, path та дозволений query contract. Не приймайте open redirect, wildcard host, arbitrary nested URL або callback без outstanding transaction.</li>
+<li>Verified HTTPS App Link сильніший за custom scheme щодо app ownership, але association/config/version може бути зламаною. Завжди validate untrusted Intent data всередині app.</li>
+<li>Single-use transaction має timeout, consumed flag і issuer/client binding. Не зберігайте verifier/state в URL, logs, analytics або process-global mutable singleton без session ownership.</li>
+</ul>
+
+<h2 id="stage19-uk-token-lifecycle">Token lifetime, rotation, revocation та session state<a aria-label="Посилання на розділ: Token lifecycle" class="heading-anchor" href="#stage19-uk-token-lifecycle">#</a></h2>
+<ul>
+<li>Короткий access lifetime обмежує theft window, але збільшує refresh load та clock sensitivity. Refresh token rotation видає новий token і invalidates/marks попередній; reuse detection може revoke всю family.</li>
+<li>Client expiry — scheduling hint із skew allowance, не остаточний verdict: server може revoke раніше, clock може бути wrong, opaque policy може змінитися. Device clock не є trusted authority.</li>
+<li>Revocation endpoint, server logout, password/device change і remote revocation мають контракт propagation. Offline device може не дізнатися негайно; resource server мусить enforce session/token state.</li>
+<li>Session state включає subject/tenant, issuer, generation, refresh family та credential version. Account switch створює нову generation; response старої generation не можна commit.</li>
+</ul>
+
+<h2 id="stage19-uk-okhttp-boundaries">Interceptor vs OkHttp Authenticator<a aria-label="Посилання на розділ: Interceptor versus Authenticator" class="heading-anchor" href="#stage19-uk-okhttp-boundaries">#</a></h2>
+<table><thead><tr><th>Boundary</th><th>Responsibility</th><th>Не робити</th></tr></thead><tbody>
+<tr><td>Application Interceptor</td><td>Прочитати current immutable snapshot і додати <code>Authorization: Bearer …</code> лише для allowlisted origin/request class.</td><td>Не запускати blocking refresh на кожен request; не переносити credential через cross-origin redirect.</td></tr>
+<tr><td>OkHttp Authenticator</td><td>Відповісти на eligible 401 challenge, reuse вже оновлений token або приєднатися до single-flight; повернути follow-up request чи <code>null</code>.</td><td>Не трактувати кожний 401 як expiry; не відповідати на 403; не будувати unbounded loop.</td></tr>
+<tr><td>Refresh client</td><td>Token endpoint з bounded timeout, без resource Authenticator та без access-token interceptor.</td><td>Не refresh через той самий recursive client/authenticator path.</td></tr>
+</tbody></table>
+<p>Перевіряйте prior-response count, challenge/endpoint contract, що failed request справді ніс expected old credential, і що новий credential відрізняється. Після одного auth follow-up поверніть <code>null</code> на повторний failure. <strong>401 не завжди означає, що треба refresh.</strong> 401 зазвичай означає missing/invalid authentication або challenge; 403 — authenticated request без дозволу, але backend contracts vary, тому status+error code+<code>WWW-Authenticate</code> узгоджують із API.</p>
+
+<h2 id="stage19-uk-concurrent-refresh">Concurrent 401: single-flight refresh<a aria-label="Посилання на розділ: Concurrent single flight refresh" class="heading-anchor" href="#stage19-uk-concurrent-refresh">#</a></h2>
+<p>Коли N calls отримали 401 на token version 7, лише leader виконує refresh; followers await той самий in-flight result. Перед стартом і після очікування coordinator робить version check: якщо store вже має version 8 тієї самої generation, використовує її без другого refresh. Network I/O відбувається поза lock.</p>
+<pre><code class="language-kotlin">data class CredentialSnapshot(
+    val generation: Long, val version: Long,
+    val access: String, val refresh: String,
+)
+
+
+class RefreshCoordinator(
+    private val store: SessionStore, // in-memory snapshot; no disk I/O under mutex
+    private val refreshApi: RefreshApi, // dedicated client, no Authenticator
+) {
+    private val mutex = Mutex()
+    private val inFlight = mutableMapOf&lt;
+        Pair&lt;Long, Long&gt;, CompletableDeferred&lt;CredentialSnapshot?&gt;
+    &gt;()
+
+    suspend fun refreshAfter401(failed: CredentialSnapshot): CredentialSnapshot? {
+        var leader = false
+        val flight = mutex.withLock {
+            val current = store.current()
+            if (current == null || current.generation != failed.generation) return null
+            if (current.version != failed.version) return current
+            val key = failed.generation to failed.version
+            inFlight[key] ?: CompletableDeferred&lt;CredentialSnapshot?&gt;().also {
+                inFlight[key] = it
+                leader = true
+            }
+        }
+        if (!leader) return flight.await()
+
+        val fetched = runCatching { refreshApi.rotate(failed.refresh) }.getOrNull()
+        val committed = mutex.withLock {
+            val current = store.current()
+            val accepted = fetched?.takeIf {
+                current != null &amp;&amp; current.generation == failed.generation &amp;&amp;
+                    current.version == failed.version
+            }?.also(store::replace)
+            val result = accepted ?: store.current()?.takeIf {
+                it.generation == failed.generation &amp;&amp; it.version != failed.version
+            }
+            flight.complete(result)
+            val key = failed.generation to failed.version
+            if (inFlight[key] === flight) inFlight.remove(key)
+            result
+        }
+        return committed
+    }
+}</code></pre>
+<p><code>Authenticator.authenticate()</code> є synchronous API. Production bridge має бути bounded і не запускати refresh на тому самому saturated OkHttp Dispatcher: використайте dedicated refresh client/executor або coordinator API, сумісний із blocking boundary. Не тримайте Mutex під token HTTP I/O, disk/biometric prompt чи unrelated work; completion має будити всіх followers і на success, і на failure/cancellation. Зберігайте generation/version check, щоб late response не воскресив logout і старіший refresh не overwrote новіший token.</p>
+
+<h2 id="stage19-uk-retry-logout-semantics">Retry once, replayability, logout race, 401/403<a aria-label="Посилання на розділ: Retry logout and status semantics" class="heading-anchor" href="#stage19-uk-retry-logout-semantics">#</a></h2>
+<ul>
+<li>Authenticator повертає original request з новим header максимум один раз. One-shot/streaming request body може бути non-replayable; навіть replayable POST може дублювати effect, якщо server обробив body до 401 або response загубився.</li>
+<li>Idempotency key + server dedup window знижують duplicate side effects; client refresh serialization не серіалізує server business operations. <strong>Refresh serialization не створює exactly-once server effects.</strong></li>
+<li>Logout атомарно increment/replace generation, clears usable credentials, cancels pending refresh де можливо, запускає best-effort revocation окремим bounded path і не дозволяє late result commit.</li>
+<li><strong>Logout не може відкликати requests, які server уже обробив.</strong> Він також не гарантує миттєву remote invalidation offline; UI/session state та server authorization мають converge.</li>
+</ul>
+
+<h2 id="stage19-uk-storage">Storage threat model, Keystore та biometrics<a aria-label="Посилання на розділ: Storage and biometrics" class="heading-anchor" href="#stage19-uk-storage">#</a></h2>
+<ul>
+<li>Android Keystore захищає cryptographic key material і може зробити key non-exportable; hardware-backed/StrongBox залежить від device/API/algorithm. Token — arbitrary data: його можна encrypt key-ом, але app отримує plaintext для request.</li>
+<li><strong>Keystore не робить token недоступним після того, як app легітимно decrypt/use його.</strong> Compromised process, instrumentation, screen scraping або malicious accessibility може бачити data-in-use.</li>
+<li>Encrypted-at-rest options version-sensitive: library deprecations, backup behavior, key invalidation, migration та restore мають бути перевірені на pinned AndroidX/platform versions. Не називайте deprecated convenience API вічною best practice.</li>
+<li>Biometric user-auth-bound key може вимагати recent authentication для crypto operation; визначте timeout, enrollment invalidation, device credential fallback, lockout, accessibility та recovery/re-login. <strong>Biometric success сам по собі не автентифікує backend session.</strong></li>
+<li>Виключіть credentials/keys із backup або спроєктуйте restore, де ciphertext без original key безпечно відкидається. Забороніть screenshots на sensitive screens за threat/product trade-off; не копіюйте tokens у clipboard; redact logs, crash reports та analytics.</li>
+</ul>
+
+<h2 id="stage19-uk-transport-pinning">TLS, Network Security Config та certificate pinning<a aria-label="Посилання на розділ: TLS and certificate pinning" class="heading-anchor" href="#stage19-uk-transport-pinning">#</a></h2>
+<ul>
+<li>Network Security Config задає cleartext policy, trust anchors, domain config, debug overrides і declarative pins. Production API має забороняти cleartext; debug CA винятки не повинні потрапляти в release.</li>
+<li><strong>HTTPS автентифікує transport endpoint у межах trust model, але не доводить business correctness.</strong> Воно не доводить authorization, безпечний payload, відсутність логічної fraud або чесність compromised endpoint.</li>
+<li>Certificate pinning звужує accepted keys/cert chains, але додає operational coupling: CA/key rotation, CDN change, incident replacement і clock/config errors можуть brick clients, які не можна швидко оновити.</li>
+<li>Якщо threat model справді вимагає pinning, pin-іть public keys, майте overlap/backup pins, staged rollout, expiry/rotation runbook, telemetry і kill/recovery strategy. Android guidance застерігає, що pinning не універсальний default.</li>
+<li><strong>Pinning не захищає compromised app/process і може повністю зламати connectivity.</strong> Hook після TLS або plaintext у process лишається доступним.</li>
+</ul>
+
+<h2 id="stage19-uk-platform-boundaries">Web, components, intents та PendingIntent boundaries<a aria-label="Посилання на розділ: Platform input boundaries" class="heading-anchor" href="#stage19-uk-platform-boundaries">#</a></h2>
+<ul>
+<li>Для authorization віддавайте перевагу external user-agent/Custom Tabs. Embedded WebView приховує/імітує origin, дає app більше доступу до content і створює phishing/cookie/JS bridge ризики; allowlist navigation, не expose dangerous JS interfaces.</li>
+<li>Кожний exported component — IPC endpoint. Мінімізуйте <code>android:exported</code>, застосуйте permission/signature boundary де потрібно, validate caller/Intent action, MIME, URI authority/path, flags, extras size/type та nested intents.</li>
+<li>Deep links — untrusted input навіть після App Link verification. Не виконуйте privileged action лише тому, що URI відкрив ваш Activity; вимагайте current authenticated/authorized server state.</li>
+<li>PendingIntent має explicit target, minimum mutability (<code>FLAG_IMMUTABLE</code> default), unique identity та safe extras. Mutable fill-in data, implicit target або reused identity може дозволити confused-deputy behavior.</li>
+</ul>
+
+<h2 id="stage19-uk-integrity-replay-time">Integrity signals, replay, clock та offline expiry<a aria-label="Посилання на розділ: Integrity replay time and offline" class="heading-anchor" href="#stage19-uk-integrity-replay-time">#</a></h2>
+<ul>
+<li>Play Integrity, root/debug/hook detection — risk signals, не proof. Вони мають false positives/negatives і bypasses; verdict перевіряє backend, bind-ить до action/request nonce та застосовує proportional response.</li>
+<li>Replay-sensitive operation потребує server nonce/challenge, narrow validity, subject/device/session binding та idempotency/dedup. Timestamp лише з device clock недостатній.</li>
+<li>Clock skew впливає на JWT <code>exp/nbf</code>, certificate і proactive refresh; використовуйте bounded leeway та server time hints, але server лишається authority.</li>
+<li>Offline UX має explicit policy: expired access token не стає valid через відсутність network. Дозволяйте лише locally authorized low-risk behavior; queued writes повторно authorize/idempotently submit online.</li>
+</ul>
+
+<h2 id="stage19-uk-observability-response">Observability, incident response та remote revocation<a aria-label="Посилання на розділ: Observability and incident response" class="heading-anchor" href="#stage19-uk-observability-response">#</a></h2>
+<p>Метрики: hashed/opaque session correlation, token version/generation (не token), refresh leader/follower count, reason/status/error code, latency, retry-chain length, revocation result, pin/TLS category, integrity verdict bucket і app/API version. Redact <code>Authorization</code>, cookies, code/verifier/state/nonce, raw deep links, PII, token endpoint body та Keystore aliases, що розкривають account.</p>
+<p>Incident runbook: server-side token/session/family revocation, key/client config rotation, compromised-version block або step-up, remote flags лише як control plane з safe defaults, forced re-auth, affected-version telemetry, user communication і postmortem. Перевірте, що response не залежить від release, який уже не може connect через bad pin.</p>
+
+<h2 id="stage19-uk-guarantees">Guarantees vs explicit non-guarantees<a aria-label="Посилання на розділ: Guarantees and non guarantees" class="heading-anchor" href="#stage19-uk-guarantees">#</a></h2>
+<table><thead><tr><th>Mechanism</th><th>Дає</th><th>Не гарантує</th></tr></thead><tbody>
+<tr><td>PKCE</td><td>Bind code exchange до verifier.</td><td>PKCE зменшує ризик перехоплення authorization code, але не усуває весь phishing або compromise пристрою.</td></tr>
+<tr><td>HTTPS</td><td>Authenticated encrypted transport per trust model.</td><td>HTTPS автентифікує transport endpoint у межах trust model, але не доводить business correctness.</td></tr>
+<tr><td>Pinning</td><td>Звужує accepted certificate/public-key set.</td><td>Pinning не захищає compromised app/process і може повністю зламати connectivity.</td></tr>
+<tr><td>Android Keystore</td><td>Key non-exportability/use restrictions залежно від device.</td><td>Keystore не робить token недоступним після того, як app легітимно decrypt/use його.</td></tr>
+<tr><td>Single-flight</td><td>Один refresh для concurrent stale credential.</td><td>Refresh serialization не створює exactly-once server effects.</td></tr>
+<tr><td>Logout</td><td>Забороняє майбутній local commit/use старої generation.</td><td>Logout не може відкликати requests, які server уже обробив.</td></tr>
+<tr><td>HTTP 401</td><td>Auth challenge/error за server contract.</td><td>401 не завжди означає, що треба refresh.</td></tr>
+<tr><td>App secret / biometric</td><td>Biometric може gate local key operation.</td><td>Mobile client не може безпечно вбудувати universal secret. Biometric success сам по собі не автентифікує backend session.</td></tr>
+</tbody></table>
+
+<h2 id="stage19-uk-version-sensitive">Version-sensitive behavior<a aria-label="Посилання на розділ: Version sensitive behavior" class="heading-anchor" href="#stage19-uk-version-sensitive">#</a></h2>
+<p>Перевіряйте pinned OkHttp <code>Authenticator</code>/prior-response APIs і Dispatcher behavior; OAuth provider discovery/redirect/logout/revocation contract; App Links verification та Android exported/PendingIntent restrictions за API/target SDK; Keystore hardware/StrongBox/user-auth/key invalidation; BiometricPrompt authenticator combinations; Network Security Config/cleartext defaults; AndroidX Security Crypto deprecations/migrations; WebView/Custom Tabs updates; Play Integrity verdict schema/quotas. Стандарти та BCP еволюціонують: OAuth 2.0 Security BCP оновлює старі patterns, тому не копіюйте implicit flow або embedded password flow зі старих tutorials.</p>
+
+<h2 id="stage19-uk-decision-framework">Decision framework<a aria-label="Посилання на розділ: Decision framework" class="heading-anchor" href="#stage19-uk-decision-framework">#</a></h2>
+<ol>
+<li>Inventory assets, actors, origins, redirect/IPC entry points, token audiences, attacker capabilities і compliance/recovery requirements.</li>
+<li>Вибрати Authorization Code + PKCE через external user-agent; зареєструвати exact redirect, issuer/client/audience/scopes, state/nonce transaction.</li>
+<li>Визначити server lifecycle: access TTL, refresh rotation/family/reuse detection, revocation, account/device sessions, skew/offline policy.</li>
+<li>Побудувати atomic session snapshot і single-flight coordinator з generation/version CAS, dedicated refresh path, bounded wait та one-retry/replayability rule.</li>
+<li>Обрати мінімальне local storage: Keystore-backed key, backup/biometric/recovery/migration policy; eliminate logs, clipboard, screenshots та embedded secrets.</li>
+<li>Harden transport і Android inputs; pinning додавати лише за documented threat model та operational rotation plan.</li>
+<li>Тестувати races/attacks, додати redacted observability, remote revocation та incident drills.</li>
+</ol>
+
+<h2 id="stage19-uk-tradeoffs">Trade-offs та failure modes<a aria-label="Посилання на розділ: Trade offs and failure modes" class="heading-anchor" href="#stage19-uk-tradeoffs">#</a></h2>
+<ul>
+<li>Короткий TTL зменшує exposure, але підсилює refresh storms, offline friction і clock edge cases; довгий TTL покращує UX, але розширює theft window.</li>
+<li>Hardware/user-auth-bound key сильніше захищає at rest, але додає unavailable hardware, biometric lockout, enrollment invalidation, background refresh та recovery conflicts.</li>
+<li>Single-flight з blocking followers простіший за N refreshes, але може starve Dispatcher, якщо refresh залежить від тієї самої saturated queue; unbounded wait перетворює outage на thread exhaustion.</li>
+<li>Rotation ловить reuse, але crash між server rotation і durable commit може втратити family; server grace/idempotent rotation contract треба визначити явно.</li>
+<li>Pinning зменшує CA attack surface, але підвищує outage risk; integrity blocking зменшує abuse, але шкодить legitimate modified/unsupported devices і не є доказом безпеки.</li>
+</ul>
+
+<h2 id="stage19-uk-production-scenario">Production concurrent-401 scenario<a aria-label="Посилання на розділ: Production concurrent 401 scenario" class="heading-anchor" href="#stage19-uk-production-scenario">#</a></h2>
+<p>Після resume 24 API calls несуть access v41 і одночасно отримують provider-defined <code>401 invalid_token</code>. Перший Authenticator бачить session generation 9/version 41, створює in-flight; решта після version check join. Dedicated refresh client без Authenticator робить rotation поза Mutex. Server повертає access/refresh v42; leader під lock перевіряє generation 9/version 41, commit-ить v42, завершує Deferred. Followers перебудовують лише replayable requests з v42; кожен має prior-response cap один.</p>
+<p>Паралельно user може натиснути logout. Logout змінює generation 10 і clears credentials до завершення network call. Late v42 не проходить generation CAS, followers отримують signed-out, revocation іде best-effort. Non-replayable upload не повторюється; POST повторюється лише з server idempotency key. Dashboard бачить один leader, 23 followers, latency та discard-by-generation — без token value.</p>
+
+<h2 id="stage19-uk-review-trap">Code-review / debugging / security trap<a aria-label="Посилання на розділ: Code review security trap" class="heading-anchor" href="#stage19-uk-review-trap">#</a></h2>
+<pre><code class="language-kotlin">override fun authenticate(route: Route?, response: Response): Request? =
+    synchronized(this) {
+        val token = api.refresh(store.refreshToken).execute().body()!!
+        store.accessToken = token.access
+        response.request.newBuilder()
+            .header("Authorization", "Bearer ${token.access}")
+            .build()
+    }</code></pre>
+<p>Trap: network I/O під global lock; refresh використовує recursive authenticated client; all 401 block Dispatcher і можуть deadlock/starve; немає prior-response cap, challenge check, failed-token version, refresh rotation commit, generation/logout guard, failure completion, body replayability або redaction. Debugуйте timeline за request/session generation/token version, leader/follower і dispatcher occupancy; відтворіть concurrent 401 + delayed refresh + logout. Fix — dedicated client, I/O поза lock, in-flight result, CAS commit і one eligible follow-up.</p>
+
+<h2 id="stage19-uk-testing">Security and concurrency testing<a aria-label="Посилання на розділ: Security and concurrency testing" class="heading-anchor" href="#stage19-uk-testing">#</a></h2>
+<ul>
+<li>MockWebServer: N simultaneous 401 → рівно один refresh; followers use vNext; refresh 400/401/timeout; second 401 stops; redirect не витікає Authorization; non-replayable body не повторюється.</li>
+<li>Deterministic race tests: logout/account switch під час refresh, two generations, late/older response, cancellation одного follower, leader failure, rotation crash window, saturated resource Dispatcher з independent refresh path.</li>
+<li>OAuth/App Link tests: wrong state/nonce/issuer/audience/redirect, duplicate callback, expired transaction, malicious nested URI, custom-scheme collision; browser/external user-agent integration.</li>
+<li>Android security: exported components, intent fuzzing, PendingIntent mutability, backup/restore, screenshots/clipboard/log/crash/analytics scanning, Keystore invalidation/biometric lockout/recovery, cleartext and debug trust checks.</li>
+<li>Incident game day: revoke family/session remotely, rotate signing/TLS/pins with backup pins, block compromised app version, force re-auth і довести redacted observability.</li>
+</ul>
+
+<h2 id="stage19-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice questions and answers" class="heading-anchor" href="#stage19-uk-likely-qa">#</a></h2>
+<p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
+<ol>
+<li><strong>1. Access, refresh та ID token?</strong> Access авторизує resource server; refresh отримує новий access у authorization server; ID token повідомляє OIDC client про authentication і не є API credential.</li>
+<li><strong>2. Чому native app потребує Code + PKCE?</strong> Public client не зберігає secret; verifier bind-ить intercepted code до initiating instance, а external user-agent не віддає password app.</li>
+<li><strong>3. State vs nonce?</strong> State зв’язує authorization response з transaction/CSRF boundary; nonce зв’язує ID token з OIDC request і replay boundary.</li>
+<li><strong>4. Interceptor vs Authenticator?</strong> Interceptor додає current credential до eligible request; Authenticator після eligible 401 створює bounded follow-up або повертає null.</li>
+<li><strong>5. Як уникнути refresh storm?</strong> Single-flight: version check, один leader/in-flight Deferred, followers await, I/O поза Mutex, CAS commit за generation/version.</li>
+<li><strong>6. Чому refresh client окремий?</strong> Щоб token endpoint не рекурсивно викликав той самий Authenticator і не залежав від saturated resource Dispatcher/old access header.</li>
+<li><strong>7. 401 чи 403?</strong> Зазвичай 401 — missing/invalid auth/challenge, 403 — insufficient permission; refresh лише за конкретним backend error contract, бо semantics vary.</li>
+<li><strong>8. Що реально дає Keystore?</strong> Захист/non-exportability key material і usage restrictions; не secrecy plaintext token у legitimately running або compromised app process.</li>
+<li><strong>9. Коли pinning?</strong> Лише за explicit threat model з backup pins, overlap, rotation/incident plan і telemetry; це не universal default та може brick connectivity.</li>
+<li><strong>10. Як logout перемагає late refresh?</strong> Increment generation і clear credentials атомарно; refresh result commit-иться лише якщо generation/version досі збігаються, інакше discard.</li>
+</ol>
+
+<h2 id="stage19-uk-followups">4 senior follow-ups<a aria-label="Посилання на розділ: Senior follow ups" class="heading-anchor" href="#stage19-uk-followups">#</a></h2>
+<ol>
+<li>Як узгодити rotating refresh token, crash між server success/local commit і reuse detection?</li>
+<li>Як bounded synchronous Authenticator bridge поводиться при 64 concurrent 401 та saturated Dispatcher?</li>
+<li>Яка recovery policy для biometric-bound key після enrollment change, restore або lockout?</li>
+<li>Як провести emergency TLS/key rotation, якщо old app має broken pin set і не може отримати remote flag?</li>
+</ol>
+
+<h2 id="stage19-uk-self-check">4 unanswered self-checks<a aria-label="Посилання на розділ: Unanswered self checks" class="heading-anchor" href="#stage19-uk-self-check">#</a></h2>
+<ol>
+<li>Намалюйте всі trust boundaries вашого login redirect і доведіть exact issuer/state/nonce/URI validation.</li>
+<li>Відтворіть timeline 20 concurrent 401 + logout; де саме version/generation не дозволяє stale commit?</li>
+<li>Які credentials можуть потрапити в backup, memory dump, screenshot, clipboard, logs, crash та analytics?</li>
+<li>Які server-side revocation, dedup і incident controls працюють, якщо device offline або app process compromised?</li>
+</ol>
+
+<h2 id="stage19-uk-english-skeletons">English answer skeletons<a aria-label="Посилання на розділ: English answer skeletons" class="heading-anchor" href="#stage19-uk-english-skeletons">#</a></h2>
+<h3 id="stage19-uk-answer-30">~30-second answer<a aria-label="Посилання на розділ: 30 second answer" class="heading-anchor" href="#stage19-uk-answer-30">#</a></h3>
+<blockquote><p>I treat a mobile app as a public client. I use Authorization Code with PKCE in an external user-agent, validate the exact redirect, state, issuer and OIDC nonce, and keep access, refresh and ID-token purposes separate. An interceptor attaches the current access token; an OkHttp Authenticator handles only eligible 401s through a versioned single-flight refresh and retries once. A generation check prevents late refresh from reviving logout. Keystore, biometrics, TLS, pinning and integrity are scoped defenses, not proof that a compromised process or backend action is safe.</p></blockquote>
+<h3 id="stage19-uk-answer-2min">~2-minute answer<a aria-label="Посилання на розділ: 2 minute answer" class="heading-anchor" href="#stage19-uk-answer-2min">#</a></h3>
+<blockquote><p>I start by separating OAuth roles and artifacts. The authorization server authenticates and issues grants; the resource server validates access tokens. An access token authorizes an API, a refresh token is only for the token endpoint, and an OIDC ID token is an identity assertion for the client. Because a native app is a public client, I use Authorization Code with S256 PKCE through the system browser or Custom Tabs. I validate the exact redirect URI, an outstanding single-use transaction, state, issuer, and ID-token signature, audience, expiry and nonce.</p><p>At runtime an application interceptor reads an immutable session snapshot and adds the current credential only to allowlisted requests. An OkHttp Authenticator handles a provider-defined invalid-token 401, not every 401 or 403. It checks the prior-response count and failed credential version. Concurrent failures join one in-flight refresh; network I/O runs outside the lock through a dedicated client without the resource authenticator. The result commits only if session generation and token version still match, so logout or account switch wins. Each replayable request gets at most one follow-up; one-shot bodies and non-idempotent effects require explicit policy and server idempotency.</p><p>For storage, Keystore protects cryptographic keys and may provide hardware-backed non-exportability, but the token is plaintext when the app uses it. Biometric success can gate a local key operation, not authenticate the backend session. I exclude credentials from backup, screenshots, clipboard, logs and analytics. HTTPS and Network Security Config are baseline; pinning is only for a justified threat model with backup pins and a rotation runbook because it can brick connectivity and does not protect a compromised process. Exported components, deep links, PendingIntent and WebView are untrusted input boundaries. Integrity verdicts are risk signals. I finish with race and attack tests, redacted metrics, server revocation and an incident-response drill.</p></blockquote>
+
+<h2 id="stage19-uk-sources">Офіційні джерела<a aria-label="Посилання на розділ: Офіційні джерела" class="heading-anchor" href="#stage19-uk-sources">#</a></h2>
+<ul>
+<li><a href="https://datatracker.ietf.org/doc/html/rfc8252">RFC 8252: OAuth 2.0 for Native Apps</a>, <a href="https://datatracker.ietf.org/doc/html/rfc7636">RFC 7636: PKCE</a>, <a href="https://datatracker.ietf.org/doc/html/rfc9700">RFC 9700: OAuth 2.0 Security BCP</a></li>
+<li><a href="https://datatracker.ietf.org/doc/html/rfc6749">RFC 6749: OAuth 2.0</a>, <a href="https://datatracker.ietf.org/doc/html/rfc6750">RFC 6750: Bearer Tokens</a>, <a href="https://datatracker.ietf.org/doc/html/rfc7009">RFC 7009: Token Revocation</a>, <a href="https://openid.net/specs/openid-connect-core-1_0.html">OpenID Connect Core 1.0</a></li>
+<li><a href="https://square.github.io/okhttp/5.x/okhttp/okhttp3/-authenticator/">OkHttp Authenticator API</a>, <a href="https://square.github.io/okhttp/features/interceptors/">OkHttp Interceptors</a>, <a href="https://square.github.io/okhttp/features/https/">OkHttp HTTPS and Certificate Pinning</a></li>
+<li><a href="https://developer.android.com/privacy-and-security/keystore">Android Keystore</a>, <a href="https://developer.android.com/identity/sign-in/biometric-auth">Biometric authentication</a>, <a href="https://developer.android.com/privacy-and-security/risks">Android security risks</a></li>
+<li><a href="https://developer.android.com/privacy-and-security/security-config">Network Security Configuration</a>, <a href="https://developer.android.com/training/app-links">Android App Links</a>, <a href="https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks">Unsafe deep links</a></li>
+<li><a href="https://developer.android.com/privacy-and-security/risks/access-control-to-exported-components">Exported component access control</a>, <a href="https://developer.android.com/privacy-and-security/risks/implicit-pendingintent">Unsafe implicit PendingIntent</a>, <a href="https://developer.android.com/google/play/integrity">Play Integrity API</a></li>
 </ul>
 </div></details>
 
@@ -13054,6 +13338,283 @@ val client = OkHttpClient.Builder()
 <li><a href="https://lysine.dev/okhttp/5.x/okhttp/okhttp3/-dispatcher/">OkHttp Dispatcher API</a>, <a href="https://lysine.dev/okhttp/5.x/okhttp/okhttp3/-event-listener/">EventListener API</a>, and <a href="https://lysine.dev/okhttp/5.x/mockwebserver/okhttp3.mockwebserver/-mock-web-server/">MockWebServer API</a></li>
 <li><a href="https://developer.android.com/develop/connectivity/network-ops">Android network operations</a>, <a href="https://developer.android.com/training/monitoring-device-state/connectivity-status-type">Connectivity monitoring</a>, and <a href="https://developer.android.com/privacy-and-security/security-config">Network Security Configuration</a></li>
 <li><a href="https://datatracker.ietf.org/doc/html/rfc9110">RFC 9110: HTTP Semantics</a>, <a href="https://datatracker.ietf.org/doc/html/rfc9111">RFC 9111: HTTP Caching</a>, and <a href="https://datatracker.ietf.org/doc/html/rfc6585">RFC 6585: Additional HTTP Status Codes</a></li>
+</ul>
+</div></details>
+
+<details class="major-section" data-key="authentication-token-refresh-android-mobile-security" data-title="Authentication, token refresh, and Android mobile security" id="en-authentication-token-refresh-android-mobile-security" open=""><summary class="major-summary"><span class="major-title">Authentication, token refresh, and Android mobile security</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<h2 id="en-stage19-objective">Learning objective<a aria-label="Link to section: Learning objective" class="heading-anchor" href="#en-stage19-objective">#</a></h2>
+<p>After this stage you should be able to design native OAuth 2.x/OIDC sign-in, carry credentials across Android and OkHttp boundaries, serialize concurrent refresh without races or deadlocks, and build defense-in-depth for token storage, transport, IPC, observability, and incident response. This continues Stage 18 rather than repeating networking basics, and it avoids the future persistence deep dive.</p>
+
+<h2 id="en-stage19-mental-model">Senior threat / mental model<a aria-label="Link to section: Senior threat model" class="heading-anchor" href="#en-stage19-mental-model">#</a></h2>
+<blockquote><p><strong>A mobile app is a public client in a hostile environment, and authentication is a distributed state machine.</strong> Separate the browser authorization session, app session, resource-server access, local key use, and device/app integrity signal. For each boundary identify the attacker, asset, trust root, lifetime, replay surface, cancellation, and recovery path.</p></blockquote>
+<ul>
+<li>Threats include a malicious app, link hijacking, phishing, stolen device or backup, proxy/CA compromise, a rooted or instrumented process, telemetry leakage, replay, and a compromised backend account.</li>
+<li>The authorization server authenticates the user and issues grants/tokens; the client initiates; the resource owner delegates; the resource server validates access. OIDC adds an identity layer, not permission to treat an access token as a profile object.</li>
+<li>A mobile client cannot safely embed a universal secret. Obfuscation, NDK storage, or remote config raises extraction cost but a shared secret in a distributed binary does not authenticate that client instance.</li>
+<li>Defense-in-depth reduces blast radius. No Keystore key, biometric prompt, certificate pin, root check, or integrity verdict makes a compromised process trusted.</li>
+</ul>
+
+<h2 id="en-stage19-topology">Authentication / refresh / security topology and internals<a aria-label="Link to section: Authentication refresh topology" class="heading-anchor" href="#en-stage19-topology">#</a></h2>
+<pre><code class="language-text">App → external user-agent (browser / Custom Tabs)
+  → authorization server: authentication + consent
+  → exact redirect URI / verified App Link → callback
+  → validate state + issuer + transaction
+  → token endpoint: authorization code + PKCE verifier
+  → access token → resource server
+  → validate ID token → local identity assertion
+  → refresh token rotation → token family / session state
+
+Request → credential Interceptor reads atomic session snapshot
+  → resource server → 401 challenge
+  → OkHttp Authenticator → RefreshCoordinator single-flight
+  → dedicated refresh client (no resource Authenticator)
+  → compare generation/version → install or discard
+  → one replayable follow-up request with new access token</code></pre>
+<p>The session owner holds an immutable snapshot containing <code>sessionId/generation</code>, token values, access expiry, refresh-family/version, and subject/issuer metadata. An atomic read gives each request a coherent version; compare-and-set prevents an old refresh response overwriting logout or a newer login.</p>
+
+<h2 id="en-stage19-oauth-oidc">OAuth 2.x / OIDC roles and token semantics<a aria-label="Link to section: OAuth and OIDC" class="heading-anchor" href="#en-stage19-oauth-oidc">#</a></h2>
+<table><thead><tr><th>Artifact</th><th>Audience / purpose</th><th>Client policy</th></tr></thead><tbody>
+<tr><td>Authorization code</td><td>Short-lived one-time grant for the token endpoint.</td><td>Not an API credential; bind it to client/redirect and PKCE verifier, then exchange promptly.</td></tr>
+<tr><td>Access token</td><td>Authorization at the resource server: audience, scopes, expiry.</td><td>Send only to the intended API over HTTPS; do not use as a profile unless a contract explicitly says so.</td></tr>
+<tr><td>Refresh token</td><td>Obtains new access tokens from the authorization server.</td><td>Never send to a resource API; define rotation, reuse detection, revocation, and at-rest policy.</td></tr>
+<tr><td>ID token</td><td>OIDC assertion about an authentication event for the client.</td><td>Validate signature, issuer, audience/authorized party, expiry, and nonce; it is not an access token.</td></tr>
+</tbody></table>
+<p>Opaque and JWT tokens have different server validation paths. The mobile client usually is not the authority for access-token validity; the resource server performs signature validation or introspection and authorization. Decoding a JWT without validating its signature and claims creates no trust. Scope is delegated capability, while subject, tenant, and object-level authorization still apply.</p>
+
+<h2 id="en-stage19-native-flow">Authorization Code + PKCE for a native app<a aria-label="Link to section: Authorization Code with PKCE" class="heading-anchor" href="#en-stage19-native-flow">#</a></h2>
+<ol>
+<li>Generate a high-entropy <code>code_verifier</code>, S256 <code>code_challenge</code>, random <code>state</code>, and OIDC <code>nonce</code>; bind them to one pending transaction.</li>
+<li>Open the authorization endpoint in an external user-agent—the system browser or Custom Tabs—to preserve origin UI and a shared security context. Do not collect the password in the app.</li>
+<li>Accept only a registered exact redirect URI. Verify domain association for an HTTPS App Link; a custom scheme can be claimed by another app and therefore still needs PKCE and strict routing.</li>
+<li>On callback, validate the pending transaction, <code>state</code>, scheme/host/path, and expected issuer before exchanging the code once with the original verifier.</li>
+<li>For OIDC validate the ID token and <code>nonce</code>, establish a new local session generation, and erase pending artifacts.</li>
+</ol>
+<p><strong>PKCE mitigates authorization-code interception but not all phishing or device compromise.</strong> An external user-agent reduces password exposure to the app, but fake UI/browser surfaces, malicious accessibility, account takeover, and authorization-server defects remain.</p>
+
+<h2 id="en-stage19-redirect-boundaries">Redirect, deep-link, App Link, state, and nonce boundaries<a aria-label="Link to section: Redirect and link boundaries" class="heading-anchor" href="#en-stage19-redirect-boundaries">#</a></h2>
+<ul>
+<li><code>state</code> correlates the authorization response with a browser transaction and protects the CSRF/session-swap boundary. <code>nonce</code> binds an ID token to an OIDC request/replay context. They are not interchangeable.</li>
+<li>Exact redirect matching covers scheme, normalized host, port, path, and allowed query contract. Reject wildcard hosts, open redirects, arbitrary nested URLs, and callbacks without an outstanding transaction.</li>
+<li>A verified HTTPS App Link gives stronger app ownership than a custom scheme, but association, configuration, and OS behavior can fail. Intent data is still untrusted input inside the app.</li>
+<li>The transaction is single-use, expiring, and bound to issuer/client. Never place verifier/state in logs, analytics, or a process-global mutable singleton without session ownership.</li>
+</ul>
+
+<h2 id="en-stage19-token-lifecycle">Token lifetime, rotation, revocation, and session state<a aria-label="Link to section: Token lifecycle" class="heading-anchor" href="#en-stage19-token-lifecycle">#</a></h2>
+<ul>
+<li>A short access lifetime narrows the theft window but increases refresh load and clock sensitivity. Refresh token rotation issues a replacement and invalidates or marks the previous token; reuse detection may revoke the family.</li>
+<li>Client expiry is a scheduling hint with bounded skew, not a final verdict. The server can revoke earlier, the device clock can be wrong, and opaque policy can change.</li>
+<li>Specify revocation endpoint, server logout, password/device-change, and remote revocation propagation. An offline device may not learn immediately; the resource server must enforce session state.</li>
+<li>Session state includes subject/tenant, issuer, generation, refresh family, and credential version. Account switch creates a new generation, so a response from the old generation cannot commit.</li>
+</ul>
+
+<h2 id="en-stage19-okhttp-boundaries">Interceptor versus OkHttp Authenticator<a aria-label="Link to section: Interceptor versus Authenticator" class="heading-anchor" href="#en-stage19-okhttp-boundaries">#</a></h2>
+<table><thead><tr><th>Boundary</th><th>Responsibility</th><th>Avoid</th></tr></thead><tbody>
+<tr><td>Application Interceptor</td><td>Read the current immutable snapshot and attach <code>Authorization: Bearer …</code> only to allowlisted origins/request classes.</td><td>Do not block-refresh every request or forward credentials across origins.</td></tr>
+<tr><td>OkHttp Authenticator</td><td>Respond to an eligible 401 challenge, reuse an already-new token or join single-flight, then return a follow-up request or <code>null</code>.</td><td>Do not treat every 401 as expiry, handle 403 as refresh, or create an unbounded loop.</td></tr>
+<tr><td>Refresh client</td><td>Call the token endpoint with a bounded timeout and no resource Authenticator/access-token interceptor.</td><td>Do not refresh recursively through the same authenticated client.</td></tr>
+</tbody></table>
+<p>Check prior-response count, challenge/error contract, whether the failed request carried the expected old credential, and whether the replacement differs. Stop after one auth follow-up. <strong>A 401 does not always mean refresh.</strong> A 401 commonly means missing/invalid authentication or a challenge, while 403 commonly means authenticated but not permitted; backend contracts vary, so use status, <code>WWW-Authenticate</code>, and a documented error code.</p>
+
+<h2 id="en-stage19-concurrent-refresh">Concurrent 401 single-flight refresh<a aria-label="Link to section: Concurrent single flight refresh" class="heading-anchor" href="#en-stage19-concurrent-refresh">#</a></h2>
+<p>If N calls fail with access-token version 7, one leader refreshes and followers await the same in-flight result. Before starting and after waiting, compare versions: if the same generation already has version 8, reuse it. Run token-endpoint I/O outside the lock.</p>
+<pre><code class="language-kotlin">data class CredentialSnapshot(
+    val generation: Long, val version: Long,
+    val access: String, val refresh: String,
+)
+
+
+class RefreshCoordinator(
+    private val store: SessionStore, // in-memory snapshot; no disk I/O under mutex
+    private val refreshApi: RefreshApi, // dedicated client; no Authenticator
+) {
+    private val mutex = Mutex()
+    private val inFlight = mutableMapOf&lt;
+        Pair&lt;Long, Long&gt;, CompletableDeferred&lt;CredentialSnapshot?&gt;
+    &gt;()
+
+    suspend fun refreshAfter401(failed: CredentialSnapshot): CredentialSnapshot? {
+        var leader = false
+        val flight = mutex.withLock {
+            val current = store.current()
+            if (current == null || current.generation != failed.generation) return null
+            if (current.version != failed.version) return current
+            val key = failed.generation to failed.version
+            inFlight[key] ?: CompletableDeferred&lt;CredentialSnapshot?&gt;().also {
+                inFlight[key] = it
+                leader = true
+            }
+        }
+        if (!leader) return flight.await()
+
+        val fetched = runCatching { refreshApi.rotate(failed.refresh) }.getOrNull()
+        return mutex.withLock {
+            val current = store.current()
+            val accepted = fetched?.takeIf {
+                current != null &amp;&amp; current.generation == failed.generation &amp;&amp;
+                    current.version == failed.version
+            }?.also(store::replace)
+            val result = accepted ?: store.current()?.takeIf {
+                it.generation == failed.generation &amp;&amp; it.version != failed.version
+            }
+            flight.complete(result)
+            val key = failed.generation to failed.version
+            if (inFlight[key] === flight) inFlight.remove(key)
+            result
+        }
+    }
+}</code></pre>
+<p><code>Authenticator.authenticate()</code> is synchronous. A production bridge must be bounded and must not schedule refresh on the same saturated OkHttp Dispatcher; use a dedicated refresh client/executor or a coordinator designed for the blocking boundary. Do not hold a Mutex during token HTTP I/O, disk work, a biometric prompt, or unrelated I/O. Complete the Deferred for success, failure, and cancellation. Generation/version checks prevent a late response reviving logout or an older refresh overwriting a newer token.</p>
+
+<h2 id="en-stage19-retry-logout-semantics">Retry once, replayability, logout race, and 401/403<a aria-label="Link to section: Retry logout and status semantics" class="heading-anchor" href="#en-stage19-retry-logout-semantics">#</a></h2>
+<ul>
+<li>The Authenticator rebuilds the original request with the new header at most once. A one-shot or streaming body may not be replayable; even a replayable POST may duplicate effects if the server processed a body before returning 401 or the response was lost.</li>
+<li>An idempotency key plus server deduplication window reduces duplicate effects. <strong>Refresh serialization does not create exactly-once server effects.</strong></li>
+<li>Logout atomically advances/replaces the generation, clears usable credentials, cancels pending refresh where practical, starts best-effort revocation on a separate bounded path, and prevents late commit.</li>
+<li><strong>Logout cannot retract requests the server already processed.</strong> It also cannot guarantee immediate remote invalidation while offline; local UI/session state and server authorization must converge.</li>
+</ul>
+
+<h2 id="en-stage19-storage">Storage threat model, Android Keystore, and biometrics<a aria-label="Link to section: Storage and biometrics" class="heading-anchor" href="#en-stage19-storage">#</a></h2>
+<ul>
+<li>Android Keystore protects cryptographic key material and can make it non-exportable; hardware backing or StrongBox depends on device, API, and algorithm. A token is arbitrary data: encrypt it with a key, but the app still obtains plaintext to send it.</li>
+<li><strong>Keystore does not make a token inaccessible after the app legitimately decrypts or uses it.</strong> A compromised process, instrumentation, screen scraping, or malicious accessibility can observe data in use.</li>
+<li>Encrypted-at-rest choices are version-sensitive: library deprecations, backup, key invalidation, migration, and restore behavior must be verified for pinned AndroidX/platform versions. A deprecated convenience API is not an eternal best practice.</li>
+<li>A biometric user-auth-bound key can require recent authentication for a crypto operation. Define timeout, enrollment invalidation, device-credential fallback, lockout, accessibility, and recovery/re-login. <strong>Biometric success does not authenticate a backend session by itself.</strong></li>
+<li>Exclude credentials and keys from backup or design restore so ciphertext without its original key is discarded. Consider blocking screenshots on sensitive screens, never copy tokens to clipboard, and redact logs, crash reports, and analytics.</li>
+</ul>
+
+<h2 id="en-stage19-transport-pinning">TLS, Network Security Config, and certificate pinning<a aria-label="Link to section: TLS and certificate pinning" class="heading-anchor" href="#en-stage19-transport-pinning">#</a></h2>
+<ul>
+<li>Network Security Config defines cleartext policy, trust anchors, domain config, debug overrides, and declarative pins. Production API domains should reject cleartext; debug CA exceptions must not enter release configuration.</li>
+<li><strong>HTTPS authenticates the transport endpoint under its trust model, not business correctness.</strong> It does not prove authorization, safe payloads, absence of fraud, or a correct compromised endpoint.</li>
+<li>Certificate pinning narrows accepted keys/chains but creates operational coupling: CA/key rotation, CDN migration, emergency replacement, and clock/config errors can brick clients that cannot be updated quickly.</li>
+<li>If the threat model truly requires pinning, pin public keys, keep overlap and backup pins, stage rollout, define expiry/rotation and incident runbooks, collect telemetry, and maintain recovery. Android guidance does not treat pinning as a universal default.</li>
+<li><strong>Pinning does not protect a compromised app or process and can brick connectivity.</strong> A hook after TLS or plaintext inside the process remains visible.</li>
+</ul>
+
+<h2 id="en-stage19-platform-boundaries">Web, components, intents, deep links, and PendingIntent<a aria-label="Link to section: Platform input boundaries" class="heading-anchor" href="#en-stage19-platform-boundaries">#</a></h2>
+<ul>
+<li>Prefer an external user-agent/Custom Tabs for authorization. An embedded WebView can hide or imitate origin, exposes more content to the app, and introduces phishing, cookie, and JS-bridge risks; allowlist navigation and avoid dangerous JS interfaces.</li>
+<li>Every exported component is an IPC endpoint. Minimize <code>android:exported</code>, use permission/signature boundaries where needed, and validate caller, Intent action, MIME type, URI authority/path, flags, extra types/sizes, and nested intents.</li>
+<li>Deep links remain untrusted even after App Link verification. Never perform a privileged action merely because a URI opened the Activity; require current server authentication and authorization.</li>
+<li>A PendingIntent needs an explicit target, minimum mutability (<code>FLAG_IMMUTABLE</code> by default), deliberate identity, and safe extras. Mutable fill-in data, implicit targets, or reused identity can enable confused-deputy behavior.</li>
+</ul>
+
+<h2 id="en-stage19-integrity-replay-time">Integrity signals, replay, device clock, and offline expiry<a aria-label="Link to section: Integrity replay time and offline" class="heading-anchor" href="#en-stage19-integrity-replay-time">#</a></h2>
+<ul>
+<li>Play Integrity and root/debug/hook detection are risk signals, not proof. They have false positives, false negatives, and bypasses; the backend validates verdicts, binds them to an action/request nonce, and applies proportional policy.</li>
+<li>A replay-sensitive operation needs a server challenge/nonce, narrow validity, subject/device/session binding, and idempotency/deduplication. A timestamp derived only from the device clock is insufficient.</li>
+<li>Clock skew affects JWT <code>exp/nbf</code>, certificates, and proactive refresh. Use bounded leeway and server-time hints, while keeping the server authoritative.</li>
+<li>Offline behavior needs explicit policy: an expired access token does not become valid because the network is absent. Permit only locally authorized low-risk behavior; re-authorize and submit queued writes idempotently online.</li>
+</ul>
+
+<h2 id="en-stage19-observability-response">Observability, incident response, and remote revocation<a aria-label="Link to section: Observability and incident response" class="heading-anchor" href="#en-stage19-observability-response">#</a></h2>
+<p>Record an opaque/hashed session correlation, token version and generation—not token values—refresh leader/follower count, reason/status/error code, latency, retry-chain length, revocation outcome, pin/TLS category, integrity-verdict bucket, and app/API version. Redact <code>Authorization</code>, cookies, authorization code/verifier/state/nonce, raw deep links, PII, token-endpoint bodies, and account-revealing aliases.</p>
+<p>An incident runbook covers server-side session/token-family revocation, signing/client/TLS configuration rotation, compromised-version blocking or step-up, remote controls with safe defaults, forced reauthentication, affected-version telemetry, user communication, and a postmortem. Recovery must not depend only on a release that cannot connect because of a bad pin.</p>
+
+<h2 id="en-stage19-guarantees">Guarantees versus explicit non-guarantees<a aria-label="Link to section: Guarantees and non guarantees" class="heading-anchor" href="#en-stage19-guarantees">#</a></h2>
+<table><thead><tr><th>Mechanism</th><th>Provides</th><th>Does not guarantee</th></tr></thead><tbody>
+<tr><td>PKCE</td><td>Binds code exchange to the verifier.</td><td>PKCE mitigates authorization-code interception but not all phishing or device compromise.</td></tr>
+<tr><td>HTTPS</td><td>Authenticated encrypted transport under a trust model.</td><td>HTTPS authenticates the transport endpoint under its trust model, not business correctness.</td></tr>
+<tr><td>Pinning</td><td>Narrows accepted certificate/public-key material.</td><td>Pinning does not protect a compromised app or process and can brick connectivity.</td></tr>
+<tr><td>Android Keystore</td><td>Key non-exportability/use restrictions where supported.</td><td>Keystore does not make a token inaccessible after the app legitimately decrypts or uses it.</td></tr>
+<tr><td>Single-flight</td><td>One refresh for concurrent stale credentials.</td><td>Refresh serialization does not create exactly-once server effects.</td></tr>
+<tr><td>Logout</td><td>Stops future local commit/use of the old generation.</td><td>Logout cannot retract requests the server already processed.</td></tr>
+<tr><td>HTTP 401</td><td>An authentication challenge/error under the server contract.</td><td>A 401 does not always mean refresh.</td></tr>
+<tr><td>Client secret / biometric</td><td>Biometric policy can gate a local key operation.</td><td>A mobile client cannot safely embed a universal secret. Biometric success does not authenticate a backend session by itself.</td></tr>
+</tbody></table>
+
+<h2 id="en-stage19-version-sensitive">Version-sensitive behavior<a aria-label="Link to section: Version sensitive behavior" class="heading-anchor" href="#en-stage19-version-sensitive">#</a></h2>
+<p>Check the pinned OkHttp <code>Authenticator</code>, prior-response API, and Dispatcher behavior; provider discovery, redirect, logout, and revocation contracts; App Links verification and exported/PendingIntent rules by API/target SDK; Keystore hardware, StrongBox, user-auth, and invalidation behavior; BiometricPrompt authenticator combinations; Network Security Config and cleartext defaults; AndroidX Security Crypto deprecations and migration; WebView/Custom Tabs updates; and Play Integrity verdict schema and quotas. Standards evolve: OAuth 2.0 Security BCP updates older patterns, so do not copy implicit or embedded-password flows from old tutorials.</p>
+
+<h2 id="en-stage19-decision-framework">Decision framework<a aria-label="Link to section: Decision framework" class="heading-anchor" href="#en-stage19-decision-framework">#</a></h2>
+<ol>
+<li>Inventory assets, actors, origins, redirect/IPC entry points, token audiences, attacker capabilities, and compliance/recovery needs.</li>
+<li>Choose Authorization Code + PKCE in an external user-agent; register exact redirects and issuer/client/audience/scopes, with state/nonce transaction ownership.</li>
+<li>Define server lifecycle: access TTL, refresh rotation/family/reuse detection, revocation, account/device sessions, clock skew, and offline policy.</li>
+<li>Build an atomic session snapshot and single-flight coordinator with generation/version CAS, an independent refresh path, bounded waits, and one-retry/replayability rules.</li>
+<li>Minimize local storage: Keystore-backed key plus backup, biometric, recovery, and migration policy; eliminate logs, clipboard, screenshots, and embedded secrets.</li>
+<li>Harden transport and Android inputs; add pinning only for a documented threat model and an operational rotation/recovery plan.</li>
+<li>Test races and attacks, instrument redacted signals, and rehearse remote revocation and incident response.</li>
+</ol>
+
+<h2 id="en-stage19-tradeoffs">Trade-offs and failure modes<a aria-label="Link to section: Trade offs and failure modes" class="heading-anchor" href="#en-stage19-tradeoffs">#</a></h2>
+<ul>
+<li>A short TTL narrows exposure but amplifies refresh storms, offline friction, and clock edge cases; a long TTL improves availability but extends the theft window.</li>
+<li>A hardware or user-auth-bound key gives stronger at-rest protection but adds unsupported hardware, biometric lockout, enrollment invalidation, background refresh, and recovery conflicts.</li>
+<li>Single-flight blocking followers is better than N refreshes, but can starve the Dispatcher if refresh depends on the same saturated queue; an unbounded wait turns an outage into thread exhaustion.</li>
+<li>Rotation detects reuse, but a crash between server rotation and durable local commit may lose the family; define server grace or idempotent rotation behavior explicitly.</li>
+<li>Pinning narrows CA risk but increases outage risk. Integrity blocking can reduce abuse while excluding legitimate modified/unsupported devices and still proving nothing absolutely.</li>
+</ul>
+
+<h2 id="en-stage19-production-scenario">Production concurrent-401 scenario<a aria-label="Link to section: Production concurrent 401 scenario" class="heading-anchor" href="#en-stage19-production-scenario">#</a></h2>
+<p>After resume, 24 API calls carry access v41 and receive the provider-defined <code>401 invalid_token</code>. The first Authenticator sees session generation 9/version 41 and creates the in-flight operation; the others check version and join. A dedicated refresh client without an Authenticator rotates outside the Mutex. The server returns access/refresh v42; under the lock the leader verifies generation 9/version 41, commits v42, and completes the Deferred. Followers rebuild only replayable requests with v42, and each prior-response chain is capped at one follow-up.</p>
+<p>The user may log out concurrently. Logout advances generation to 10 and clears credentials before the network response. Late v42 fails the generation CAS; followers become signed out and revocation proceeds best-effort. A non-replayable upload is not retried, and POST retry requires a server idempotency key. Metrics show one leader, 23 followers, latency, and generation discard without recording credentials.</p>
+
+<h2 id="en-stage19-review-trap">Code-review / debugging / security trap<a aria-label="Link to section: Code review security trap" class="heading-anchor" href="#en-stage19-review-trap">#</a></h2>
+<pre><code class="language-kotlin">override fun authenticate(route: Route?, response: Response): Request? =
+    synchronized(this) {
+        val token = api.refresh(store.refreshToken).execute().body()!!
+        store.accessToken = token.access
+        response.request.newBuilder()
+            .header("Authorization", "Bearer ${token.access}")
+            .build()
+    }</code></pre>
+<p>The trap holds a global lock across network I/O, uses the recursive authenticated client, blocks all 401 calls and can deadlock or starve the Dispatcher. It has no prior-response cap, challenge validation, failed-token version, rotating-token atomic commit, generation/logout guard, failure completion, body replayability rule, or redaction. Debug a timeline keyed by request, session generation, token version, leader/follower, and Dispatcher occupancy; reproduce concurrent 401 + delayed refresh + logout. Fix it with a dedicated client, I/O outside the lock, one in-flight result, CAS commit, and one eligible follow-up.</p>
+
+<h2 id="en-stage19-testing">Security and concurrency testing<a aria-label="Link to section: Security and concurrency testing" class="heading-anchor" href="#en-stage19-testing">#</a></h2>
+<ul>
+<li>MockWebServer: N simultaneous 401 responses cause exactly one refresh; followers use vNext; refresh 400/401/timeout; a second 401 stops; redirects do not leak Authorization; non-replayable bodies are not retried.</li>
+<li>Deterministic races: logout/account switch during refresh, two generations, late or older response, one follower cancellation, leader failure, rotation crash window, and saturated resource Dispatcher with an independent refresh path.</li>
+<li>OAuth/App Link: wrong state/nonce/issuer/audience/redirect, duplicate callback, expired transaction, malicious nested URI, custom-scheme collision, and browser/external user-agent integration.</li>
+<li>Android security: exported components, intent fuzzing, PendingIntent mutability, backup/restore, screenshot/clipboard/log/crash/analytics scanning, Keystore invalidation, biometric lockout/recovery, cleartext, and debug trust.</li>
+<li>Incident game day: remotely revoke a family/session, rotate signing/TLS/pins with backup pins, block a compromised version, force reauthentication, and prove observability contains no credentials.</li>
+</ul>
+
+<h2 id="en-stage19-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice questions and answers" class="heading-anchor" href="#en-stage19-likely-qa">#</a></h2>
+<p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
+<ol>
+<li><strong>1. Access, refresh, and ID token?</strong> Access authorizes a resource server; refresh obtains new access at the authorization server; ID token tells the OIDC client about authentication and is not an API credential.</li>
+<li><strong>2. Why Code + PKCE for native apps?</strong> A public client cannot keep a secret; the verifier binds an intercepted code to the initiating instance, while the external user-agent keeps passwords out of the app.</li>
+<li><strong>3. State versus nonce?</strong> State correlates the authorization response and CSRF boundary; nonce binds an ID token to the OIDC request and replay boundary.</li>
+<li><strong>4. Interceptor versus Authenticator?</strong> The Interceptor attaches the current credential to eligible requests; the Authenticator creates one bounded follow-up after an eligible 401 or returns null.</li>
+<li><strong>5. How do you prevent a refresh storm?</strong> Use a version check, one leader and in-flight Deferred, follower reuse, I/O outside the Mutex, and generation/version CAS commit.</li>
+<li><strong>6. Why a separate refresh client?</strong> It avoids recursively invoking the same Authenticator and avoids depending on a saturated resource Dispatcher or old access header.</li>
+<li><strong>7. 401 versus 403?</strong> Usually 401 means missing/invalid authentication or challenge and 403 means insufficient permission; only refresh for a documented backend error because contracts vary.</li>
+<li><strong>8. What does Keystore provide?</strong> Protection and possible non-exportability of key material plus use restrictions—not secrecy of a plaintext token in a legitimately running or compromised app process.</li>
+<li><strong>9. When should you pin?</strong> Only for an explicit threat model with backup pins, overlap, rotation/incident plan, and telemetry; it is not universal and can brick connectivity.</li>
+<li><strong>10. How does logout beat late refresh?</strong> Atomically advance generation and clear credentials; commit a refresh result only while generation and failed version still match, otherwise discard it.</li>
+</ol>
+
+<h2 id="en-stage19-followups">4 senior follow-ups<a aria-label="Link to section: Senior follow ups" class="heading-anchor" href="#en-stage19-followups">#</a></h2>
+<ol>
+<li>How do you reconcile rotating refresh tokens, a crash between server success/local commit, and reuse detection?</li>
+<li>How does the bounded synchronous Authenticator bridge behave with 64 concurrent 401s and a saturated Dispatcher?</li>
+<li>What is the recovery policy for a biometric-bound key after enrollment change, restore, or lockout?</li>
+<li>How do you perform emergency TLS/key rotation if the old app has a broken pin set and cannot fetch a remote flag?</li>
+</ol>
+
+<h2 id="en-stage19-self-check">4 unanswered self-checks<a aria-label="Link to section: Unanswered self checks" class="heading-anchor" href="#en-stage19-self-check">#</a></h2>
+<ol>
+<li>Draw every trust boundary in your login redirect and prove exact issuer/state/nonce/URI validation.</li>
+<li>Trace 20 concurrent 401s plus logout; where exactly do version and generation prevent stale commit?</li>
+<li>Which credentials can reach backup, a memory dump, screenshot, clipboard, logs, crash reporting, or analytics?</li>
+<li>Which server revocation, deduplication, and incident controls still work when the device is offline or the app process is compromised?</li>
+</ol>
+
+<h2 id="en-stage19-english-skeletons">English answer skeletons<a aria-label="Link to section: English answer skeletons" class="heading-anchor" href="#en-stage19-english-skeletons">#</a></h2>
+<h3 id="en-stage19-answer-30">~30-second answer<a aria-label="Link to section: 30 second answer" class="heading-anchor" href="#en-stage19-answer-30">#</a></h3>
+<blockquote><p>I treat a mobile app as a public client. I use Authorization Code with PKCE in an external user-agent, validate the exact redirect, state, issuer and OIDC nonce, and keep access, refresh and ID-token purposes separate. An interceptor attaches the current access token; an OkHttp Authenticator handles only eligible 401s through a versioned single-flight refresh and retries once. A generation check prevents late refresh from reviving logout. Keystore, biometrics, TLS, pinning and integrity are scoped defenses, not proof that a compromised process or backend action is safe.</p></blockquote>
+<h3 id="en-stage19-answer-2min">~2-minute answer<a aria-label="Link to section: 2 minute answer" class="heading-anchor" href="#en-stage19-answer-2min">#</a></h3>
+<blockquote><p>I start by separating OAuth roles and artifacts. The authorization server authenticates and issues grants; the resource server validates access tokens. An access token authorizes an API, a refresh token is only for the token endpoint, and an OIDC ID token is an identity assertion for the client. Because a native app is a public client, I use Authorization Code with S256 PKCE through the system browser or Custom Tabs. I validate the exact redirect URI, an outstanding single-use transaction, state, issuer, and ID-token signature, audience, expiry and nonce.</p><p>At runtime an application interceptor reads an immutable session snapshot and adds the current credential only to allowlisted requests. An OkHttp Authenticator handles a provider-defined invalid-token 401, not every 401 or 403. It checks the prior-response count and failed credential version. Concurrent failures join one in-flight refresh; network I/O runs outside the lock through a dedicated client without the resource authenticator. The result commits only if session generation and token version still match, so logout or account switch wins. Each replayable request gets at most one follow-up; one-shot bodies and non-idempotent effects require explicit policy and server idempotency.</p><p>For storage, Keystore protects cryptographic keys and may provide hardware-backed non-exportability, but the token is plaintext when the app uses it. Biometric success can gate a local key operation, not authenticate the backend session. I exclude credentials from backup, screenshots, clipboard, logs and analytics. HTTPS and Network Security Config are baseline; pinning is only for a justified threat model with backup pins and a rotation runbook because it can brick connectivity and does not protect a compromised process. Exported components, deep links, PendingIntent and WebView are untrusted input boundaries. Integrity verdicts are risk signals. I finish with race and attack tests, redacted metrics, server revocation and an incident-response drill.</p></blockquote>
+
+<h2 id="en-stage19-sources">Official references<a aria-label="Link to section: Official references" class="heading-anchor" href="#en-stage19-sources">#</a></h2>
+<ul>
+<li><a href="https://datatracker.ietf.org/doc/html/rfc8252">RFC 8252: OAuth 2.0 for Native Apps</a>, <a href="https://datatracker.ietf.org/doc/html/rfc7636">RFC 7636: PKCE</a>, <a href="https://datatracker.ietf.org/doc/html/rfc9700">RFC 9700: OAuth 2.0 Security BCP</a></li>
+<li><a href="https://datatracker.ietf.org/doc/html/rfc6749">RFC 6749: OAuth 2.0</a>, <a href="https://datatracker.ietf.org/doc/html/rfc6750">RFC 6750: Bearer Tokens</a>, <a href="https://datatracker.ietf.org/doc/html/rfc7009">RFC 7009: Token Revocation</a>, <a href="https://openid.net/specs/openid-connect-core-1_0.html">OpenID Connect Core 1.0</a></li>
+<li><a href="https://square.github.io/okhttp/5.x/okhttp/okhttp3/-authenticator/">OkHttp Authenticator API</a>, <a href="https://square.github.io/okhttp/features/interceptors/">OkHttp Interceptors</a>, <a href="https://square.github.io/okhttp/features/https/">OkHttp HTTPS and Certificate Pinning</a></li>
+<li><a href="https://developer.android.com/privacy-and-security/keystore">Android Keystore</a>, <a href="https://developer.android.com/identity/sign-in/biometric-auth">Biometric authentication</a>, <a href="https://developer.android.com/privacy-and-security/risks">Android security risks</a></li>
+<li><a href="https://developer.android.com/privacy-and-security/security-config">Network Security Configuration</a>, <a href="https://developer.android.com/training/app-links">Android App Links</a>, <a href="https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks">Unsafe deep links</a></li>
+<li><a href="https://developer.android.com/privacy-and-security/risks/access-control-to-exported-components">Exported component access control</a>, <a href="https://developer.android.com/privacy-and-security/risks/implicit-pendingintent">Unsafe implicit PendingIntent</a>, <a href="https://developer.android.com/google/play/integrity">Play Integrity API</a></li>
 </ul>
 </div></details>
 
