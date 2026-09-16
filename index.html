@@ -492,6 +492,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="kotlin-flow-foundations" href="#kotlin-flow-foundations">Kotlin Flow: foundations, operators та Android lifecycle</a>
 </li>
 <li class="toc-major">
+<a data-target="kotlin-hot-flows-ui-state-events" href="#kotlin-hot-flows-ui-state-events">StateFlow, SharedFlow, Channel та Android UI state/events</a>
+</li>
+<li class="toc-major">
 <a data-target="kotlin-for-android" href="#kotlin-for-android">Kotlin for Android</a>
 <ol class="toc-children">
 <li><a data-target="val-vs-var-immutability" href="#val-vs-var-immutability">val vs var, immutability</a></li>
@@ -795,6 +798,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-flow-foundations" href="#en-kotlin-flow-foundations">Kotlin Flow: foundations, operators, and Android lifecycle</a>
+</li>
+<li class="toc-major">
+<a data-target="en-kotlin-hot-flows-ui-state-events" href="#en-kotlin-hot-flows-ui-state-events">StateFlow, SharedFlow, Channel, and Android UI state/events</a>
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-for-android" href="#en-kotlin-for-android">Kotlin for Android</a>
@@ -2960,7 +2966,7 @@ suspend fun consume(session: Session) {
 </div></details>
 <details class="major-section" data-key="kotlin-flow-foundations" data-title="Kotlin Flow: foundations, operators та Android lifecycle" id="kotlin-flow-foundations" open=""><summary class="major-summary"><span class="major-title">Kotlin Flow: foundations, operators та Android lifecycle</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
 <h2 id="stage9-uk-objective">Learning objective<a aria-label="Посилання на розділ: Learning objective" class="heading-anchor" href="#stage9-uk-objective">#</a></h2>
-<p>Після цього етапу ви маєте вміти пояснити cold <code>Flow</code> як послідовний асинхронний контракт, передбачити context, cancellation і buffering кожної ділянки pipeline, обрати оператор за семантикою втрати значень або скасування роботи, безпечно адаптувати callbacks, прив’язати collection до Android lifecycle та протестувати per-collector поведінку. Deep dive у <code>StateFlow</code>/<code>SharedFlow</code>/<code>Channel</code> належить Stage 10, а combine/flatten/retry/sharing — Stage 11.</p>
+<p>Після цього етапу ви маєте вміти пояснити cold <code>Flow</code> як послідовний асинхронний контракт, передбачити context, cancellation і buffering кожної ділянки pipeline, обрати оператор за семантикою втрати значень або скасування роботи, безпечно адаптувати callbacks, прив’язати collection до Android lifecycle та протестувати per-collector поведінку. Deep dive у <code>StateFlow</code>/<code>SharedFlow</code>/<code>Channel</code>, <code>stateIn</code> та <code>shareIn</code> належить Stage 10, а advanced combine/flatten/retry composition — Stage 11.</p>
 
 <h2 id="stage9-uk-mental-model">Senior mental model<a aria-label="Посилання на розділ: Senior mental model" class="heading-anchor" href="#stage9-uk-mental-model">#</a></h2>
 <blockquote><p><strong>Flow — це recipe для asynchronous sequence, а collection — його виконання в coroutine collector-а.</strong> Звичайний flow cold: builder не запускається до terminal operator і виконується заново для кожного collector-а. За замовчуванням upstream і downstream ідуть послідовно в context collector-а; cold не означає background, caching або single execution.</p></blockquote>
@@ -3181,6 +3187,188 @@ lifecycleScope.launch {
 <li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/debounce.html">debounce</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/sample.html">sample</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/distinct-until-changed.html">distinctUntilChanged</a> та <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/take.html">take</a></li>
 <li><a href="https://developer.android.com/topic/libraries/architecture/coroutines">Lifecycle-aware coroutines and Flow</a>, <a href="https://developer.android.com/reference/kotlin/androidx/lifecycle/package-summary#flowWithLifecycle(kotlinx.coroutines.flow.Flow,androidx.lifecycle.Lifecycle,androidx.lifecycle.Lifecycle.State)">flowWithLifecycle</a> та <a href="https://developer.android.com/reference/kotlin/androidx/lifecycle/compose/package-summary">Lifecycle Compose APIs</a></li>
 <li><a href="https://developer.android.com/kotlin/flow/test">Testing Kotlin flows on Android</a> та <a href="https://developer.android.com/topic/architecture/data-layer">Android data layer guidance</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="kotlin-hot-flows-ui-state-events" data-title="StateFlow, SharedFlow, Channel та Android UI state/events" id="kotlin-hot-flows-ui-state-events" open=""><summary class="major-summary"><span class="major-title">StateFlow, SharedFlow, Channel та Android UI state/events</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<h2 id="stage10-uk-objective">Learning objective<a aria-label="Посилання на розділ: Learning objective" class="heading-anchor" href="#stage10-uk-objective">#</a></h2>
+<p>Після цього етапу ви маєте вміти відрізнити replaceable state від transient effect і durable outcome, пояснити точні контракти <code>StateFlow</code>, <code>SharedFlow</code>, <code>Channel</code>, <code>stateIn</code>/<code>shareIn</code>, обрати lifecycle та persistence boundary, знайти race/lost update і протестувати replay, buffer та subscriber timing. Тут не повторюються cold Flow basics зі Stage 9 або advanced operator composition зі Stage 11.</p>
+
+<h2 id="stage10-uk-mental-model">Senior mental model<a aria-label="Посилання на розділ: Senior mental model" class="heading-anchor" href="#stage10-uk-mental-model">#</a></h2>
+<blockquote><p><strong>Спочатку класифікуйте інформацію, потім обирайте primitive.</strong> State відповідає “що істинне зараз?” і може бути відновлений новим UI. Effect — короткоживуча команда presentation layer, для якої треба явно прийняти втрату/повтор. Durable outcome — business fact із persisted identity, status та reconciliation; in-memory stream не робить його durable.</p></blockquote>
+<ul>
+<li><code>StateFlow</code> — hot, conflated state holder із current value; <code>SharedFlow</code> — configurable hot broadcast; <code>Channel</code> — send/receive queue та ownership hand-off, не UI acknowledgement.</li>
+<li>Hot object існує незалежно від collectors, але його producer lifetime визначає owner scope. UI lifecycle має керувати collection, а не lifetime business operation.</li>
+<li>Навігація, snackbar і payment completion мають різну вагу. Жоден primitive сам не гарантує exactly-once user-visible handling через inactivity, recreation і process death.</li>
+</ul>
+
+<h2 id="stage10-uk-internals">Internals та contracts<a aria-label="Посилання на розділ: Internals and contracts" class="heading-anchor" href="#stage10-uk-internals">#</a></h2>
+<pre><code class="language-text">durable source / SavedStateHandle / repository
+                 ↓ reducer (serialized or atomic transition)
+MutableStateFlow&lt;UiState&gt; ── latest state ──► lifecycle-aware UI
+                 │
+                 └─ optional transient effect policy ─► SharedFlow or Channel
+
+Cold upstream ── stateIn/shareIn(ownerScope, started, replay/initial) ──► subscribers</code></pre>
+
+<h3 id="stage10-uk-stateflow">StateFlow: state, equality та atomic updates<a aria-label="Посилання на розділ: StateFlow state equality and atomic updates" class="heading-anchor" href="#stage10-uk-stateflow">#</a></h3>
+<ul>
+<li><code>MutableStateFlow(initialValue)</code> вимагає initial value; <code>value</code> читає current state синхронно. Це hot holder, який replay-ить latest value новому collector-у.</li>
+<li>Updates conflated через <code>Any.equals</code>: equal assignment не emit-иться, а slow collector може пропустити швидкі intermediate values і побачити latest. Тому StateFlow не event queue; broken/mutable equality робить behavior unspecified.</li>
+<li><code>value</code>, methods та atomic helpers thread-safe. Для read-modify-write використовуйте <code>update</code>, <code>updateAndGet</code> або <code>getAndUpdate</code>; lambda може виконатися кілька разів при contention, отже без side effects.</li>
+<li><code>_state.value = _state.value.copy(count = _state.value.count + 1)</code> має lost-update race між concurrent writers. Atomic update вирішує transition одного holder-а, але не multi-store transaction або external side effect.</li>
+<li><code>collect</code> StateFlow ніколи нормально не завершується; failure/completion треба materialize у state. Експозьте <code>asStateFlow()</code>, не mutable producer.</li>
+</ul>
+
+<h3 id="stage10-uk-sharedflow">SharedFlow: replay, buffer та subscribers<a aria-label="Посилання на розділ: SharedFlow replay buffer and subscribers" class="heading-anchor" href="#stage10-uk-sharedflow">#</a></h3>
+<ul>
+<li><code>MutableSharedFlow(replay, extraBufferCapacity, onBufferOverflow)</code> broadcast-ить кожне accepted value усім active subscribers. Replay cache дає останні <code>replay</code> values новим collectors; extra capacity підтримує lagging active subscribers.</li>
+<li>Non-default <code>onBufferOverflow</code> дозволений лише коли <code>replay + extraBufferCapacity &gt; 0</code>. Overflow можливий лише за наявності slow subscriber; без subscribers зберігається тільки replay cache, overflow policy не спрацьовує, а extra capacity не накопичує backlog.</li>
+<li><code>emit</code> може suspend лише з <code>SUSPEND</code> і active slow subscribers. <code>tryEmit</code> non-suspending та може повернути false лише в такій ситуації. У unbuffered flow без subscribers <code>tryEmit</code> повертає true, але value одразу губиться.</li>
+<li><code>subscriptionCount</code> — StateFlow active collector count для resource policy, не acknowledgement конкретної події. Check-then-emit через count race-ить із subscription changes.</li>
+<li><code>resetReplayCache()</code> experimental: очищає replay для future subscribers, але current subscribers зберігають buffered values; це не erase, transaction або durable deletion.</li>
+<li>SharedFlow ніколи нормально не завершується і не представляє failure сам: completion/error потрібно materialize. Replay — memory cache, не durable storage.</li>
+</ul>
+
+<h3 id="stage10-uk-sharing">stateIn, shareIn та SharingStarted<a aria-label="Посилання на розділ: stateIn shareIn and SharingStarted" class="heading-anchor" href="#stage10-uk-sharing">#</a></h3>
+<ul>
+<li><code>stateIn</code> перетворює cold upstream на shared <code>StateFlow</code> з initial/latest value; <code>shareIn</code> — на <code>SharedFlow</code> із заданим replay. Sharing coroutine належить переданому scope, тому scope має відповідати lifetime даних.</li>
+<li><code>Eagerly</code> starts immediately; values beyond replay можуть бути втрачені до subscribers. <code>Lazily</code> starts on first subscriber and never stops. <code>WhileSubscribed</code> starts/stops із subscribers, тому upstream може restart-нути і повторити I/O або side effects.</li>
+<li><code>WhileSubscribed(stopTimeoutMillis, replayExpirationMillis)</code> може відкласти stop і reset cache; expiration resets <code>shareIn</code> replay cache або <code>stateIn</code> до original initial value. Defaults/version-specific overloads треба перевіряти у resolved API.</li>
+<li>Normal upstream completion не завершує subscribers; sharing coroutine живе за strategy і може restart-нути з WhileSubscribed. Upstream exception terminates sharing coroutine та обробляється owner scope, не автоматично collectors; materialize/catch/retry до boundary за contract.</li>
+</ul>
+
+<h3 id="stage10-uk-channel">Channel та Channel-to-Flow boundaries<a aria-label="Посилання на розділ: Channel and Channel to Flow boundaries" class="heading-anchor" href="#stage10-uk-channel">#</a></h3>
+<table><thead><tr><th>Capacity</th><th>Semantics</th><th>Risk</th></tr></thead><tbody>
+<tr><td><code>RENDEZVOUS</code></td><td>Zero buffer; send meets receive.</td><td>Sender suspension couples lifetimes.</td></tr>
+<tr><td><code>BUFFERED</code></td><td>Default-sized buffer determined by library/configuration.</td><td>Do not encode business guarantees from its size.</td></tr>
+<tr><td><code>CONFLATED</code></td><td>At most latest element, older values lost.</td><td>Wrong for non-replaceable work.</td></tr>
+<tr><td><code>UNLIMITED</code></td><td>Sender does not suspend for capacity.</td><td>Unbounded memory under a stalled receiver.</td></tr>
+</tbody></table>
+<ul>
+<li><code>send</code> suspends as capacity requires; <code>trySend</code> returns <code>ChannelResult</code>; <code>receive</code> suspends for an element. Always inspect failed non-suspending operations.</li>
+<li><code>close</code> stops new sends and lets buffered elements drain; normal close eventually ends receive. <code>cancel</code> removes remaining elements and cancels waiters. Producer/consumer ownership must say who closes or cancels and why.</li>
+<li>A channel element is received by one receiver. Multiple receivers compete (fan-out/work distribution), while one receiver gives single-consumer ordering. It is not broadcast.</li>
+<li>Prompt cancellation creates a hand-off caveat: cancellation can occur after an element was obtained but before caller processes it. <code>onUndeliveredElement</code> supports synchronous resource cleanup, not business exactly-once.</li>
+<li><code>receiveAsFlow()</code> supports multiple collectors competing for elements; collector failure does not cancel source channel. <code>consumeAsFlow()</code> is single-collection and consumes/cancels source on collector failure. Neither turns receipt into handled UI effect.</li>
+</ul>
+
+<h2 id="stage10-uk-guarantees">Guarantees vs non-guarantees<a aria-label="Посилання на розділ: Guarantees versus non guarantees" class="heading-anchor" href="#stage10-uk-guarantees">#</a></h2>
+<table><thead><tr><th>Guarantee</th><th>Non-guarantee</th></tr></thead><tbody>
+<tr><td>StateFlow has current value, required initial state, equality conflation and thread-safe atomic update APIs.</td><td>It records every transition, queues events, completes, or persists across process death.</td></tr>
+<tr><td>SharedFlow broadcasts accepted values under configured replay/buffer policy.</td><td>It represents completion/failure, replay is durable storage, or inactive collectors receive replay=0 events.</td></tr>
+<tr><td>Channel defines queue, capacity, close/cancel and receive ownership.</td><td>Delivery equals UI handling, cancellation cannot lose hand-off, or memory survives process death.</td></tr>
+<tr><td>Lifecycle APIs stop/restart collection at the UI boundary.</td><td>They make transient effects exactly once or prevent WhileSubscribed upstream restart.</td></tr>
+<tr><td>Persistence plus IDs/acknowledgement can support retry/reconciliation.</td><td>No primitive alone guarantees exactly-once user-visible handling.</td></tr>
+</tbody></table>
+
+<h2 id="stage10-uk-version-sensitive">Version-sensitive behavior<a aria-label="Посилання на розділ: Version sensitive behavior" class="heading-anchor" href="#stage10-uk-version-sensitive">#</a></h2>
+<ul>
+<li>Pin one <code>kotlinx-coroutines</code> family and inspect signatures: <code>resetReplayCache</code> is experimental, Duration/millisecond <code>WhileSubscribed</code> overloads and annotations vary by release.</li>
+<li><code>Channel.BUFFERED</code> capacity can be changed by JVM property; never depend on remembered numeric defaults. Prompt-cancellation and <code>onUndeliveredElement</code> behavior belongs to the resolved library contract.</li>
+<li><code>collectAsStateWithLifecycle</code> lives in AndroidX <code>lifecycle-runtime-compose</code>; overloads/platform support and default lifecycle state depend on the resolved version.</li>
+<li><code>SavedStateHandle</code> supports Bundle-compatible, size-bounded restoration semantics, not arbitrary durable business storage; API integrations differ by AndroidX version.</li>
+</ul>
+
+<h2 id="stage10-uk-decision-matrix">Decision matrix<a aria-label="Посилання на розділ: Decision matrix" class="heading-anchor" href="#stage10-uk-decision-matrix">#</a></h2>
+<table><thead><tr><th>Need</th><th>Primary model</th><th>Required policy</th></tr></thead><tbody>
+<tr><td>Renderable latest screen state</td><td>Immutable <code>StateFlow&lt;UiState&gt;</code></td><td>Initial value, reducer, equality, lifecycle collection.</td></tr>
+<tr><td>Replaceable shared signal/tick</td><td><code>SharedFlow</code></td><td>Replay/buffer/overflow and subscriber absence explicitly accepted.</td></tr>
+<tr><td>In-memory work hand-off to one consumer</td><td><code>Channel</code></td><td>Capacity, ownership, close/cancel, undelivered policy.</td></tr>
+<tr><td>Expensive cold source shared in owner scope</td><td><code>stateIn</code>/<code>shareIn</code></td><td>Scope, start strategy, replay expiration, restart/error policy.</td></tr>
+<tr><td>Payment/order completion</td><td>Persisted operation/result as source of truth</td><td>Stable ID, idempotency, status query, acknowledgement/reconciliation; UI derives state.</td></tr>
+</tbody></table>
+
+<h2 id="stage10-uk-tradeoffs">Trade-offs і failure modes<a aria-label="Посилання на розділ: Trade offs and failure modes" class="heading-anchor" href="#stage10-uk-tradeoffs">#</a></h2>
+<ul>
+<li>One-off event wrapper in state може replay-нути вже “consumed” event іншому collector-у або втратити його через consume race; mutable consumed flags також ламають immutable state.</li>
+<li><code>SharedFlow(replay=0)</code> не доставить inactive UI; replay=1 може повторити stale navigation/snackbar після recreation і дати її кожному collector-у.</li>
+<li><code>Channel</code> може зберегти effect під час короткої UI inactivity у ViewModel lifetime, але competing collectors ділять events, recreation timing race-ить, а process death стирає queue. Receive не означає, що snackbar/navigation реально показані.</li>
+<li>Моделювання transient effect як state робить replay/recovery можливим, але потрібен idempotent acknowledgement/clear transition; state conflation може suppress equal повтор.</li>
+<li>Mutable object/list in StateFlow може бути changed in place без new unequal value; Compose не має надійної immutable snapshot boundary. Emit immutable copies.</li>
+<li><code>WhileSubscribed</code> economizes resources, але stop/restart churn може duplicate expensive setup; виберіть timeout і idempotent upstream.</li>
+</ul>
+
+<h2 id="stage10-uk-production-scenario">Production scenario: checkout outcome, navigation та snackbar<a aria-label="Посилання на розділ: Production scenario checkout outcome navigation and snackbar" class="heading-anchor" href="#stage10-uk-production-scenario">#</a></h2>
+<p><strong>Гіпотетично:</strong> checkout ViewModel reducer оновлює immutable <code>CheckoutUiState</code> через <code>update</code>. Form/loading/errors, які мають пережити recreation, є state. Draft ID і мінімальний restorable input можуть бути в <code>SavedStateHandle</code>; cart, payment operation та completion persisted у repository/database/server. <code>stateIn(viewModelScope, WhileSubscribed(...), initial)</code> має explicit restart/error policy.</p>
+<p>Успішна оплата — не ephemeral “navigate now”. Repository записує operation ID/status; UI state показує completion, а navigation виконується як idempotent presentation reaction із destination/handled key, після чого acknowledgement оновлює state. Snackbar для неважливої підказки може бути best-effort <code>SharedFlow</code> із documented loss; actionable error краще залишається state до user action. Це не exactly-once claim: crash можливий між display і acknowledgement, тому critical outcome reconciles from durable truth.</p>
+<pre><code class="language-kotlin">private val _state = MutableStateFlow(CheckoutUiState())
+val state = _state.asStateFlow()
+private val _effects = MutableSharedFlow&lt;UiEffect&gt;(
+    replay = 0, extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST
+)
+
+fun quantityChanged(delta: Int) {
+    _state.update { old -&gt; old.copy(quantity = old.quantity + delta) }
+}
+
+// Best-effort only; payment completion is persisted and reduced into state.
+fun hint(text: String) { _effects.tryEmit(UiEffect.Snackbar(text)) }</code></pre>
+
+<h2 id="stage10-uk-review-trap">Code-review/debugging trap<a aria-label="Посилання на розділ: Code review debugging trap" class="heading-anchor" href="#stage10-uk-review-trap">#</a></h2>
+<pre><code class="language-kotlin">_state.value = _state.value.copy(count = _state.value.count + 1) // lost update
+_events.emit(NavigateToReceipt)                                  // replay=0; no collector
+if (_events.subscriptionCount.value &gt; 0) _events.emit(effect)     // check/emit race
+val effects = Channel&lt;UiEffect&gt;(Channel.UNLIMITED)                // hidden memory growth
+orders.stateIn(GlobalScope)                                       // wrong lifetime/defaults</code></pre>
+<p>Review має вимагати atomic reducer, explicit scope/start/replay/buffer/overflow, read-only exposure, immutable state, lifecycle collection і durable boundary. Debugуйте producer scope, subscriber count transitions, replay cache, buffer result, collector identity/lifecycle, operation IDs та timestamps. Не “виправляйте” race збільшенням buffer без delivery requirement.</p>
+
+<h2 id="stage10-uk-testing">Testing timing, replay та concurrency<a aria-label="Посилання на розділ: Testing timing replay and concurrency" class="heading-anchor" href="#stage10-uk-testing">#</a></h2>
+<ul>
+<li>У <code>runTest</code> запускайте collector до emission коли contract це вимагає; hot flow не зберігає все автоматично. Використовуйте <code>backgroundScope</code>, <code>runCurrent</code>, <code>advanceTimeBy</code>/<code>advanceUntilIdle</code> і shared scheduler.</li>
+<li>StateFlow: assert initial/current value, equal suppression, slow collector conflation та concurrent <code>update</code>; не очікуйте кожен intermediate value.</li>
+<li>SharedFlow: matrix before/after subscribe, zero/multiple subscribers, replay 0/N, buffer full, each overflow mode, <code>emit</code> suspension, <code>tryEmit</code> result, reset replay for future collector.</li>
+<li><code>stateIn</code>/<code>shareIn</code>: count upstream starts/stops, test stop timeout and replay expiration around exact virtual-time boundaries, assert WhileSubscribed restart and scope cancellation.</li>
+<li>Channel: each capacity, competing receivers, close versus cancel, failed send/receive and <code>onUndeliveredElement</code>. Add lifecycle/recreation/process-restoration integration tests and real-thread stress tests; virtual time is not a proof of thread ordering.</li>
+</ul>
+
+<h2 id="stage10-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice Q and A" class="heading-anchor" href="#stage10-uk-likely-qa">#</a></h2>
+<p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
+<ol>
+<li><strong>Чому StateFlow підходить для UI state?</strong> Він має initial/current value, replay latest, equality conflation і thread-safe updates; UI може render-ити snapshot. Це не event queue.</li>
+<li><strong>Чому <code>value++</code>-style update небезпечний?</strong> Read-modify-write не atomic. Використовуйте <code>update</code>/<code>updateAndGet</code>/<code>getAndUpdate</code> з side-effect-free lambda.</li>
+<li><strong>Що зберігає SharedFlow без subscribers?</strong> Лише replay cache; extra buffer та overflow policy не створюють offline queue. <code>tryEmit</code> може succeed, а value бути discarded.</li>
+<li><strong><code>emit</code> чи <code>tryEmit</code>?</strong> Emit може suspend за SUSPEND/slow-subscriber policy; tryEmit повертає result одразу. Success означає acceptance за contract, не UI handling.</li>
+<li><strong>Коли WhileSubscribed restart-ить upstream?</strong> Після stop через відсутність subscribers нова subscription запускає його знову; side effects мають бути safe, а replay expiration explicit.</li>
+<li><strong>Channel чи SharedFlow?</strong> Channel розподіляє кожен item одному receiver-у; SharedFlow broadcast-ить active subscribers. Обидва in-memory та не дають UI exactly-once.</li>
+<li><strong>Чим <code>receiveAsFlow</code> відрізняється від <code>consumeAsFlow</code>?</strong> Перший допускає competing collectors і не consumes source on collector failure; другий collect-иться один раз і consumes/cancels source.</li>
+<li><strong>Як моделювати navigation/snackbar?</strong> За вимогою: best-effort hint може бути transient effect; необхідний next screen/action — state з idempotent handling/ack. Документуйте loss/replay, не обіцяйте exactly-once.</li>
+<li><strong>Як моделювати payment completion?</strong> Persist operation ID/status, make server action idempotent, reconcile and derive UI state. Channel/SharedFlow може лише сигналізувати refresh.</li>
+<li><strong>Як collect-ити в Android UI?</strong> Views — <code>repeatOnLifecycle</code>; Compose state — <code>collectAsStateWithLifecycle</code>. Immutable state sets recomposition boundary; lifecycle restart не відновлює in-memory effects.</li>
+</ol>
+
+<h2 id="stage10-uk-followups">4 senior follow-ups з відповідями<a aria-label="Посилання на розділ: 4 senior follow ups" class="heading-anchor" href="#stage10-uk-followups">#</a></h2>
+<ol>
+<li><strong>Два collectors отримали ту саму navigation effect.</strong> SharedFlow is broadcast. Якщо дія належить одному UI owner-у, enforce ownership/idempotent destination state; не покладайтеся на race між collectors.</li>
+<li><strong>Equal snackbar text двічі.</strong> StateFlow suppresses equal values; event wrapper does not fix durability. Додайте identity/state acknowledgement або прийміть best-effort SharedFlow policy.</li>
+<li><strong>Upstream repeatedly reconnects on rotation.</strong> Audit owner scope, lifecycle subscribers, WhileSubscribed timeout та restart semantics; make setup idempotent and test start count.</li>
+<li><strong>Channel send succeeded, але UI не навігувалась.</strong> Receipt and handling are separate; cancellation/crash can happen between them. Critical navigation derives from durable/idempotent state and reconciles.</li>
+</ol>
+
+<h2 id="stage10-uk-self-check">5 self-check без відповідей<a aria-label="Посилання на розділ: 5 self check without answers" class="heading-anchor" href="#stage10-uk-self-check">#</a></h2>
+<ol>
+<li>Що у вашій моделі є current state, transient presentation effect і durable business outcome?</li>
+<li>Що відбувається з emission без subscribers, зі slow subscriber і при buffer overflow?</li>
+<li>Хто володіє sharing/channel scope, close/cancel та upstream restart?</li>
+<li>Які transitions atomic, а які потребують transaction/idempotency поза StateFlow?</li>
+<li>Що відновиться після recreation та process death, і як UI acknowledgement reconciles?</li>
+</ol>
+
+<h2 id="stage10-uk-english-skeletons">Interview-ready English answer skeletons<a aria-label="Посилання на розділ: Interview ready English answer skeletons" class="heading-anchor" href="#stage10-uk-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you choose among StateFlow, SharedFlow, Channel, and durable UI state?</em></p>
+<h3 id="stage10-uk-answer-30">~30-second answer<a aria-label="Посилання на розділ: 30 second answer" class="heading-anchor" href="#stage10-uk-answer-30">#</a></h3>
+<blockquote><p>I classify the data first. StateFlow is for a current, replaceable value: it needs an initial value, exposes the latest value, conflates by equality, and should be updated atomically. SharedFlow is a configurable broadcast with replay and buffer policy, while Channel is a one-receiver hand-off queue. None is durable and none means the UI handled an effect. I collect state with the Android lifecycle, expose immutable state, and model critical outcomes such as payment completion in persisted state with identity and reconciliation rather than claiming exactly-once navigation.</p></blockquote>
+<h3 id="stage10-uk-answer-2min">~2-minute answer<a aria-label="Посилання на розділ: 2 minute answer" class="heading-anchor" href="#stage10-uk-answer-2min">#</a></h3>
+<blockquote><p>I start with semantics, not the API. Renderable UI state answers what is true now, so I expose an immutable StateFlow from a ViewModel. It has a required initial and current value, equality-based conflation, and never completes normally. Concurrent read-modify-write must use update, updateAndGet, or getAndUpdate; the lambda is side-effect free because it can be retried.</p><p>SharedFlow is hot broadcast. I specify replay, extra capacity, overflow, and behavior with no subscribers. Extra capacity is not an offline queue; without subscribers only replay is retained. emit can suspend for slow subscribers, while tryEmit reports immediate acceptance, not UI handling. Channel gives queue and one-receiver ownership with explicit capacity, close, cancellation, and undelivered-element policy. Multiple receivers compete. receiveAsFlow preserves that fan-out; consumeAsFlow is single-use and consumes the source.</p><p>For cold-source sharing, stateIn and shareIn belong to an owner scope. Eagerly, Lazily, and WhileSubscribed differ in start and stop lifetime. WhileSubscribed can stop, reset replay after expiration, and restart upstream, so setup and effects must tolerate restarts. Upstream errors need an explicit policy before the sharing boundary.</p><p>On Android, repeatOnLifecycle and collectAsStateWithLifecycle define collection boundaries, not delivery guarantees. Compose receives immutable snapshots and recomposes readers. A snackbar may be documented best effort, navigation should usually be idempotent state-driven when it matters, and payment completion must be persisted with an operation ID, status, acknowledgement, and reconciliation. SavedStateHandle restores small UI/process state, not durable business truth. Tests place subscribers before and after emissions, fill buffers, advance virtual time around sharing timeouts, race atomic updates, and verify recreation and process-restoration behavior. No primitive alone provides exactly-once user-visible handling.</p></blockquote>
+
+<h2 id="stage10-uk-sources">Офіційні джерела<a aria-label="Посилання на розділ: Офіційні джерела" class="heading-anchor" href="#stage10-uk-sources">#</a></h2>
+<ul>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-state-flow/">StateFlow</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-mutable-state-flow/">MutableStateFlow</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/update.html">update</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/update-and-get.html">updateAndGet</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/get-and-update.html">getAndUpdate</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-shared-flow/">SharedFlow</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-mutable-shared-flow.html">MutableSharedFlow</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-mutable-shared-flow/try-emit.html">tryEmit</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-mutable-shared-flow/subscription-count.html">subscriptionCount</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-mutable-shared-flow/reset-replay-cache.html">resetReplayCache</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/state-in.html">stateIn</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/share-in.html">shareIn</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-sharing-started/">SharingStarted</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-sharing-started/-companion/-while-subscribed.html">WhileSubscribed</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.channels/-channel/">Channel</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/receive-as-flow.html">receiveAsFlow</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/consume-as-flow.html">consumeAsFlow</a></li>
+<li><a href="https://developer.android.com/kotlin/flow/stateflow-and-sharedflow">StateFlow and SharedFlow on Android</a>, <a href="https://developer.android.com/topic/architecture/ui-layer/events">Android UI events</a>, <a href="https://developer.android.com/topic/architecture/ui-layer/state-production">UI state production</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/coroutines">Lifecycle-aware collection</a>, <a href="https://developer.android.com/develop/ui/compose/state">State in Compose</a>, <a href="https://developer.android.com/reference/kotlin/androidx/lifecycle/compose/package-summary">collectAsStateWithLifecycle</a>, <a href="https://developer.android.com/topic/libraries/architecture/viewmodel/viewmodel-savedstate">SavedStateHandle</a></li>
+<li><a href="https://developer.android.com/kotlin/flow/test">Testing Kotlin flows on Android</a> та <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/">kotlinx-coroutines-test</a></li>
 </ul>
 </div></details>
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
@@ -9234,7 +9422,7 @@ suspend fun consume(session: Session) {
 </div></details>
 <details class="major-section" data-key="kotlin-flow-foundations" data-title="Kotlin Flow: foundations, operators, and Android lifecycle" id="en-kotlin-flow-foundations" open=""><summary class="major-summary"><span class="major-title">Kotlin Flow: foundations, operators, and Android lifecycle</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
 <h2 id="en-stage9-objective">Learning objective<a aria-label="Link to section: Learning objective" class="heading-anchor" href="#en-stage9-objective">#</a></h2>
-<p>After this stage, you should be able to explain cold <code>Flow</code> as a sequential asynchronous contract, predict context, cancellation, and buffering along a pipeline, select operators by value-loss or work-cancellation semantics, adapt callbacks safely, bind collection to Android lifecycle, and test per-collector behavior. Deep treatment of <code>StateFlow</code>, <code>SharedFlow</code>, and <code>Channel</code> is reserved for Stage 10; combine, flattening, retry, and sharing are reserved for Stage 11.</p>
+<p>After this stage, you should be able to explain cold <code>Flow</code> as a sequential asynchronous contract, predict context, cancellation, and buffering along a pipeline, select operators by value-loss or work-cancellation semantics, adapt callbacks safely, bind collection to Android lifecycle, and test per-collector behavior. Deep treatment of <code>StateFlow</code>, <code>SharedFlow</code>, <code>Channel</code>, <code>stateIn</code>, and <code>shareIn</code> is reserved for Stage 10; advanced combine, flattening, and retry composition is reserved for Stage 11.</p>
 
 <h2 id="en-stage9-mental-model">Senior mental model<a aria-label="Link to section: Senior mental model" class="heading-anchor" href="#en-stage9-mental-model">#</a></h2>
 <blockquote><p><strong>A Flow is a recipe for an asynchronous sequence; collection executes that recipe in the collector coroutine.</strong> An ordinary flow is cold: its builder does not run until a terminal operator and runs again for every collector. Upstream and downstream are sequential in the collector context by default. Cold does not mean background, cached, or single execution.</p></blockquote>
@@ -9455,6 +9643,188 @@ lifecycleScope.launch {
 <li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/debounce.html">debounce</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/sample.html">sample</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/distinct-until-changed.html">distinctUntilChanged</a>, and <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/take.html">take</a></li>
 <li><a href="https://developer.android.com/topic/libraries/architecture/coroutines">Lifecycle-aware coroutines and Flow</a>, <a href="https://developer.android.com/reference/kotlin/androidx/lifecycle/package-summary#flowWithLifecycle(kotlinx.coroutines.flow.Flow,androidx.lifecycle.Lifecycle,androidx.lifecycle.Lifecycle.State)">flowWithLifecycle</a>, and <a href="https://developer.android.com/reference/kotlin/androidx/lifecycle/compose/package-summary">Lifecycle Compose APIs</a></li>
 <li><a href="https://developer.android.com/kotlin/flow/test">Testing Kotlin flows on Android</a> and <a href="https://developer.android.com/topic/architecture/data-layer">Android data layer guidance</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="kotlin-hot-flows-ui-state-events" data-title="StateFlow, SharedFlow, Channel, and Android UI state/events" id="en-kotlin-hot-flows-ui-state-events" open=""><summary class="major-summary"><span class="major-title">StateFlow, SharedFlow, Channel, and Android UI state/events</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<h2 id="en-stage10-objective">Learning objective<a aria-label="Link to section: Learning objective" class="heading-anchor" href="#en-stage10-objective">#</a></h2>
+<p>After this stage, you should be able to distinguish replaceable state, a transient effect, and a durable outcome; explain the exact contracts of <code>StateFlow</code>, <code>SharedFlow</code>, <code>Channel</code>, <code>stateIn</code>, and <code>shareIn</code>; choose lifecycle and persistence boundaries; find races and lost updates; and test replay, buffering, and subscriber timing. This stage does not repeat Stage 9 cold Flow basics or Stage 11 advanced operator composition.</p>
+
+<h2 id="en-stage10-mental-model">Senior mental model<a aria-label="Link to section: Senior mental model" class="heading-anchor" href="#en-stage10-mental-model">#</a></h2>
+<blockquote><p><strong>Classify the information before choosing a primitive.</strong> State answers “what is true now?” and a new UI can render it. An effect is a short-lived presentation command whose loss and repetition policy must be explicit. A durable outcome is a business fact with persisted identity, status, and reconciliation; an in-memory stream does not make it durable.</p></blockquote>
+<ul>
+<li><code>StateFlow</code> is a hot conflated state holder with a current value; <code>SharedFlow</code> is a configurable hot broadcast; <code>Channel</code> is a send/receive queue and ownership hand-off, not UI acknowledgement.</li>
+<li>A hot object exists independently of collectors, but an owner scope determines producer lifetime. The UI lifecycle should control collection, not the lifetime of a business operation.</li>
+<li>Navigation, a snackbar, and payment completion have different significance. No primitive alone guarantees exactly-once user-visible handling across inactivity, recreation, and process death.</li>
+</ul>
+
+<h2 id="en-stage10-internals">Internals and contracts<a aria-label="Link to section: Internals and contracts" class="heading-anchor" href="#en-stage10-internals">#</a></h2>
+<pre><code class="language-text">durable source / SavedStateHandle / repository
+                 ↓ reducer (serialized or atomic transition)
+MutableStateFlow&lt;UiState&gt; ── latest state ──► lifecycle-aware UI
+                 │
+                 └─ optional transient-effect policy ─► SharedFlow or Channel
+
+Cold upstream ── stateIn/shareIn(ownerScope, started, replay/initial) ──► subscribers</code></pre>
+
+<h3 id="en-stage10-stateflow">StateFlow: state, equality, and atomic updates<a aria-label="Link to section: StateFlow state equality and atomic updates" class="heading-anchor" href="#en-stage10-stateflow">#</a></h3>
+<ul>
+<li><code>MutableStateFlow(initialValue)</code> requires an initial value; <code>value</code> synchronously reads current state. It is a hot holder that replays the latest value to a new collector.</li>
+<li>Updates are conflated using <code>Any.equals</code>: assigning an equal value emits nothing, and a slow collector can skip fast intermediate values and observe the latest. StateFlow is therefore not an event queue; behavior is unspecified when equality is broken by mutable models.</li>
+<li><code>value</code>, methods, and atomic helpers are thread-safe. For read-modify-write, use <code>update</code>, <code>updateAndGet</code>, or <code>getAndUpdate</code>. Their lambda can run more than once under contention, so it must have no side effects.</li>
+<li><code>_state.value = _state.value.copy(count = _state.value.count + 1)</code> has a lost-update race between concurrent writers. Atomic update protects one holder transition, not a multi-store transaction or external side effect.</li>
+<li>Collecting StateFlow never completes normally; failure and completion must be materialized in state. Expose <code>asStateFlow()</code>, not the mutable producer.</li>
+</ul>
+
+<h3 id="en-stage10-sharedflow">SharedFlow: replay, buffer, and subscribers<a aria-label="Link to section: SharedFlow replay buffer and subscribers" class="heading-anchor" href="#en-stage10-sharedflow">#</a></h3>
+<ul>
+<li><code>MutableSharedFlow(replay, extraBufferCapacity, onBufferOverflow)</code> broadcasts each accepted value to all active subscribers. The replay cache gives the latest <code>replay</code> values to new collectors; extra capacity supports lagging active subscribers.</li>
+<li>A non-default <code>onBufferOverflow</code> is allowed only when <code>replay + extraBufferCapacity &gt; 0</code>. Overflow occurs only with a slow subscriber. With no subscribers, only replay values are retained; overflow has no effect and extra capacity does not accumulate an offline backlog.</li>
+<li><code>emit</code> can suspend only with <code>SUSPEND</code> and active slow subscribers. <code>tryEmit</code> is non-suspending and can return false only in that situation. On an unbuffered flow with no subscribers, <code>tryEmit</code> returns true but the value is discarded immediately.</li>
+<li><code>subscriptionCount</code> is a StateFlow of active collector count for resource policy, not acknowledgement of a specific event. A check-then-emit sequence races with subscription changes.</li>
+<li><code>resetReplayCache()</code> is experimental: it clears replay for future subscribers, while current subscribers retain already buffered values. It is not erasure, a transaction, or durable deletion.</li>
+<li>SharedFlow never completes normally and does not represent failure itself; materialize completion or error. Replay is an in-memory cache, not durable storage.</li>
+</ul>
+
+<h3 id="en-stage10-sharing">stateIn, shareIn, and SharingStarted<a aria-label="Link to section: stateIn shareIn and SharingStarted" class="heading-anchor" href="#en-stage10-sharing">#</a></h3>
+<ul>
+<li><code>stateIn</code> turns a cold upstream into shared <code>StateFlow</code> with an initial/latest value; <code>shareIn</code> creates <code>SharedFlow</code> with specified replay. The sharing coroutine belongs to the supplied scope, so that scope must match the data lifetime.</li>
+<li><code>Eagerly</code> starts immediately; values beyond replay can be lost before subscribers. <code>Lazily</code> starts at the first subscriber and never stops. <code>WhileSubscribed</code> starts and stops with subscribers, so upstream can restart and repeat I/O or side effects.</li>
+<li><code>WhileSubscribed(stopTimeoutMillis, replayExpirationMillis)</code> can delay stopping and resetting the cache. Expiration empties <code>shareIn</code> replay or resets <code>stateIn</code> to its original initial value. Check defaults and version-specific overloads in the resolved API.</li>
+<li>Normal upstream completion does not complete subscribers; the sharing coroutine follows its strategy and can restart with WhileSubscribed. An upstream exception terminates the sharing coroutine and is handled by the owner scope, not automatically by collectors. Materialize, catch, or retry before the boundary according to contract.</li>
+</ul>
+
+<h3 id="en-stage10-channel">Channel and Channel-to-Flow boundaries<a aria-label="Link to section: Channel and Channel to Flow boundaries" class="heading-anchor" href="#en-stage10-channel">#</a></h3>
+<table><thead><tr><th>Capacity</th><th>Semantics</th><th>Risk</th></tr></thead><tbody>
+<tr><td><code>RENDEZVOUS</code></td><td>Zero buffer; send meets receive.</td><td>Sender suspension couples lifetimes.</td></tr>
+<tr><td><code>BUFFERED</code></td><td>Default-sized buffer determined by library/configuration.</td><td>Do not derive business guarantees from its size.</td></tr>
+<tr><td><code>CONFLATED</code></td><td>At most the latest element; older values are lost.</td><td>Wrong for non-replaceable work.</td></tr>
+<tr><td><code>UNLIMITED</code></td><td>Sender does not suspend for capacity.</td><td>Unbounded memory with a stalled receiver.</td></tr>
+</tbody></table>
+<ul>
+<li><code>send</code> suspends as capacity requires; <code>trySend</code> returns <code>ChannelResult</code>; <code>receive</code> suspends for an element. Always inspect failed non-suspending operations.</li>
+<li><code>close</code> rejects new sends and lets buffered elements drain; normal close eventually ends receiving. <code>cancel</code> removes remaining elements and cancels waiters. Producer and consumer ownership must define who closes or cancels and why.</li>
+<li>One channel element is received by one receiver. Multiple receivers compete, creating fan-out/work distribution; one receiver provides single-consumer ordering. A Channel is not broadcast.</li>
+<li>Prompt cancellation creates a hand-off caveat: cancellation can happen after an element is obtained but before caller processing starts. <code>onUndeliveredElement</code> enables synchronous resource cleanup, not business exactly-once.</li>
+<li><code>receiveAsFlow()</code> supports multiple collectors competing for elements, and collector failure does not cancel the source channel. <code>consumeAsFlow()</code> is single-collection and consumes or cancels the source on collector failure. Neither makes receipt equivalent to handled UI effect.</li>
+</ul>
+
+<h2 id="en-stage10-guarantees">Guarantees versus non-guarantees<a aria-label="Link to section: Guarantees versus non guarantees" class="heading-anchor" href="#en-stage10-guarantees">#</a></h2>
+<table><thead><tr><th>Guarantee</th><th>Non-guarantee</th></tr></thead><tbody>
+<tr><td>StateFlow has a current value, required initial state, equality conflation, and thread-safe atomic-update APIs.</td><td>It records every transition, queues events, completes, or persists across process death.</td></tr>
+<tr><td>SharedFlow broadcasts accepted values under its configured replay and buffer policy.</td><td>It represents completion/failure, replay is durable storage, or inactive collectors receive replay=0 events.</td></tr>
+<tr><td>Channel defines queue, capacity, close/cancel, and receive ownership.</td><td>Delivery equals UI handling, cancellation cannot lose a hand-off, or memory survives process death.</td></tr>
+<tr><td>Lifecycle APIs stop and restart collection at the UI boundary.</td><td>They make transient effects exactly once or prevent WhileSubscribed upstream restart.</td></tr>
+<tr><td>Persistence plus IDs and acknowledgement can support retry and reconciliation.</td><td>No primitive alone guarantees exactly-once user-visible handling.</td></tr>
+</tbody></table>
+
+<h2 id="en-stage10-version-sensitive">Version-sensitive behavior<a aria-label="Link to section: Version sensitive behavior" class="heading-anchor" href="#en-stage10-version-sensitive">#</a></h2>
+<ul>
+<li>Pin one <code>kotlinx-coroutines</code> family and inspect signatures. <code>resetReplayCache</code> is experimental; Duration/millisecond <code>WhileSubscribed</code> overloads and annotations vary by release.</li>
+<li><code>Channel.BUFFERED</code> capacity can be changed by JVM property; never depend on a remembered numeric default. Prompt-cancellation and <code>onUndeliveredElement</code> behavior belongs to the resolved library contract.</li>
+<li><code>collectAsStateWithLifecycle</code> comes from AndroidX <code>lifecycle-runtime-compose</code>; overloads, platform support, and default lifecycle state depend on the resolved version.</li>
+<li><code>SavedStateHandle</code> provides Bundle-compatible, size-bounded restoration semantics, not arbitrary durable business storage. API integrations differ by AndroidX version.</li>
+</ul>
+
+<h2 id="en-stage10-decision-matrix">Decision matrix<a aria-label="Link to section: Decision matrix" class="heading-anchor" href="#en-stage10-decision-matrix">#</a></h2>
+<table><thead><tr><th>Need</th><th>Primary model</th><th>Required policy</th></tr></thead><tbody>
+<tr><td>Renderable latest screen state</td><td>Immutable <code>StateFlow&lt;UiState&gt;</code></td><td>Initial value, reducer, equality, lifecycle collection.</td></tr>
+<tr><td>Replaceable shared signal or tick</td><td><code>SharedFlow</code></td><td>Replay, buffer, overflow, and subscriber absence explicitly accepted.</td></tr>
+<tr><td>In-memory work hand-off to one consumer</td><td><code>Channel</code></td><td>Capacity, ownership, close/cancel, undelivered policy.</td></tr>
+<tr><td>Expensive cold source shared in an owner scope</td><td><code>stateIn</code>/<code>shareIn</code></td><td>Scope, start strategy, replay expiration, restart/error policy.</td></tr>
+<tr><td>Payment or order completion</td><td>Persisted operation/result as source of truth</td><td>Stable ID, idempotency, status query, acknowledgement/reconciliation; UI derives state.</td></tr>
+</tbody></table>
+
+<h2 id="en-stage10-tradeoffs">Trade-offs and failure modes<a aria-label="Link to section: Trade offs and failure modes" class="heading-anchor" href="#en-stage10-tradeoffs">#</a></h2>
+<ul>
+<li>A one-off event wrapper in state can replay an already “consumed” event to another collector or lose it through a consume race. Mutable consumed flags also violate immutable state.</li>
+<li><code>SharedFlow(replay=0)</code> misses an inactive UI; replay=1 can repeat stale navigation or a snackbar after recreation and sends it to every collector.</li>
+<li>A <code>Channel</code> can retain an effect during short UI inactivity within ViewModel lifetime, but competing collectors split events, recreation timing races, and process death clears the queue. Receive does not mean navigation or a snackbar was shown.</li>
+<li>Modeling an effect as state enables replay and recovery, but needs idempotent acknowledgement or a clear transition; state conflation can suppress an equal repeat.</li>
+<li>A mutable object or list inside StateFlow can change in place without a new unequal value; Compose has no reliable immutable snapshot boundary. Emit immutable copies.</li>
+<li><code>WhileSubscribed</code> saves resources, but stop/restart churn can duplicate expensive setup. Choose a timeout and idempotent upstream.</li>
+</ul>
+
+<h2 id="en-stage10-production-scenario">Production scenario: checkout outcome, navigation, and snackbar<a aria-label="Link to section: Production scenario checkout outcome navigation and snackbar" class="heading-anchor" href="#en-stage10-production-scenario">#</a></h2>
+<p><strong>Hypothetically:</strong> a checkout ViewModel reducer updates immutable <code>CheckoutUiState</code> with <code>update</code>. Form, loading, and error information that must survive recreation is state. A draft ID and minimal restorable input can live in <code>SavedStateHandle</code>; the cart, payment operation, and completion are persisted by the repository, database, or server. <code>stateIn(viewModelScope, WhileSubscribed(...), initial)</code> has an explicit restart and error policy.</p>
+<p>A successful payment is not an ephemeral “navigate now.” The repository records operation ID and status; UI state exposes completion, and navigation is an idempotent presentation reaction keyed by destination or handled ID before acknowledgement updates state. A low-value hint can be a documented best-effort <code>SharedFlow</code> snackbar; an actionable error stays state until user action. This is not an exactly-once claim: a crash can happen between display and acknowledgement, so critical outcome reconciles from durable truth.</p>
+<pre><code class="language-kotlin">private val _state = MutableStateFlow(CheckoutUiState())
+val state = _state.asStateFlow()
+private val _effects = MutableSharedFlow&lt;UiEffect&gt;(
+    replay = 0, extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST
+)
+
+fun quantityChanged(delta: Int) {
+    _state.update { old -&gt; old.copy(quantity = old.quantity + delta) }
+}
+
+// Best effort only; payment completion is persisted and reduced into state.
+fun hint(text: String) { _effects.tryEmit(UiEffect.Snackbar(text)) }</code></pre>
+
+<h2 id="en-stage10-review-trap">Code-review/debugging trap<a aria-label="Link to section: Code review debugging trap" class="heading-anchor" href="#en-stage10-review-trap">#</a></h2>
+<pre><code class="language-kotlin">_state.value = _state.value.copy(count = _state.value.count + 1) // lost update
+_events.emit(NavigateToReceipt)                                  // replay=0; no collector
+if (_events.subscriptionCount.value &gt; 0) _events.emit(effect)     // check/emit race
+val effects = Channel&lt;UiEffect&gt;(Channel.UNLIMITED)                // hidden memory growth
+orders.stateIn(GlobalScope)                                       // wrong lifetime/defaults</code></pre>
+<p>Review should require an atomic reducer, explicit scope/start/replay/buffer/overflow, read-only exposure, immutable state, lifecycle collection, and a durable boundary. Debug producer scope, subscription-count transitions, replay cache, buffer result, collector identity and lifecycle, operation IDs, and timestamps. Do not “fix” a race by enlarging a buffer without defining delivery requirements.</p>
+
+<h2 id="en-stage10-testing">Testing timing, replay, and concurrency<a aria-label="Link to section: Testing timing replay and concurrency" class="heading-anchor" href="#en-stage10-testing">#</a></h2>
+<ul>
+<li>In <code>runTest</code>, start the collector before emission when the contract requires it; a hot flow does not save everything automatically. Use <code>backgroundScope</code>, <code>runCurrent</code>, <code>advanceTimeBy</code>/<code>advanceUntilIdle</code>, and one shared scheduler.</li>
+<li>StateFlow: assert initial/current value, equal suppression, slow-collector conflation, and concurrent <code>update</code>. Do not expect every intermediate value.</li>
+<li>SharedFlow: cover before/after subscribe, zero/multiple subscribers, replay 0/N, full buffer, each overflow mode, <code>emit</code> suspension, <code>tryEmit</code> result, and replay reset for a future collector.</li>
+<li><code>stateIn</code>/<code>shareIn</code>: count upstream starts/stops, test stop timeout and replay expiration around exact virtual-time boundaries, and assert WhileSubscribed restart and owner-scope cancellation.</li>
+<li>Channel: test every capacity, competing receivers, close versus cancel, failed send/receive, and <code>onUndeliveredElement</code>. Add lifecycle, recreation, and process-restoration integration tests plus real-thread stress tests; virtual time is not proof of thread ordering.</li>
+</ul>
+
+<h2 id="en-stage10-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice Q and A" class="heading-anchor" href="#en-stage10-likely-qa">#</a></h2>
+<p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
+<ol>
+<li><strong>Why does StateFlow fit UI state?</strong> It has an initial/current value, latest replay, equality conflation, and thread-safe updates, so UI can render a snapshot. It is not an event queue.</li>
+<li><strong>Why is a <code>value++</code>-style update unsafe?</strong> Read-modify-write is not atomic. Use <code>update</code>, <code>updateAndGet</code>, or <code>getAndUpdate</code> with a side-effect-free lambda.</li>
+<li><strong>What does SharedFlow retain without subscribers?</strong> Only its replay cache; extra capacity and overflow do not create an offline queue. <code>tryEmit</code> can succeed while the value is discarded.</li>
+<li><strong><code>emit</code> or <code>tryEmit</code>?</strong> Emit can suspend under SUSPEND and a slow subscriber; tryEmit immediately reports its result. Success means contract acceptance, not UI handling.</li>
+<li><strong>When does WhileSubscribed restart upstream?</strong> After it stops for lack of subscribers, a new subscription starts upstream again. Effects must be restart-safe and replay expiration explicit.</li>
+<li><strong>Channel or SharedFlow?</strong> Channel distributes one item to one receiver; SharedFlow broadcasts to active subscribers. Both are in-memory and neither gives UI exactly-once.</li>
+<li><strong>How do <code>receiveAsFlow</code> and <code>consumeAsFlow</code> differ?</strong> The first permits competing collectors and does not consume the source on collector failure; the second collects once and consumes or cancels the source.</li>
+<li><strong>How should navigation and snackbars be modeled?</strong> Use requirements: a best-effort hint can be transient; a required next action should be state with idempotent handling and acknowledgement. Document loss and replay, not exactly-once.</li>
+<li><strong>How should payment completion be modeled?</strong> Persist operation ID and status, make the server action idempotent, reconcile, and derive UI state. Channel or SharedFlow can only signal refresh.</li>
+<li><strong>How should Android UI collect?</strong> Views use <code>repeatOnLifecycle</code>; Compose state uses <code>collectAsStateWithLifecycle</code>. Immutable state is the recomposition boundary; lifecycle restart cannot recover in-memory effects.</li>
+</ol>
+
+<h2 id="en-stage10-followups">4 senior follow-ups with answers<a aria-label="Link to section: 4 senior follow ups" class="heading-anchor" href="#en-stage10-followups">#</a></h2>
+<ol>
+<li><strong>Two collectors received the same navigation effect.</strong> SharedFlow is broadcast. If one UI owner owns the action, enforce ownership or idempotent destination state rather than relying on a collector race.</li>
+<li><strong>The same snackbar text is sent twice.</strong> StateFlow suppresses equal values; an event wrapper does not add durability. Add identity and state acknowledgement or accept best-effort SharedFlow behavior.</li>
+<li><strong>Upstream reconnects repeatedly on rotation.</strong> Audit owner scope, lifecycle subscribers, WhileSubscribed timeout, and restart semantics; make setup idempotent and test start count.</li>
+<li><strong>Channel send succeeded, but UI did not navigate.</strong> Receipt and handling differ; cancellation or a crash can occur between them. Critical navigation derives from durable, idempotent state and reconciles.</li>
+</ol>
+
+<h2 id="en-stage10-self-check">5 self-check questions without answers<a aria-label="Link to section: 5 self check questions without answers" class="heading-anchor" href="#en-stage10-self-check">#</a></h2>
+<ol>
+<li>What in your model is current state, a transient presentation effect, and a durable business outcome?</li>
+<li>What happens to an emission with no subscribers, a slow subscriber, and buffer overflow?</li>
+<li>Who owns the sharing or channel scope, close/cancel, and upstream restart?</li>
+<li>Which transitions are atomic, and which need a transaction or idempotency beyond StateFlow?</li>
+<li>What survives recreation and process death, and how does UI acknowledgement reconcile?</li>
+</ol>
+
+<h2 id="en-stage10-english-skeletons">Interview-ready English answer skeletons<a aria-label="Link to section: Interview ready English answer skeletons" class="heading-anchor" href="#en-stage10-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you choose among StateFlow, SharedFlow, Channel, and durable UI state?</em></p>
+<h3 id="en-stage10-answer-30">~30-second answer<a aria-label="Link to section: 30 second answer" class="heading-anchor" href="#en-stage10-answer-30">#</a></h3>
+<blockquote><p>I classify the data first. StateFlow is for a current, replaceable value: it needs an initial value, exposes the latest value, conflates by equality, and should be updated atomically. SharedFlow is a configurable broadcast with replay and buffer policy, while Channel is a one-receiver hand-off queue. None is durable and none means the UI handled an effect. I collect state with the Android lifecycle, expose immutable state, and model critical outcomes such as payment completion in persisted state with identity and reconciliation rather than claiming exactly-once navigation.</p></blockquote>
+<h3 id="en-stage10-answer-2min">~2-minute answer<a aria-label="Link to section: 2 minute answer" class="heading-anchor" href="#en-stage10-answer-2min">#</a></h3>
+<blockquote><p>I start with semantics, not the API. Renderable UI state answers what is true now, so I expose an immutable StateFlow from a ViewModel. It has a required initial and current value, equality-based conflation, and never completes normally. Concurrent read-modify-write must use update, updateAndGet, or getAndUpdate; the lambda is side-effect free because it can be retried.</p><p>SharedFlow is hot broadcast. I specify replay, extra capacity, overflow, and behavior with no subscribers. Extra capacity is not an offline queue; without subscribers only replay is retained. emit can suspend for slow subscribers, while tryEmit reports immediate acceptance, not UI handling. Channel gives queue and one-receiver ownership with explicit capacity, close, cancellation, and undelivered-element policy. Multiple receivers compete. receiveAsFlow preserves that fan-out; consumeAsFlow is single-use and consumes the source.</p><p>For cold-source sharing, stateIn and shareIn belong to an owner scope. Eagerly, Lazily, and WhileSubscribed differ in start and stop lifetime. WhileSubscribed can stop, reset replay after expiration, and restart upstream, so setup and effects must tolerate restarts. Upstream errors need an explicit policy before the sharing boundary.</p><p>On Android, repeatOnLifecycle and collectAsStateWithLifecycle define collection boundaries, not delivery guarantees. Compose receives immutable snapshots and recomposes readers. A snackbar may be documented best effort, navigation should usually be idempotent state-driven when it matters, and payment completion must be persisted with an operation ID, status, acknowledgement, and reconciliation. SavedStateHandle restores small UI/process state, not durable business truth. Tests place subscribers before and after emissions, fill buffers, advance virtual time around sharing timeouts, race atomic updates, and verify recreation and process-restoration behavior. No primitive alone provides exactly-once user-visible handling.</p></blockquote>
+
+<h2 id="en-stage10-sources">Official sources<a aria-label="Link to section: Official sources" class="heading-anchor" href="#en-stage10-sources">#</a></h2>
+<ul>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-state-flow/">StateFlow</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-mutable-state-flow/">MutableStateFlow</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/update.html">update</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/update-and-get.html">updateAndGet</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/get-and-update.html">getAndUpdate</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-shared-flow/">SharedFlow</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-mutable-shared-flow.html">MutableSharedFlow</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-mutable-shared-flow/try-emit.html">tryEmit</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-mutable-shared-flow/subscription-count.html">subscriptionCount</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-mutable-shared-flow/reset-replay-cache.html">resetReplayCache</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/state-in.html">stateIn</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/share-in.html">shareIn</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-sharing-started/">SharingStarted</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-sharing-started/-companion/-while-subscribed.html">WhileSubscribed</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.channels/-channel/">Channel</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/receive-as-flow.html">receiveAsFlow</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/consume-as-flow.html">consumeAsFlow</a></li>
+<li><a href="https://developer.android.com/kotlin/flow/stateflow-and-sharedflow">StateFlow and SharedFlow on Android</a>, <a href="https://developer.android.com/topic/architecture/ui-layer/events">Android UI events</a>, <a href="https://developer.android.com/topic/architecture/ui-layer/state-production">UI state production</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/coroutines">Lifecycle-aware collection</a>, <a href="https://developer.android.com/develop/ui/compose/state">State in Compose</a>, <a href="https://developer.android.com/reference/kotlin/androidx/lifecycle/compose/package-summary">collectAsStateWithLifecycle</a>, <a href="https://developer.android.com/topic/libraries/architecture/viewmodel/viewmodel-savedstate">SavedStateHandle</a></li>
+<li><a href="https://developer.android.com/kotlin/flow/test">Testing Kotlin flows on Android</a> and <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/">kotlinx-coroutines-test</a></li>
 </ul>
 </div></details>
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="en-kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
