@@ -498,6 +498,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="advanced-kotlin-flow-production" href="#advanced-kotlin-flow-production">Advanced Kotlin Flow у production</a>
 </li>
 <li class="toc-major">
+<a data-target="android-ui-architecture-state-modeling" href="#android-ui-architecture-state-modeling">Android UI architecture та state modeling: MVVM, MVI, UDF</a>
+</li>
+<li class="toc-major">
 <a data-target="kotlin-for-android" href="#kotlin-for-android">Kotlin for Android</a>
 <ol class="toc-children">
 <li><a data-target="val-vs-var-immutability" href="#val-vs-var-immutability">val vs var, immutability</a></li>
@@ -807,6 +810,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </li>
 <li class="toc-major">
 <a data-target="en-advanced-kotlin-flow-production" href="#en-advanced-kotlin-flow-production">Advanced Kotlin Flow in production</a>
+</li>
+<li class="toc-major">
+<a data-target="en-android-ui-architecture-state-modeling" href="#en-android-ui-architecture-state-modeling">Android UI architecture and state modeling: MVVM, MVI, UDF</a>
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-for-android" href="#en-kotlin-for-android">Kotlin for Android</a>
@@ -3598,6 +3604,221 @@ val uiState = combine(query, filters, account) { q, f, a -&gt;
 <li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/buffer.html">buffer та operator fusion</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/flow-on.html">flowOn</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/callback-flow.html">callbackFlow</a></li>
 <li><a href="https://developer.android.com/kotlin/flow/stateflow-and-sharedflow">StateFlow and SharedFlow on Android</a>, <a href="https://developer.android.com/topic/libraries/architecture/coroutines">Lifecycle-aware Flow collection</a>, <a href="https://developer.android.com/kotlin/flow/test">Testing Kotlin flows on Android</a></li>
 <li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/">kotlinx-coroutines-test</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/run-test.html">runTest</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-test-coroutine-scheduler/">TestCoroutineScheduler</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="android-ui-architecture-state-modeling" data-title="Android UI architecture та state modeling: MVVM, MVI, UDF" id="android-ui-architecture-state-modeling" open=""><summary class="major-summary"><span class="major-title">Android UI architecture та state modeling: MVVM, MVI, UDF</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<h2 id="stage12-uk-objective">Learning objective<a aria-label="Посилання на розділ: Learning objective" class="heading-anchor" href="#stage12-uk-objective">#</a></h2>
+<p>Після етапу ви маєте проєктувати UI architecture через ownership, source of truth, data flow і failure semantics, а не через ярлик MVVM/MVI: розкласти state за lifetime і durability, визначити ViewModel/state-holder boundary, змоделювати loading/content/empty/error/stale/refresh/pagination без прихованих комбінацій, відокремити events/effects від durable outcomes, захистити async transitions від stale results і перевірити reducers, lifecycle та integration boundaries. Stage 10 уже пояснив primitives hot streams; Stage 13 розглядатиме layering/modularization, тому тут фокус лише на UI boundary.</p>
+
+<h2 id="stage12-uk-mental-model">Senior mental model<a aria-label="Посилання на розділ: Senior mental model" class="heading-anchor" href="#stage12-uk-mental-model">#</a></h2>
+<blockquote><p><strong>Архітектура UI — це карта власності та причинності.</strong> Для кожного значення назвіть authoritative owner, lifetime, restore/persistence policy, writers, readers і допустимі transitions. Для кожної дії — хто приймає intent, де виконується business logic, як результат стає state та що відбудеться при повторі, cancellation або process death.</p></blockquote>
+<ul>
+<li>MVVM описує ролі View/ViewModel/model; MVI/reducer підкреслює intents і централізовані transitions; UDF задає напрям <code>event → business logic → state → UI</code>. Назви можуть поєднуватися й самі не гарантують separation або testability.</li>
+<li>UI рендерить snapshot і надсилає semantic events. Screen state holder координує app data та business rules. Local UI state holder володіє лише UI mechanics. Repository лишається межею даних; use case виправданий повторним або складним правилом, не церемонією.</li>
+<li>Питайте не «MVVM чи MVI?», а «які інваріанти, конкуренція, effect delivery, restore і observability потрібні цьому screen?»</li>
+</ul>
+
+<h2 id="stage12-uk-state-taxonomy">State taxonomy, internals та data flow<a aria-label="Посилання на розділ: State taxonomy internals and data flow" class="heading-anchor" href="#stage12-uk-state-taxonomy">#</a></h2>
+<table><thead><tr><th>Категорія</th><th>Приклад</th><th>Типовий owner / lifetime</th></tr></thead><tbody>
+<tr><td>Domain/app data</td><td>Order, catalog, payment status</td><td>Repository/database/server source of truth; живе незалежно від конкретного UI.</td></tr>
+<tr><td>Screen UI state</td><td>Rows prepared for display, access rules, load/refresh/paging status</td><td>Screen-level state holder, часто <code>ViewModel</code>; derived із authoritative data та input.</td></tr>
+<tr><td>Ephemeral widget state</td><td>Focus, drawer, animation, uncommitted text, scroll mechanics</td><td>Composable/View/Fragment або plain UI state holder; hoist лише до lowest common owner.</td></tr>
+<tr><td>Restorable state</td><td>Selected tab, query, item ID</td><td><code>rememberSaveable</code>, saved instance state або <code>SavedStateHandle</code> для малого rebuild input.</td></tr>
+<tr><td>Durable business state</td><td>Submitted order, completed payment, queued upload</td><td>Database/server/transactional work; не ViewModel, bundle або in-memory Flow.</td></tr>
+</tbody></table>
+<pre><code class="language-text">UI event → screen state holder → business/data boundary → authoritative outcome
+   ↑                                                       │
+   └──────────── render(immutable UI state) ← derive/map ───┘
+
+Side effect request → lifecycle-aware UI handler
+Durable outcome     → source of truth → UI state (safe after recreation)</code></pre>
+<p><strong>Source of truth</strong> — це authority для конкретного факту, а не обов’язково один object для всього screen. Database може бути truth для order status, <code>SavedStateHandle</code> — для query input, а local holder — для focus. Derived state має обчислюватися з owners, а не записуватися назад як паралельна копія без synchronization policy.</p>
+
+<h3 id="stage12-uk-state-shape">State shape: sealed phases, orthogonal fields та atomic updates<a aria-label="Посилання на розділ: State shape and atomic updates" class="heading-anchor" href="#stage12-uk-state-shape">#</a></h3>
+<ul>
+<li>Sealed phases сильні для взаємовиключних станів: <code>InitialLoading | Content | BlockingError</code>. Orthogonal fields кращі, коли content може співіснувати з <code>isRefreshing</code>, stale marker, non-blocking error або pagination footer.</li>
+<li>Не кодуйте <code>isLoading + data? + error?</code> без invariants: це створює impossible або неоднозначні combinations. Але й один giant sealed tree може спричинити combinatorial explosion і сховати незалежні owners.</li>
+<li><code>Empty</code> — успішно завантажений нульовий результат, не initial loading. Stale content лишається renderable з freshness/retry metadata. Initial failure блокує screen; refresh failure з cache зазвичай non-blocking. Pagination окремо моделює initial load, append in flight, end reached і append error.</li>
+<li>Публікуйте immutable snapshots і робіть pure atomic transforms через <code>MutableStateFlow.update</code>. <code>val</code>/<code>copy</code> не захищають nested mutable list, map або element; snapshot/copy ownership на boundary.</li>
+</ul>
+<pre><code class="language-kotlin">sealed interface Body {
+    data object InitialLoading : Body
+    data class Content(val rows: List&lt;RowUi&gt;, val isEmpty: Boolean) : Body
+    data class BlockingError(val error: UiError) : Body
+}
+data class FeedUiState(
+    val body: Body = Body.InitialLoading,
+    val isRefreshing: Boolean = false,
+    val freshness: Freshness = Freshness.Unknown,
+    val append: AppendState = AppendState.Idle,
+    val notice: Notice? = null,
+    val requestId: Long = 0,
+)
+
+private val _state = MutableStateFlow(FeedUiState())
+fun reduce(result: Result, id: Long) = _state.update { old -&gt;
+    if (id != old.requestId) old else old.reduce(result)
+}</code></pre>
+
+<h3 id="stage12-uk-ownership">State holder vs ViewModel; Compose та XML parity<a aria-label="Посилання на розділ: State holder versus ViewModel" class="heading-anchor" href="#stage12-uk-ownership">#</a></h3>
+<ul>
+<li>Keep simple element state local; hoist to the lowest common reader/writer. Extract a plain state holder for cohesive UI logic involving focus, scroll, sheet or selection. Use a ViewModel/screen holder when app data, business rules, repositories or survival across configuration change are involved.</li>
+<li>A ViewModel should not retain Activity, Fragment, View, NavController, Composer, focus/scroll runtime objects or callbacks. Create it through the owner/factory/DI path and scope it deliberately to destination, graph, Activity or other <code>ViewModelStoreOwner</code>; scope determines sharing and lifetime.</li>
+<li>Compose: stateful route collects with <code>collectAsStateWithLifecycle()</code> and passes plain state/callbacks to stateless content. <code>remember</code> survives recomposition only; <code>rememberSaveable</code> restores saveable UI input across recreation but is not durable storage. Do not move frame-clock UI operations into <code>viewModelScope</code>.</li>
+<li>XML/Fragment has the same architecture: observe inside <code>viewLifecycleOwner.lifecycleScope.repeatOnLifecycle</code>, render Views, send semantic callbacks, and never outlive the Fragment view. Compose is not required for UDF.</li>
+</ul>
+
+<h3 id="stage12-uk-udf-events-effects">UDF loop, events, effects, commands та durable outcomes<a aria-label="Посилання на розділ: UDF events effects commands durable outcomes" class="heading-anchor" href="#stage12-uk-udf-events-effects">#</a></h3>
+<ul>
+<li>Events describe what happened (<code>RetryClicked</code>, <code>AddressChanged</code>), not setters for every field. Handler validates/adopts intent, invokes business/data work, then reduces typed results into state.</li>
+<li>An effect/command asks an imperative boundary to act: open a picker, focus a field, show a transient snackbar, navigate. Specify loss, replay, buffering, idempotency and consumer count. <strong>StateFlow is not an event queue</strong>; equal values conflate and new collectors see current state, not every occurrence.</li>
+<li>Navigation after validation may be a UI effect; the authoritative fact «checkout complete» must be durable outcome in repository/server, so recreation derives the correct destination. Snackbar text can be best-effort; a required user acknowledgement belongs in state. Payment completion must never exist only as consumed event.</li>
+<li>“Exactly once” is usually a business protocol: stable operation/idempotency key, persisted status and reconciliation. A Channel/SharedFlow alone cannot make an external payment or navigation history exactly once.</li>
+</ul>
+
+<h3 id="stage12-uk-concurrency">Concurrency, stale results та race prevention<a aria-label="Посилання на розділ: Concurrency stale results and races" class="heading-anchor" href="#stage12-uk-concurrency">#</a></h3>
+<ul>
+<li><strong>UDF does not inherently serialize async effects.</strong> Two events can launch overlapping work and complete out of order. Decide latest-wins, queue-all, deduplicate, mutex, single actor, or independent-key concurrency per operation.</li>
+<li>Cancel obsolete cooperative jobs, but also carry request identity/generation and reject stale completion because cancellation cannot undo blocking calls, detached work or committed external effects.</li>
+<li>Atomic <code>update</code> prevents lost read-modify-write state updates; it does not make network+database+state a transaction. Keep reducer pure because its lambda may retry.</li>
+<li>Disable repeated submit only as UX; correctness still needs repository/server idempotency and persisted operation status.</li>
+</ul>
+
+<h2 id="stage12-uk-guarantees">Guarantees vs non-guarantees<a aria-label="Посилання на розділ: Guarantees versus non guarantees" class="heading-anchor" href="#stage12-uk-guarantees">#</a></h2>
+<table><thead><tr><th>Guarantee / useful contract</th><th>Non-guarantee</th></tr></thead><tbody>
+<tr><td>UDF makes direction and write boundaries explicit.</td><td>UDF does not inherently serialize async effects or prevent races.</td></tr>
+<tr><td>Immutable outer snapshots support predictable comparison and reducers.</td><td>Immutable data does not make nested mutable members safe.</td></tr>
+<tr><td>ViewModel is retained across configuration changes by its owner.</td><td>ViewModel survives process death, or is a durable store.</td></tr>
+<tr><td><code>SavedStateHandle</code> retains small restorable values via saved-state mechanisms.</td><td>It is a durable database/business-storage or large-object cache.</td></tr>
+<tr><td><code>StateFlow</code> exposes current conflated state.</td><td>StateFlow is an event queue or delivers every occurrence.</td></tr>
+<tr><td>A cohesive aggregate can make atomic screen transitions easier.</td><td>One UI state object is always superior to smaller owned state holders.</td></tr>
+<tr><td>MVVM/MVI names provide shared vocabulary.</td><td>Architecture pattern names guarantee separation, correctness, or testability.</td></tr>
+</tbody></table>
+
+<h2 id="stage12-uk-version-sensitive">Version-sensitive behavior<a aria-label="Посилання на розділ: Version sensitive behavior" class="heading-anchor" href="#stage12-uk-version-sensitive">#</a></h2>
+<ul>
+<li><code>collectAsStateWithLifecycle()</code>, lifecycle-runtime-compose artifacts, overloads and default lifecycle behavior depend on resolved AndroidX versions. Pin versions and consult current API docs.</li>
+<li>Compose saveability and supported types depend on <code>SaveableStateRegistry</code>, navigation integration and platform Bundle limits; test real recreation/process restoration rather than assuming every <code>rememberSaveable</code> value restores.</li>
+<li>ViewModel creation extras, factories, Navigation graph scoping and <code>SavedStateHandle</code> integration have evolved across Lifecycle/Navigation releases. Verify the actual owner and dependency versions.</li>
+<li>Do not base semantics on library defaults for Flow sharing/buffering; Stage 10 covers those version-sensitive primitives. Architecture must state required behavior independently.</li>
+</ul>
+
+<h2 id="stage12-uk-decision-matrix">Decision matrix<a aria-label="Посилання на розділ: Decision matrix" class="heading-anchor" href="#stage12-uk-decision-matrix">#</a></h2>
+<table><thead><tr><th>Decision</th><th>Prefer</th><th>When / cost</th></tr></thead><tbody>
+<tr><td>Local vs hoisted</td><td>Lowest owner that needs read/write</td><td>Local minimizes coupling; hoist for coordination/testable contract.</td></tr>
+<tr><td>Plain holder vs ViewModel</td><td>Plain for UI mechanics; ViewModel for screen/business data</td><td>Framework-free holder is light; ViewModel adds owner/lifecycle and saved-state integration.</td></tr>
+<tr><td>MVVM-style methods vs reducer/MVI</td><td>Few independent actions vs many coupled transitions</td><td>Reducer centralizes auditability but adds event/boilerplate and can become a god reducer.</td></tr>
+<tr><td>Sealed phase vs fields</td><td>Sealed for exclusivity; validated fields for orthogonal dimensions</td><td>Choose invariants over fashion; hybrid often models refresh/paging best.</td></tr>
+<tr><td>Effect vs state</td><td>Effect for disposable imperative request; state/durable source for required outcome</td><td>If loss after stop/recreation is a bug, do not model only as transient effect.</td></tr>
+<tr><td>One aggregate vs smaller holders</td><td>Aggregate for atomic invariants; split by independent owner/lifecycle</td><td>Avoid both inconsistent duplicated facts and monolithic unrelated state.</td></tr>
+</tbody></table>
+<ol>
+<li>Write user-visible invariants and classify each fact by owner, lifetime and durability.</li>
+<li>Choose source of truth and derive UI state; identify every writer and transition.</li>
+<li>Choose exclusive phases vs orthogonal metadata; define stale, empty, refresh and append behavior.</li>
+<li>Define event admission, async ordering/cancellation, request identity, effect delivery and process-death recovery.</li>
+<li>Choose the least ceremonial pattern that makes these contracts observable and testable.</li>
+</ol>
+
+<h2 id="stage12-uk-tradeoffs">Trade-offs та failure modes<a aria-label="Посилання на розділ: Trade offs and failure modes" class="heading-anchor" href="#stage12-uk-tradeoffs">#</a></h2>
+<ul>
+<li>Dogmatic MVI can route text edits, animation and navigation through one global reducer, increasing latency/boilerplate and coupling unrelated lifetimes. Casual MVVM can scatter writes across callbacks and expose mutable state.</li>
+<li>Giant <code>UiState</code> causes broad updates and hidden ownership; too many independent flows produce torn combinations and hard-to-test invariants. Split by ownership, aggregate where transitions must be atomic.</li>
+<li>Replacing cached content with full-screen loading during refresh causes flicker and loses context; treating initial empty as content before load hides latency/failure.</li>
+<li>Transient navigation/payment success event can be lost on inactive UI or repeated after recreation. Durable outcome plus idempotent UI reaction is safer.</li>
+<li>Persisting full response objects in <code>SavedStateHandle</code> risks size/schema issues and duplicate truth. Save identifiers/user input; reload authoritative data.</li>
+<li>Launching per-click jobs without operation policy permits stale overwrite, duplicate payments and spinners cleared by the wrong request.</li>
+</ul>
+
+<h2 id="stage12-uk-production-scenario">Production scenario: checkout and payment<a aria-label="Посилання на розділ: Production scenario checkout and payment" class="heading-anchor" href="#stage12-uk-production-scenario">#</a></h2>
+<p><strong>Гіпотетично:</strong> checkout screen має local focus/sheet state, <code>SavedStateHandle</code> для cart ID і uncommitted promo input, ViewModel для screen state, repository/database як source of truth для cart і payment operation. Submit створює stable idempotency key, state переходить у submitting, repository persist-ить operation і викликає backend. UI не вважає transient effect доказом оплати: вона observe-ить durable <code>Pending | Succeeded | Failed</code>. При process death новий ViewModel відновлює IDs, читає operation і показує receipt або retry-safe failure.</p>
+<pre><code class="language-kotlin">fun submit() {
+    val snapshot = state.value
+    if (!snapshot.canSubmit) return
+    val operationId = snapshot.operationId ?: ids.newStableId()
+    _state.update { it.copy(isSubmitting = true, operationId = operationId) }
+    submitJob?.cancel()
+    submitJob = viewModelScope.launch {
+        repository.submitPayment(snapshot.cartId, operationId)
+        // Repository persists outcome; screen observes that source of truth.
+    }
+}</code></pre>
+<p>Double tap і retry reuse operation ID. A stale validation response carries request ID and cannot overwrite newer address. Navigation to receipt is derived from succeeded operation; a best-effort snackbar may remain an effect. Telemetry records redacted screen/operation ID, prior→next state name, event, request generation, latency, cancellation and stale rejection—not card data.</p>
+
+<h2 id="stage12-uk-review-trap">Code-review/debugging trap<a aria-label="Посилання на розділ: Code review debugging trap" class="heading-anchor" href="#stage12-uk-review-trap">#</a></h2>
+<pre><code class="language-kotlin">data class UiState(
+    val loading: Boolean,
+    val items: MutableList&lt;Item&gt;,
+    val error: String?,
+    val navigateAfterPayment: Boolean,
+)
+fun refresh() = viewModelScope.launch {
+    _state.value = _state.value.copy(loading = true)
+    val rows = repo.load()                 // old request may finish last
+    _state.value.items.clear()             // mutates a published snapshot
+    _state.value.items.addAll(rows)
+    _state.value = _state.value.copy(loading = false)
+}</code></pre>
+<p>Review trap: код має ViewModel, <code>UiState</code> і “MVI” naming, але не має safe ownership. Запитайте: які combinations legal; хто writer; чи refresh зберігає content; який request може завершити spinner; чи nested list mutable; що станеться після rotation/process death; чи payment outcome durable? Для debugging логують typed <code>previousState → event/result → nextState</code> з correlation/request ID, owner/lifecycle, active operation count і stale rejection. Redact payloads; reducer transition logs доповнюють, а не замінюють repository traces.</p>
+
+<h2 id="stage12-uk-testing-observability">Testing reducers, holders та integration boundaries<a aria-label="Посилання на розділ: Testing and observability" class="heading-anchor" href="#stage12-uk-testing-observability">#</a></h2>
+<ul>
+<li>Pure reducer table/property tests cover every event/result × phase, invariants, empty/stale/refresh/append behavior and stale request rejection. Assert whole state and forbidden combinations.</li>
+<li>ViewModel tests inject fake repositories, IDs and dispatchers; use virtual time to script out-of-order completion, cancellation, duplicate submit and operation recovery. Do not test private Flow implementation details instead of public transitions.</li>
+<li>Plain state-driven Compose/View tests render loading/content/empty/blocking/non-blocking error and callbacks. Add a small wiring test for lifecycle collection and effect handling.</li>
+<li>Integration tests prove repository source-of-truth writes, <code>SavedStateHandle</code> reconstruction, destination/graph scoping, Fragment view recreation and process-recreation-critical paths.</li>
+<li>Observability uses stable state/event names, correlation and request generation, transition latency, effect enqueue/handle/drop reason, retries and rejected stale results; avoid logging PII/secrets or high-cardinality payloads.</li>
+</ul>
+
+<h2 id="stage12-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice questions and answers" class="heading-anchor" href="#stage12-uk-likely-qa">#</a></h2>
+<p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
+<ol>
+<li><strong>MVVM, MVI чи UDF?</strong> Це не взаємовиключні бренди: оберіть explicit owners/data flow; reducer корисний для coupled transitions, прості ViewModel methods — для незалежних actions.</li>
+<li><strong>Що є UI state?</strong> Snapshot даних, підготовлених для render, включно з phase/metadata; domain data і widget mechanics можуть мати інших owners.</li>
+<li><strong>Один <code>UiState</code> завжди краще?</strong> Ні; aggregate дає atomic invariants, але незалежні lifetimes/owners краще розділити.</li>
+<li><strong>Sealed state чи data class?</strong> Sealed для mutually exclusive phases; fields для orthogonal dimensions; hybrid уникає boolean soup і combinatorial tree.</li>
+<li><strong>Як моделювати refresh failure із cache?</strong> Залишити content, завершити refreshing, позначити freshness/non-blocking error і дати retry; blocking error — коли renderable content немає.</li>
+<li><strong>State чи event для navigation?</strong> Imperative navigation може бути effect, але required/durable business outcome має бути state/source of truth, щоб recreation не губила факт.</li>
+<li><strong>Чи переживає ViewModel process death?</strong> Ні; config change — так у межах owner. Після process death відновіть мінімальні inputs і reload durable truth.</li>
+<li><strong>Для чого <code>SavedStateHandle</code>?</strong> Для малого restorable screen input/keys; не база даних і не сховище payment/order truth.</li>
+<li><strong>Як не допустити stale result?</strong> Cancel obsolete cooperative job і перевірити request ID/generation перед reducer; для writes додати idempotency та reconciliation.</li>
+<li><strong>Як тестувати architecture?</strong> Pure transition tests, ViewModel concurrency tests, plain UI render/callback tests і кілька lifecycle/persistence integration tests.</li>
+</ol>
+
+<h2 id="stage12-uk-followups">4 senior follow-ups з відповідями<a aria-label="Посилання на розділ: 4 senior follow ups" class="heading-anchor" href="#stage12-uk-followups">#</a></h2>
+<ol>
+<li><strong>Collector був STOPPED під час snackbar.</strong> Визначте contract: best-effort message можна втратити; required acknowledgement є state. Не маскуйте невизначеність словом “single event”.</li>
+<li><strong>Два refresh завершилися навпаки.</strong> latest request owns refresh flag/data; compare generation. Cancellation alone insufficient; repository truth may independently update.</li>
+<li><strong>Screen має editor, list і bottom sheet.</strong> Split local editor/sheet mechanics і screen data holder; aggregate тільки facts, що потребують atomic invariant.</li>
+<li><strong>Payment succeeded, app died before navigation.</strong> Persist operation outcome server/DB, restore operation ID, observe success and derive receipt route idempotently.</li>
+</ol>
+
+<h2 id="stage12-uk-self-check">4 self-check без відповідей<a aria-label="Посилання на розділ: 4 self check without answers" class="heading-anchor" href="#stage12-uk-self-check">#</a></h2>
+<ol>
+<li>Хто authoritative owner, writer, lifetime і restore policy кожного state field?</li>
+<li>Які impossible/hidden combinations допускає поточна model для loading, stale, refresh і pagination?</li>
+<li>Яка async operation policy і як reducer відхиляє stale completion?</li>
+<li>Які “events” насправді є durable business outcomes, втрата яких неприпустима?</li>
+</ol>
+
+<h2 id="stage12-uk-english-skeletons">Interview-ready English answer skeletons<a aria-label="Посилання на розділ: Interview ready English answer skeletons" class="heading-anchor" href="#stage12-uk-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you design Android UI architecture and state?</em></p>
+<h3 id="stage12-uk-answer-30">~30-second answer<a aria-label="Посилання на розділ: 30 second answer" class="heading-anchor" href="#stage12-uk-answer-30">#</a></h3>
+<blockquote><p>I treat MVVM and MVI as vocabulary, not guarantees. I first assign each fact an owner, lifetime, source of truth, and durability. The UI sends semantic events and renders immutable state; a screen holder coordinates business data, while widget mechanics stay in the lowest UI owner. I model exclusive phases with sealed types and orthogonal refresh or paging metadata separately. UDF does not serialize asynchronous work, so I define cancellation and request identity. Required outcomes such as payment completion are persisted, not sent only as one-off events, and I test reducers, races, recreation, and repository boundaries.</p></blockquote>
+<h3 id="stage12-uk-answer-2min">~2-minute answer<a aria-label="Посилання на розділ: 2 minute answer" class="heading-anchor" href="#stage12-uk-answer-2min">#</a></h3>
+<blockquote><p>I start with ownership and data flow rather than choosing a pattern name. Domain data belongs to a repository or durable source of truth. A screen state holder, often a ViewModel, combines that data with screen input and exposes renderable UI state. Focus, scroll, animation, and similar mechanics stay local or in a plain UI state holder unless business logic needs them. In Compose I collect lifecycle-aware state in a route and pass values and callbacks to stateless content; the same boundary works with Fragments and repeatOnLifecycle.</p><p>For state shape, I use sealed phases where states are mutually exclusive, such as initial loading, content, and blocking error. Refresh, stale status, non-blocking errors, and pagination are often orthogonal to content, so a hybrid model avoids both boolean soup and an enormous sealed hierarchy. Published snapshots are immutable, nested collections have controlled ownership, and atomic updates are pure.</p><p>Events describe user intent. The holder runs business logic and reduces typed results back into state. Imperative requests such as focus or a disposable snackbar can be effects, but StateFlow is not an event queue. If losing an outcome after recreation would be wrong—payment completion, order submission, required acknowledgement—I persist it and derive UI behavior from durable state. A ViewModel survives configuration change, not process death, and SavedStateHandle stores minimal reconstruction inputs, not business truth.</p><p>Finally, UDF alone does not serialize concurrent work. I define latest-wins, queueing, deduplication, or independent-key concurrency, cancel obsolete jobs, and reject stale request IDs. Writes use idempotency and reconciliation. Tests cover pure reducer transitions, out-of-order results, duplicate submit, lifecycle collection, saved-state reconstruction, and source-of-truth integration. That gives me explicit contracts; calling it MVVM or MVI is secondary.</p></blockquote>
+
+<h2 id="stage12-uk-sources">Офіційні джерела<a aria-label="Посилання на розділ: Офіційні джерела" class="heading-anchor" href="#stage12-uk-sources">#</a></h2>
+<ul>
+<li><a href="https://developer.android.com/topic/architecture">Android: Guide to app architecture</a></li>
+<li><a href="https://developer.android.com/topic/architecture/ui-layer">Android: UI layer</a></li>
+<li><a href="https://developer.android.com/topic/architecture/ui-layer/stateholders">Android: State holders and UI state</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/viewmodel">Android: ViewModel overview</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/viewmodel/viewmodel-savedstate">Android: Saved state module for ViewModel</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/state">Compose: State and Jetpack Compose</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/libraries#streams">Compose: lifecycle-aware streams</a></li>
+<li><a href="https://kotlinlang.org/docs/sealed-classes.html">Kotlin: Sealed classes and interfaces</a> та <a href="https://kotlinlang.org/docs/data-classes.html">Data classes</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/update.html">Kotlin: MutableStateFlow.update</a></li>
 </ul>
 </div></details>
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
@@ -10170,6 +10391,144 @@ orders.stateIn(GlobalScope)                                       // wrong lifet
 <li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/buffer.html">buffer та operator fusion</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/flow-on.html">flowOn</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/callback-flow.html">callbackFlow</a></li>
 <li><a href="https://developer.android.com/kotlin/flow/stateflow-and-sharedflow">StateFlow and SharedFlow on Android</a>, <a href="https://developer.android.com/topic/libraries/architecture/coroutines">Lifecycle-aware Flow collection</a>, <a href="https://developer.android.com/kotlin/flow/test">Testing Kotlin flows on Android</a></li>
 <li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/">kotlinx-coroutines-test</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/run-test.html">runTest</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-test-coroutine-scheduler/">TestCoroutineScheduler</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="android-ui-architecture-state-modeling" data-title="Android UI architecture and state modeling: MVVM, MVI, UDF" id="en-android-ui-architecture-state-modeling" open=""><summary class="major-summary"><span class="major-title">Android UI architecture and state modeling: MVVM, MVI, UDF</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<h2 id="en-stage12-objective">Learning objective<a aria-label="Link to section: Learning objective" class="heading-anchor" href="#en-stage12-objective">#</a></h2>
+<p>After this stage, you should design UI architecture through ownership, sources of truth, data flow, and failure semantics rather than an MVVM/MVI label: classify state by lifetime and durability, set ViewModel/state-holder boundaries, model loading/content/empty/error/stale/refresh/pagination without hidden combinations, separate effects from durable outcomes, protect asynchronous transitions from stale results, and test reducers, lifecycle, and integration boundaries. Stage 10 already covers hot-stream primitives; Stage 13 covers layering and modularization, so this stage stays at the UI boundary.</p>
+<h2 id="en-stage12-mental-model">Senior mental model<a aria-label="Link to section: Senior mental model" class="heading-anchor" href="#en-stage12-mental-model">#</a></h2>
+<blockquote><p><strong>UI architecture is a map of ownership and causality.</strong> For every value, name the authoritative owner, lifetime, restore/persistence policy, writers, readers, and legal transitions. For every action, identify who accepts the intent, where business logic runs, how its result becomes state, and what happens on repetition, cancellation, or process death.</p></blockquote>
+<ul><li>MVVM describes View/ViewModel/model roles; reducer-style MVI emphasizes intents and centralized transitions; UDF defines <code>event → business logic → state → UI</code>. They can overlap, and pattern names do not guarantee separation or testability.</li><li>The UI renders snapshots and sends semantic events. A screen holder coordinates app data and business rules. A local holder owns UI mechanics. Repositories remain data boundaries; use cases earn their place through reused or complex rules, not ceremony.</li><li>Ask which invariants, concurrency, effect delivery, restoration, and observability the screen needs—not only “MVVM or MVI?”</li></ul>
+<h2 id="en-stage12-state-taxonomy">State taxonomy, internals, and data flow<a aria-label="Link to section: State taxonomy internals and data flow" class="heading-anchor" href="#en-stage12-state-taxonomy">#</a></h2>
+<table><thead><tr><th>Category</th><th>Example</th><th>Typical owner / lifetime</th></tr></thead><tbody>
+<tr><td>Domain/app data</td><td>Order, catalog, payment status</td><td>Repository/database/server source of truth, independent of one UI.</td></tr>
+<tr><td>Screen UI state</td><td>Display rows, access rules, load/refresh/paging status</td><td>Screen holder, often a <code>ViewModel</code>; derived from authoritative data and input.</td></tr>
+<tr><td>Ephemeral widget state</td><td>Focus, drawer, animation, uncommitted text, scroll mechanics</td><td>Composable/View/Fragment or plain UI holder; hoist only to the lowest common owner.</td></tr>
+<tr><td>Restorable state</td><td>Selected tab, query, item ID</td><td><code>rememberSaveable</code>, saved instance state, or <code>SavedStateHandle</code> for small reconstruction input.</td></tr>
+<tr><td>Durable business state</td><td>Submitted order, completed payment, queued upload</td><td>Database/server/transactional work—not a ViewModel, Bundle, or in-memory Flow.</td></tr>
+</tbody></table>
+<pre><code class="language-text">UI event → screen state holder → business/data boundary → authoritative outcome
+   ↑                                                       │
+   └──────────── render(immutable UI state) ← derive/map ───┘
+
+Side-effect request → lifecycle-aware UI handler
+Durable outcome     → source of truth → UI state after recreation</code></pre>
+<p>A <strong>source of truth</strong> is the authority for a fact, not necessarily one object for the entire screen. A database can own order status, <code>SavedStateHandle</code> a query input, and a local holder focus. Derive state from owners instead of maintaining unsynchronized duplicate copies.</p>
+<h3 id="en-stage12-state-shape">State shape: sealed phases, orthogonal fields, and atomic updates<a aria-label="Link to section: State shape and atomic updates" class="heading-anchor" href="#en-stage12-state-shape">#</a></h3>
+<ul><li>Sealed phases fit mutually exclusive states such as <code>InitialLoading | Content | BlockingError</code>. Orthogonal fields fit content plus refreshing, stale metadata, a non-blocking error, or a pagination footer.</li><li>A loose <code>isLoading + data? + error?</code> admits impossible or ambiguous combinations. One giant sealed tree can instead create combinatorial explosion and hide independent owners.</li><li><code>Empty</code> means a successful zero result, not “not loaded.” Stale content remains renderable with freshness/retry metadata. Initial failure can block; refresh failure with cached content is usually non-blocking. Pagination distinguishes initial load, append in flight, end reached, and append error.</li><li>Publish immutable snapshots and use pure atomic <code>MutableStateFlow.update</code> transforms. <code>val</code> and <code>copy</code> do not make nested mutable lists, maps, or elements safe.</li></ul>
+<pre><code class="language-kotlin">sealed interface Body {
+    data object InitialLoading : Body
+    data class Content(val rows: List&lt;RowUi&gt;, val isEmpty: Boolean) : Body
+    data class BlockingError(val error: UiError) : Body
+}
+data class FeedUiState(
+    val body: Body = Body.InitialLoading,
+    val isRefreshing: Boolean = false,
+    val freshness: Freshness = Freshness.Unknown,
+    val append: AppendState = AppendState.Idle,
+    val notice: Notice? = null,
+    val requestId: Long = 0,
+)
+private val _state = MutableStateFlow(FeedUiState())
+fun reduce(result: Result, id: Long) = _state.update { old -&gt;
+    if (id != old.requestId) old else old.reduce(result)
+}</code></pre>
+<h3 id="en-stage12-ownership">State holder versus ViewModel; Compose and XML parity<a aria-label="Link to section: State holder versus ViewModel" class="heading-anchor" href="#en-stage12-ownership">#</a></h3>
+<ul><li>Keep simple element state local and hoist it to the lowest common reader/writer. Extract a plain holder for cohesive focus, scroll, sheet, or selection logic. Use a ViewModel/screen holder for app data, business rules, repositories, or configuration-change retention.</li><li>A ViewModel must not retain an Activity, Fragment, View, NavController, Composer, focus/scroll runtime object, or callback. Create it through its owner/factory/DI path and scope it deliberately to a destination, graph, Activity, or another <code>ViewModelStoreOwner</code>.</li><li>Compose: a stateful route uses <code>collectAsStateWithLifecycle()</code> and passes plain state/callbacks to stateless content. <code>remember</code> survives recomposition only; <code>rememberSaveable</code> restores saveable UI input but is not durable storage. Frame-clock UI operations do not belong in <code>viewModelScope</code>.</li><li>XML/Fragment uses the same architecture: collect with <code>viewLifecycleOwner.lifecycleScope.repeatOnLifecycle</code>, render Views, send semantic callbacks, and never outlive the Fragment view. UDF does not require Compose.</li></ul>
+<h3 id="en-stage12-udf-events-effects">UDF loop, events, effects, commands, and durable outcomes<a aria-label="Link to section: UDF events effects commands durable outcomes" class="heading-anchor" href="#en-stage12-udf-events-effects">#</a></h3>
+<ul><li>Events describe what happened, such as <code>RetryClicked</code> or <code>AddressChanged</code>, rather than exposing setters for every field. The handler validates the intent, invokes business/data work, and reduces typed results.</li><li>An effect/command asks an imperative boundary to act: open a picker, focus a field, show a disposable snackbar, or navigate. Define loss, replay, buffering, idempotency, and consumer count. <strong>StateFlow is not an event queue</strong>: equal values conflate and new collectors see current state, not every occurrence.</li><li>Navigation after validation may be an effect, but “checkout complete” must be a durable repository/server outcome so recreation derives the correct destination. A snackbar may be best effort; required acknowledgement belongs in state. Payment completion must not live only in a consumed event.</li><li>Exactly-once behavior is normally a business protocol using a stable operation/idempotency key, persisted status, and reconciliation. Channel or SharedFlow alone cannot make an external payment or navigation history exactly once.</li></ul>
+<h3 id="en-stage12-concurrency">Concurrency, stale results, and race prevention<a aria-label="Link to section: Concurrency stale results and races" class="heading-anchor" href="#en-stage12-concurrency">#</a></h3>
+<ul><li><strong>UDF does not inherently serialize async effects.</strong> Events can launch overlapping work that completes out of order. Choose latest-wins, queue-all, deduplication, a mutex/actor, or independent-key concurrency per operation.</li><li>Cancel obsolete cooperative jobs and also carry request identity/generation, because cancellation cannot undo blocking calls, detached work, or committed effects.</li><li>Atomic <code>update</code> prevents lost read-modify-write state updates; it does not make network + database + state transactional. Its reducer must remain pure because it may retry.</li><li>Disabling repeated submit helps UX; correctness still requires repository/server idempotency and persisted operation status.</li></ul>
+<h2 id="en-stage12-guarantees">Guarantees versus non-guarantees<a aria-label="Link to section: Guarantees versus non guarantees" class="heading-anchor" href="#en-stage12-guarantees">#</a></h2>
+<table><thead><tr><th>Guarantee / useful contract</th><th>Non-guarantee</th></tr></thead><tbody>
+<tr><td>UDF makes direction and write boundaries explicit.</td><td>UDF does not inherently serialize async effects or prevent races.</td></tr>
+<tr><td>Immutable outer snapshots support predictable reducers.</td><td>Immutable data does not make nested mutable members safe.</td></tr>
+<tr><td>ViewModel is retained across configuration changes by its owner.</td><td>ViewModel survives process death or is a durable store.</td></tr>
+<tr><td><code>SavedStateHandle</code> retains small restorable values through saved state.</td><td>It is durable database/business storage or a large-object cache.</td></tr>
+<tr><td><code>StateFlow</code> exposes current conflated state.</td><td>StateFlow is an event queue or delivers every occurrence.</td></tr>
+<tr><td>A cohesive aggregate can support atomic screen transitions.</td><td>One UI state object is always superior to smaller owned state holders.</td></tr>
+<tr><td>MVVM/MVI names provide vocabulary.</td><td>Architecture pattern names guarantee separation, correctness, or testability.</td></tr>
+</tbody></table>
+<h2 id="en-stage12-version-sensitive">Version-sensitive behavior<a aria-label="Link to section: Version sensitive behavior" class="heading-anchor" href="#en-stage12-version-sensitive">#</a></h2>
+<ul><li><code>collectAsStateWithLifecycle()</code>, lifecycle-runtime-compose artifacts, overloads, and default lifecycle behavior depend on resolved AndroidX versions. Pin versions and consult current API docs.</li><li>Compose saveability depends on <code>SaveableStateRegistry</code>, navigation integration, supported types, and platform Bundle limits. Test real recreation/process restoration.</li><li>ViewModel creation extras, factories, Navigation graph scoping, and <code>SavedStateHandle</code> integration have evolved across Lifecycle/Navigation releases. Verify the actual owner and dependency versions.</li><li>Do not derive semantics from Flow sharing/buffering defaults; Stage 10 covers those version-sensitive primitives. State the required architecture contract independently.</li></ul>
+<h2 id="en-stage12-decision-matrix">Decision matrix<a aria-label="Link to section: Decision matrix" class="heading-anchor" href="#en-stage12-decision-matrix">#</a></h2>
+<table><thead><tr><th>Decision</th><th>Prefer</th><th>When / cost</th></tr></thead><tbody>
+<tr><td>Local vs hoisted</td><td>Lowest owner needing read/write</td><td>Local reduces coupling; hoist for coordination and a testable contract.</td></tr>
+<tr><td>Plain holder vs ViewModel</td><td>Plain for UI mechanics; ViewModel for screen/business data</td><td>ViewModel adds an owner lifecycle and saved-state integration.</td></tr>
+<tr><td>MVVM-style methods vs reducer/MVI</td><td>Few independent actions vs many coupled transitions</td><td>A reducer improves auditability but can add boilerplate or become a god reducer.</td></tr>
+<tr><td>Sealed phase vs fields</td><td>Sealed for exclusivity; validated fields for orthogonal dimensions</td><td>A hybrid often models refresh/paging best.</td></tr>
+<tr><td>Effect vs state</td><td>Effect for disposable requests; state/durable source for required outcomes</td><td>If loss after recreation is a bug, transient-only is wrong.</td></tr>
+<tr><td>Aggregate vs smaller holders</td><td>Aggregate atomic invariants; split independent owners/lifetimes</td><td>Avoid both duplicated facts and unrelated monoliths.</td></tr>
+</tbody></table>
+<ol><li>Write user-visible invariants and classify each fact by owner, lifetime, and durability.</li><li>Choose the source of truth and derived UI state; identify every writer and transition.</li><li>Choose exclusive phases versus orthogonal metadata; define stale, empty, refresh, and append behavior.</li><li>Define event admission, asynchronous ordering/cancellation, request identity, effect delivery, and process-death recovery.</li><li>Choose the least ceremonial pattern that makes these contracts observable and testable.</li></ol>
+<h2 id="en-stage12-tradeoffs">Trade-offs and failure modes<a aria-label="Link to section: Trade offs and failure modes" class="heading-anchor" href="#en-stage12-tradeoffs">#</a></h2>
+<ul><li>Dogmatic MVI can route every edit, animation, and navigation through one global reducer, coupling unrelated lifetimes. Casual MVVM can scatter writes and expose mutable state.</li><li>A giant <code>UiState</code> hides ownership and causes broad updates; too many independent flows create torn combinations. Split by ownership and aggregate where transitions must be atomic.</li><li>Replacing cached content with full-screen loading during refresh flickers and loses context; treating initial empty as content before load hides latency and failure.</li><li>A transient navigation/payment-success event can be lost while inactive or repeated after recreation. Durable outcome plus idempotent UI reaction is safer.</li><li>Saving full responses in <code>SavedStateHandle</code> risks size/schema failures and duplicate truth. Save identifiers or input and reload authoritative data.</li><li>Launching per-click jobs without an operation policy allows stale overwrite, duplicate payments, and a spinner cleared by the wrong request.</li></ul>
+<h2 id="en-stage12-production-scenario">Production scenario: checkout and payment<a aria-label="Link to section: Production scenario checkout and payment" class="heading-anchor" href="#en-stage12-production-scenario">#</a></h2>
+<p><strong>Hypothetically:</strong> a checkout screen keeps focus/sheet mechanics locally, cart ID and uncommitted promo input in <code>SavedStateHandle</code>, screen state in a ViewModel, and cart/payment operation truth in a repository/database. Submit creates a stable idempotency key; the repository persists the operation and calls the backend. The UI observes durable <code>Pending | Succeeded | Failed</code> rather than treating a transient effect as proof of payment. After process death, a new ViewModel restores IDs, reads the operation, and shows a receipt or retry-safe failure.</p>
+<pre><code class="language-kotlin">fun submit() {
+    val snapshot = state.value
+    if (!snapshot.canSubmit) return
+    val operationId = snapshot.operationId ?: ids.newStableId()
+    _state.update { it.copy(isSubmitting = true, operationId = operationId) }
+    submitJob?.cancel()
+    submitJob = viewModelScope.launch {
+        repository.submitPayment(snapshot.cartId, operationId)
+        // The repository persists outcome; UI observes that source of truth.
+    }
+}</code></pre>
+<p>Double-tap and retry reuse the operation ID. Stale validation carries request identity and cannot overwrite a newer address. Receipt navigation derives from succeeded status; a snackbar can remain best effort. Telemetry uses redacted operation/request IDs, prior→next state, latency, cancellation, and stale rejection—not card data.</p>
+<h2 id="en-stage12-review-trap">Code-review/debugging trap<a aria-label="Link to section: Code review debugging trap" class="heading-anchor" href="#en-stage12-review-trap">#</a></h2>
+<pre><code class="language-kotlin">data class UiState(
+    val loading: Boolean,
+    val items: MutableList&lt;Item&gt;,
+    val error: String?,
+    val navigateAfterPayment: Boolean,
+)
+fun refresh() = viewModelScope.launch {
+    _state.value = _state.value.copy(loading = true)
+    val rows = repo.load()                 // an older request can finish last
+    _state.value.items.clear()             // mutates a published snapshot
+    _state.value.items.addAll(rows)
+    _state.value = _state.value.copy(loading = false)
+}</code></pre>
+<p>The review trap is believing that ViewModel, <code>UiState</code>, and “MVI” naming imply safe ownership. Ask which combinations are legal, who writes, whether refresh preserves content, which request owns the spinner, whether nested data is mutable, what survives rotation/process death, and whether payment truth is durable. Debug with typed <code>previousState → event/result → nextState</code>, correlation/request ID, owner/lifecycle, active operations, and stale rejection. Redact payloads; transition logs complement repository traces.</p>
+<h2 id="en-stage12-testing-observability">Testing reducers, holders, and integration boundaries<a aria-label="Link to section: Testing and observability" class="heading-anchor" href="#en-stage12-testing-observability">#</a></h2>
+<ul><li>Pure reducer table/property tests cover each event/result × phase, invariants, empty/stale/refresh/append behavior, stale rejection, and forbidden combinations.</li><li>ViewModel tests inject fake repositories, IDs, and dispatchers; virtual time scripts out-of-order completion, cancellation, duplicate submit, and operation recovery. Test public transitions, not private Flow details.</li><li>Plain state-driven Compose/View tests render loading/content/empty/blocking/non-blocking error and callbacks. Add a small wiring test for lifecycle collection and effects.</li><li>Integration tests prove repository source-of-truth writes, <code>SavedStateHandle</code> reconstruction, graph scoping, Fragment view recreation, and critical process-recreation paths.</li><li>Observability uses stable state/event names, correlation/request generation, transition latency, effect enqueue/handle/drop reason, retries, and rejected stale results without PII or secrets.</li></ul>
+<h2 id="en-stage12-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice questions and answers" class="heading-anchor" href="#en-stage12-likely-qa">#</a></h2>
+<p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
+<ol>
+<li><strong>MVVM, MVI, or UDF?</strong> They are not exclusive brands. Choose explicit ownership and flow; reducers help coupled transitions, while direct ViewModel methods fit a few independent actions.</li>
+<li><strong>What is UI state?</strong> A renderable snapshot including phase and metadata; domain data and widget mechanics can have different owners.</li>
+<li><strong>Is one <code>UiState</code> always better?</strong> No. Aggregates support atomic invariants; independent owners and lifetimes should often remain separate.</li>
+<li><strong>Sealed state or data class?</strong> Sealed for mutually exclusive phases, fields for orthogonal dimensions, and a hybrid to avoid both boolean soup and a combinatorial tree.</li>
+<li><strong>How do you model refresh failure with cache?</strong> Keep content, end refreshing, expose freshness/non-blocking error and retry; block only without renderable content.</li>
+<li><strong>State or event for navigation?</strong> Imperative navigation can be an effect; required business outcomes must be state or durable truth so recreation cannot lose them.</li>
+<li><strong>Does ViewModel survive process death?</strong> No. It survives owner-retained configuration changes; restore minimal inputs and reload durable truth after death.</li>
+<li><strong>What is <code>SavedStateHandle</code> for?</strong> Small restorable screen inputs/keys, not database or payment/order truth.</li>
+<li><strong>How do you prevent stale results?</strong> Cancel obsolete cooperative work and validate request generation at reduction; writes also need idempotency and reconciliation.</li>
+<li><strong>How do you test the architecture?</strong> Pure transitions, ViewModel race tests, plain UI render/callback tests, and focused lifecycle/persistence integration tests.</li>
+</ol>
+<h2 id="en-stage12-followups">4 senior follow-ups with answers<a aria-label="Link to section: 4 senior follow ups" class="heading-anchor" href="#en-stage12-followups">#</a></h2>
+<ol><li><strong>The collector was STOPPED during a snackbar.</strong> Define the contract: best-effort can be lost; required acknowledgement is state. “Single event” does not resolve delivery semantics.</li><li><strong>Two refreshes complete in reverse.</strong> The latest request owns refresh metadata and result reduction; compare generation. Cancellation alone is insufficient.</li><li><strong>A screen has an editor, list, and bottom sheet.</strong> Split editor/sheet mechanics from screen data; aggregate only facts requiring an atomic invariant.</li><li><strong>Payment succeeded and the app died before navigation.</strong> Persist server/database status, restore operation ID, observe success, and derive receipt navigation idempotently.</li></ol>
+<h2 id="en-stage12-self-check">4 unanswered self-checks<a aria-label="Link to section: 4 unanswered self checks" class="heading-anchor" href="#en-stage12-self-check">#</a></h2>
+<ol><li>Who owns, writes, restores, and outlives each state field?</li><li>Which impossible or hidden loading, stale, refresh, and pagination combinations does the model admit?</li><li>What is each asynchronous operation policy, and how does the reducer reject stale completion?</li><li>Which apparent “events” are actually durable business outcomes that must not be lost?</li></ol>
+<h2 id="en-stage12-english-skeletons">Interview-ready English answer skeletons<a aria-label="Link to section: Interview ready English answer skeletons" class="heading-anchor" href="#en-stage12-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you design Android UI architecture and state?</em></p>
+<h3 id="en-stage12-answer-30">~30-second answer<a aria-label="Link to section: 30 second answer" class="heading-anchor" href="#en-stage12-answer-30">#</a></h3>
+<blockquote><p>I treat MVVM and MVI as vocabulary, not guarantees. I assign every fact an owner, lifetime, source of truth, and durability. The UI sends semantic events and renders immutable state; a screen holder coordinates business data, while widget mechanics stay in the lowest UI owner. I use sealed types for exclusive phases and separate refresh or paging metadata. UDF does not serialize asynchronous work, so I define cancellation and request identity. Required outcomes such as payment completion are persisted, and I test reducers, races, recreation, and repository boundaries.</p></blockquote>
+<h3 id="en-stage12-answer-2min">~2-minute answer<a aria-label="Link to section: 2 minute answer" class="heading-anchor" href="#en-stage12-answer-2min">#</a></h3>
+<blockquote><p>I start with ownership and data flow rather than a pattern name. Domain data belongs to a repository or durable source of truth. A screen holder, often a ViewModel, combines it with screen input and exposes renderable UI state. Focus, scroll, animation, and similar mechanics stay local or in a plain UI holder unless business logic needs them. In Compose, a route collects lifecycle-aware state and passes values and callbacks to stateless content; Fragments use the same boundary with repeatOnLifecycle.</p><p>I use sealed phases for mutually exclusive initial loading, content, and blocking error. Refresh, stale status, non-blocking errors, and pagination are often orthogonal, so a hybrid avoids both boolean soup and an enormous sealed hierarchy. Snapshots are immutable, nested collections have controlled ownership, and atomic reducers are pure.</p><p>Events describe intent; the holder invokes business/data work and reduces typed results. Imperative focus, disposable snackbar, or navigation requests can be effects, but StateFlow is not an event queue. If losing an outcome after recreation is wrong—payment completion, order submission, or required acknowledgement—I persist it. A ViewModel survives configuration change, not process death, and SavedStateHandle stores reconstruction inputs rather than business truth.</p><p>Finally, UDF does not serialize concurrency. I define latest-wins, queueing, deduplication, or independent-key work, cancel obsolete jobs, and reject stale request IDs. Writes use idempotency and reconciliation. Tests cover reducers, out-of-order results, duplicate submit, lifecycle collection, saved-state reconstruction, and source-of-truth integration. Whether the team calls the result MVVM or MVI is secondary.</p></blockquote>
+<h2 id="en-stage12-sources">Official references<a aria-label="Link to section: Official references" class="heading-anchor" href="#en-stage12-sources">#</a></h2>
+<ul>
+<li><a href="https://developer.android.com/topic/architecture">Android: Guide to app architecture</a></li>
+<li><a href="https://developer.android.com/topic/architecture/ui-layer">Android: UI layer</a></li>
+<li><a href="https://developer.android.com/topic/architecture/ui-layer/stateholders">Android: State holders and UI state</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/viewmodel">Android: ViewModel overview</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/viewmodel/viewmodel-savedstate">Android: Saved state module for ViewModel</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/state">Compose: State and Jetpack Compose</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/libraries#streams">Compose: lifecycle-aware streams</a></li>
+<li><a href="https://kotlinlang.org/docs/sealed-classes.html">Kotlin: Sealed classes and interfaces</a> and <a href="https://kotlinlang.org/docs/data-classes.html">Data classes</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/update.html">Kotlin: MutableStateFlow.update</a></li>
 </ul>
 </div></details>
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="en-kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
