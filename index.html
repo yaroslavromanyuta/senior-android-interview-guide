@@ -504,6 +504,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="clean-architecture-android-modularization" href="#clean-architecture-android-modularization">Clean Architecture та Android modularization</a>
 </li>
 <li class="toc-major">
+<a data-target="jetpack-compose-runtime-state" href="#jetpack-compose-runtime-state">Jetpack Compose runtime та state</a>
+</li>
+<li class="toc-major">
 <a data-target="kotlin-for-android" href="#kotlin-for-android">Kotlin for Android</a>
 <ol class="toc-children">
 <li><a data-target="val-vs-var-immutability" href="#val-vs-var-immutability">val vs var, immutability</a></li>
@@ -819,6 +822,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </li>
 <li class="toc-major">
 <a data-target="en-clean-architecture-android-modularization" href="#en-clean-architecture-android-modularization">Clean Architecture and Android modularization</a>
+</li>
+<li class="toc-major">
+<a data-target="en-jetpack-compose-runtime-state" href="#en-jetpack-compose-runtime-state">Jetpack Compose runtime and state</a>
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-for-android" href="#en-kotlin-for-android">Kotlin for Android</a>
@@ -4000,6 +4006,210 @@ interface CheckoutRepository // declared beside the implementation, no consumer 
 <li><a href="https://docs.gradle.org/current/userguide/performance.html">Gradle: Improve build performance</a></li>
 <li><a href="https://docs.gradle.org/current/userguide/sharing_build_logic_between_subprojects.html">Gradle: Sharing build logic / convention plugins</a></li>
 <li><a href="https://kotlinlang.org/docs/gradle-configure-project.html">Kotlin: Configure a Gradle project</a> та <a href="https://kotlinlang.org/docs/visibility-modifiers.html#modules">Kotlin: Modules and visibility</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="jetpack-compose-runtime-state" data-title="Jetpack Compose runtime та state" id="jetpack-compose-runtime-state" open=""><summary class="major-summary"><span class="major-title">Jetpack Compose runtime та state</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<h2 id="stage14-uk-objective">Learning objective<a aria-label="Посилання на розділ: Learning objective" class="heading-anchor" href="#stage14-uk-objective">#</a></h2>
+<p>Після етапу ви маєте пояснити, як Compose будує й оновлює UI через composition і snapshot state; вибрати observable state, owner, lifetime та save boundary; розрізняти invalidation, recomposition, skipping і phase-specific work; безпечно застосувати <code>remember</code>, <code>rememberSaveable</code>, snapshot collections, <code>derivedStateOf</code>, mutation policies і <code>key</code>; та діагностувати stale UI, загублену identity і неправильні очікування від runtime. Stage 12 визначив screen-state architecture; тут фокус на Compose runtime/local state. <code>snapshotFlow</code> лише порівнюється, а effects/navigation належать Stage 15; глибокий performance analysis — Stage 16.</p>
+
+<h2 id="stage14-uk-mental-model">Senior mental model<a aria-label="Посилання на розділ: Senior mental model" class="heading-anchor" href="#stage14-uk-mental-model">#</a></h2>
+<blockquote><p><strong>Composition — це incremental execution із identity та tracked dependencies, не повторний inflate дерева.</strong> Compiler додає runtime protocol; Composer зіставляє call sites/groups із slot table, runtime відстежує snapshot reads, а зміна може invalidate конкретний restart scope або пізнішу phase. Invalidation лише робить роботу eligible: runtime може coalesce, skip або cancel її.</p></blockquote>
+<ul>
+<li>Описуйте чотири окремі речі: state write → invalidation → scheduled work → фактично виконані composition/layout/draw.</li>
+<li>State має одночасно бути observable, належати правильному owner-у й мати правильний lifetime. <code>remember</code> вирішує лише positional retention у composition.</li>
+<li>Composable — декларативний опис, який може виконатися повторно, у іншому порядку, бути пропущений або скасований; тому він idempotent і side-effect-free.</li>
+</ul>
+
+<h2 id="stage14-uk-runtime-topology">Runtime, internals та topology<a aria-label="Посилання на розділ: Runtime internals and topology" class="heading-anchor" href="#stage14-uk-runtime-topology">#</a></h2>
+<pre><code class="language-text">@Composable source
+  → Compose compiler protocol (Composer + change/group metadata)
+  → initial composition: execute calls, create groups/slots, emit UI tree
+  → snapshot reads associate state with observing scopes/phases
+state write → snapshot/apply → invalidate affected observations
+  → recomposition may re-execute restart scopes and skip unchanged groups
+  → apply changes → layout (measure/place) → draw
+
+identity ≈ call-site/group position + explicit key where supplied
+remembered value lives in its slot while that identity remains composed</code></pre>
+<p>Slot table — runtime representation of composition groups and remembered slots, not a public DOM чи stable storage format. Group boundaries and restart scopes are introduced by compiler/runtime protocol around eligible composable calls. Positional memoization normally identifies an invocation by call site and relative execution position. Initial composition creates topology and values; recomposition revisits invalidated portions and records changes. Do not promise “every state change reruns the whole function/tree”: restartability, eligibility for skipping, actual parameter comparisons and observation location determine work.</p>
+<p>Conditional calls change positions. In loops/reordered siblings, explicit <code>key(item.id)</code> gives stable local identity so remembered objects and lifecycle follow the logical item. Keys must be unique among siblings at that call site and stable for the item; index keys preserve position, not item identity.</p>
+
+<h2 id="stage14-uk-snapshots">Snapshot reads, writes, mutable snapshots і threads<a aria-label="Посилання на розділ: Snapshot reads writes and mutable snapshots" class="heading-anchor" href="#stage14-uk-snapshots">#</a></h2>
+<ul>
+<li><code>MutableState</code> і snapshot collections participate у Compose snapshot system. Reads are observed in a context; writes create state records and, when applied/committed, notify relevant observers according to mutation policy.</li>
+<li>A mutable snapshot provides isolated reads/writes until <code>apply</code>. Concurrent snapshots can conflict when incompatible writes target the same state; apply can fail and callers using low-level snapshot APIs need an explicit retry/merge/error policy. Do not describe snapshots as database transactions or global locks.</li>
+<li>Visibility belongs to snapshot/apply semantics. Arbitrary cross-thread mutation of ordinary fields is neither tracked nor made safe. Use supported snapshot APIs, confine UI state ownership where practical, publish/apply changes correctly, and synchronize non-snapshot mutable data with normal concurrency tools.</li>
+<li>Atomicity of a snapshot apply does not make external I/O atomic, does not serialize business operations, and does not guarantee every intermediate value is rendered.</li>
+</ul>
+
+<h2 id="stage14-uk-phases">Composition, layout і draw phases<a aria-label="Посилання на розділ: Composition layout and draw phases" class="heading-anchor" href="#stage14-uk-phases">#</a></h2>
+<table><thead><tr><th>Де read</th><th>Що описує</th><th>Типова invalidation</th></tr></thead><tbody>
+<tr><td>Composition</td><td>Що входить у UI, parameters/modifiers</td><td>Recomposition відповідного scope; потім зміни можуть вимагати layout/draw.</td></tr>
+<tr><td>Layout: measure/place</td><td>Size та position</td><td>Remeasure або placement; measure change може propagate.</td></tr>
+<tr><td>Draw</td><td>Pixels/graphics</td><td>Redraw без обов’язкової recomposition/layout.</td></tr>
+</tbody></table>
+<p>Runtime tracks phase of a snapshot read. Перенесення fast-changing read у placement/draw lambda може звузити work, лише якщо UI structure не залежить від value. Це не універсальна оптимізація: correctness і measurement dependencies важливіші; детальне profiling — Stage 16.</p>
+
+<h2 id="stage14-uk-state-authoring">State authoring: observable values та collections<a aria-label="Посилання на розділ: State authoring and collections" class="heading-anchor" href="#stage14-uk-state-authoring">#</a></h2>
+<pre><code class="language-kotlin">@Composable
+fun Filters(initial: Set&lt;String&gt;) {
+    var query by remember { mutableStateOf("") }
+    val selected = remember { mutableStateListOf&lt;String&gt;() }
+    // query assignment and selected.add/remove are observable snapshot writes.
+}
+
+// Hidden mutation: State's value reference never changes.
+val rows = remember { mutableStateOf(mutableListOf&lt;Row&gt;()) }
+rows.value.add(newRow) // MutableList mutation is not observed by mutableStateOf.
+// Prefer SnapshotStateList, or replace an immutable value:
+// rows.value = rows.value + newRow</code></pre>
+<p><code>remember { mutableStateOf(x) }</code> both retains the state holder while the call identity remains and makes assignments observable. A plain local <code>var</code> resets on execution; a remembered ordinary mutable object survives but does not notify Compose. <code>mutableStateListOf</code>/<code>mutableStateMapOf</code> observe their collection operations, not hidden mutation inside arbitrary element objects. Prefer immutable element replacement or observable fields with explicit ownership.</p>
+<p><code>remember(key1, key2) { build(...) }</code> recreates cached value when a key changes. Missing a dependency produces a stale cache; using a volatile key destroys retention. The calculation should not perform external effects.</p>
+
+<h2 id="stage14-uk-persistence">remember, rememberSaveable, ViewModel та Saver<a aria-label="Посилання на розділ: Remember saveable ViewModel and Saver" class="heading-anchor" href="#stage14-uk-persistence">#</a></h2>
+<table><thead><tr><th>Mechanism</th><th>Lifetime / purpose</th><th>Boundary</th></tr></thead><tbody>
+<tr><td><code>remember</code></td><td>Recomposition while identity remains composed</td><td>Does not survive leaving composition, Activity recreation, or process death.</td></tr>
+<tr><td><code>rememberSaveable</code></td><td>Small UI element state restorable through <code>SaveableStateRegistry</code></td><td>Requires Bundle-compatible value or custom <code>Saver</code>; not durable storage.</td></tr>
+<tr><td><code>ViewModel</code></td><td>Screen/business state owner across configuration changes</td><td>Does not itself survive process death; use <code>SavedStateHandle</code> for minimal restorable input and durable repository for business truth.</td></tr>
+</tbody></table>
+<p><code>Saver</code>, <code>mapSaver</code> і <code>listSaver</code> convert a state holder to minimal saveable values and reconstruct it. Save query, selected IDs or scroll key/index—not repositories, callbacks, coroutine scopes, large object graphs or duplicate server data. Restoration can occur after system recreation; validate missing/old values and rebuild runtime-only dependencies.</p>
+
+<h2 id="stage14-uk-hoisting">State hoisting та plain state holders<a aria-label="Посилання на розділ: State hoisting and plain state holders" class="heading-anchor" href="#stage14-uk-hoisting">#</a></h2>
+<ul>
+<li>Keep simple element state local when one composable owns it. Hoist value + events to the lowest common owner that must read or change it—not automatically to the screen root.</li>
+<li>Extract a plain state holder when cohesive UI behavior coordinates several element states. Create it with a <code>remember…State</code> factory; if restoration matters, save minimal reconstructible values with a truthful Saver.</li>
+<li>Business rules, repositories and durable screen state belong to a screen owner such as ViewModel/component as established in Stage 12. Pass observable immutable values/callbacks into stateless rendering.</li>
+<li>State holder lifetime must match objects it owns. A composition-owned holder may safely encapsulate Compose UI state; do not leak it into a longer-lived owner.</li>
+</ul>
+
+<h2 id="stage14-uk-derived-policies">derivedStateOf та mutation policies<a aria-label="Посилання на розділ: Derived state and mutation policies" class="heading-anchor" href="#stage14-uk-derived-policies">#</a></h2>
+<p><code>derivedStateOf</code> tracks snapshot reads and is useful when dependencies change more often than the derived result needed by consumers—for example, scroll index to “show back to top”. It is not a generic memoization wrapper and is not free: it adds observation, calculation and equality bookkeeping. For ordinary computation that should update whenever inputs do, calculate directly or use keyed <code>remember</code> only when avoiding a proven expensive recomputation.</p>
+<ul>
+<li><code>structuralEqualityPolicy()</code>: equivalent by <code>==</code> is not a change; common default.</li>
+<li><code>referentialEqualityPolicy()</code>: only a different reference counts; useful only when identity is the contract.</li>
+<li><code>neverEqualPolicy()</code>: every assignment counts as change; can increase invalidations and is not an event-delivery guarantee.</li>
+</ul>
+<p>Choose a policy that matches semantic equality. <code>snapshotFlow</code> also observes snapshot reads but exports changes into Flow for effect/collection work; detailed keys, cancellation and side effects are reserved for Stage 15.</p>
+
+<h2 id="stage14-uk-identity-lifecycle">Identity, remembered-object lifecycle та disposal boundary<a aria-label="Посилання на розділ: Identity lifecycle and disposal" class="heading-anchor" href="#stage14-uk-identity-lifecycle">#</a></h2>
+<p>Remembered values belong to a composition location. If the call leaves composition because a branch disappears, parent is removed, key changes, or host composition is disposed, its slots are forgotten and a later entry creates new values. Reordering unkeyed siblings can associate retained state with the wrong logical item; stable keys move identity with data. Runtime cleanup/disposal is tied to leaving composition, but imperative registration/unregistration belongs to effect APIs in Stage 15—not a <code>remember</code> initializer.</p>
+
+<h2 id="stage14-uk-compiler-interop">Compiler protocol, stability та non-Compose state interop<a aria-label="Посилання на розділ: Compiler stability and interoperability" class="heading-anchor" href="#stage14-uk-compiler-interop">#</a></h2>
+<p>The Compose compiler transforms composable calls to participate in a protocol conceptually involving a <code>Composer</code>, groups, changed metadata, restart scopes and skipping. Treat this as a mental model, not source/API contract: generated signatures and runtime representation may evolve. Stability helps the compiler/runtime reason about whether inputs may have changed and how comparison/skipping can work. <code>@Stable</code>/<code>@Immutable</code> are promises; annotation does not freeze a mutable object, observe hidden fields, or make mutable data safe. False promises can cause stale UI. Strong-skipping defaults and comparison behavior depend on compiler version; Stage 16 covers reports and performance.</p>
+<p>Flow/StateFlow, LiveData, RxJava or custom observables are not automatically snapshot state. Adapt them to Compose <code>State</code> with lifecycle-aware integrations such as <code>collectAsStateWithLifecycle</code>, <code>observeAsState</code>, <code>subscribeAsState</code>, or a carefully implemented adapter. Collection lifetime, initial value, equality/conflation, thread and error semantics remain those of the source/integration.</p>
+
+<h2 id="stage14-uk-guarantees">Guarantees vs explicit non-guarantees<a aria-label="Посилання на розділ: Guarantees and non guarantees" class="heading-anchor" href="#stage14-uk-guarantees">#</a></h2>
+<table><thead><tr><th>Корисний contract</th><th>Не гарантує</th></tr></thead><tbody>
+<tr><td>Observed snapshot reads establish dependencies; applied writes can invalidate observers.</td><td>Every invalidation reruns the whole UI, or every intermediate write is rendered.</td></tr>
+<tr><td><code>remember</code> retains a slot while identity stays composed.</td><td>Survival after leaving composition, recreation, or process death.</td></tr>
+<tr><td><code>rememberSaveable</code> integrates with <code>SaveableStateRegistry</code>.</td><td>Durable storage; only Bundle-compatible/custom-saved minimal values are eligible.</td></tr>
+<tr><td>Recomposition produces a new description.</td><td>Execution at a fixed time/order: it may occur at any time, be skipped, coalesced or cancelled.</td></tr>
+<tr><td><code>mutableStateOf</code> observes writes to its value property.</td><td>Observation of internal mutation in an arbitrary mutable object.</td></tr>
+<tr><td>Stability metadata can enable reasoning/skipping.</td><td>That a <code>@Stable</code> annotation makes mutable data immutable, observable or thread-safe.</td></tr>
+</tbody></table>
+<p>Therefore composables must be idempotent and side-effect-free. <code>derivedStateOf</code> is not free, snapshot apply is not persistence, and a scheduled recomposition is not a delivery acknowledgement.</p>
+
+<h2 id="stage14-uk-version-sensitive">Version-sensitive behavior<a aria-label="Посилання на розділ: Version sensitive behavior" class="heading-anchor" href="#stage14-uk-version-sensitive">#</a></h2>
+<ul>
+<li>Compose compiler plugin, Kotlin integration, strong-skipping defaults, stability inference, lambda memoization and generated protocol evolve. Pin Kotlin/Compose versions and inspect current release notes/compiler reports before a performance claim.</li>
+<li>Runtime group/slot/snapshot implementation details may change. Rely on public observable contracts, not group counts, generated parameter layouts or slot-table shape as API.</li>
+<li>Saveable types and registry integration depend on platform/host and library version. Verify custom Saver round trips and recreation on supported Android versions.</li>
+<li>Snapshot APIs may carry experimental annotations or evolve conflict behavior; check the exact runtime API docs and never infer general thread safety from one successful test.</li>
+</ul>
+
+<h2 id="stage14-uk-decision-framework">Decision framework<a aria-label="Посилання на розділ: Decision framework" class="heading-anchor" href="#stage14-uk-decision-framework">#</a></h2>
+<ol>
+<li>Назвіть fact and owner: UI element, shared UI behavior, screen/business state, or durable data.</li>
+<li>Choose observable representation: immutable value replacement, <code>MutableState</code>, snapshot list/map, or lifecycle-aware adapter from external observable state.</li>
+<li>Choose lifetime: local execution, composition identity, saveable recreation, ViewModel screen lifetime, or durable repository; save only minimum reconstruction input.</li>
+<li>Mark every snapshot read by phase and every mutable boundary. Ask whether hidden mutation bypasses both State setter and snapshot collection operation.</li>
+<li>Check identity under conditionals/reordering and choose stable keys; enumerate when remembered objects leave composition.</li>
+<li>Only then consider <code>derivedStateOf</code>, custom policy or phase deferral, with measurement and version-specific evidence deferred to Stage 16.</li>
+</ol>
+
+<h2 id="stage14-uk-tradeoffs">Trade-offs та failure modes<a aria-label="Посилання на розділ: Trade offs and failure modes" class="heading-anchor" href="#stage14-uk-tradeoffs">#</a></h2>
+<ul>
+<li>Local state minimizes coupling, but duplicate owners diverge; over-hoisting creates broad APIs and needless invalidation.</li>
+<li>Immutable replacement gives clear snapshots/equality but allocates; snapshot collections offer granular observable operations but expose mutable ownership and do not observe mutable element internals.</li>
+<li><code>rememberSaveable</code> improves recreation UX but Bundle size/schema and Saver bugs matter; saving complete models duplicates durable truth.</li>
+<li>Structural equality suppresses equivalent assignments but expensive/broken equality hurts; referential policy misses in-place semantic changes; never-equal amplifies work.</li>
+<li>Missing remember keys retain stale dependencies; excessive keys recreate holders and lose user state. Missing item keys transfer state across reordered data; unstable keys reset it.</li>
+<li>Reading fast state in composition may broaden work; moving the read to draw cannot work when value changes structure or measurement.</li>
+</ul>
+
+<h2 id="stage14-uk-production-scenario">Production scenario: reorderable product filters<a aria-label="Посилання на розділ: Production scenario" class="heading-anchor" href="#stage14-uk-production-scenario">#</a></h2>
+<p><strong>Гіпотетично:</strong> ViewModel exposes immutable products/filter results as <code>StateFlow</code>; route collects with <code>collectAsStateWithLifecycle</code>. Query that drives repository search belongs to ViewModel; expanded chip and transient draft selection stay at their lowest UI owner. A plain <code>FilterPanelState</code> coordinates expansion and selection, remembered by stable category ID. A Saver stores only selected IDs and query text, then reconstructs runtime objects.</p>
+<pre><code class="language-kotlin">@Composable
+fun ProductRows(products: List&lt;ProductUi&gt;, onOpen: (String) -&gt; Unit) {
+    LazyColumn {
+        items(products, key = { it.id }) { product -&gt;
+            var expanded by rememberSaveable(product.id) { mutableStateOf(false) }
+            ProductRow(product, expanded, { expanded = !expanded }) { onOpen(product.id) }
+        }
+    }
+}</code></pre>
+<p>Stable item key keeps the slot with product identity during sorting. The team uses <code>mutableStateListOf</code> only for UI-owned draft operations; repository results arrive as new immutable lists. A “show top” flag may use <code>derivedStateOf { listState.firstVisibleItemIndex &gt; 0 }</code> because index changes more often than the Boolean. Scroll effects belong to Stage 15.</p>
+
+<h2 id="stage14-uk-review-trap">Code-review/debug trap<a aria-label="Посилання на розділ: Code review and debugging trap" class="heading-anchor" href="#stage14-uk-review-trap">#</a></h2>
+<pre><code class="language-kotlin">@Stable
+class CartUiState(val lines: MutableList&lt;Line&gt;) // false stability promise
+
+@Composable fun Cart(state: CartUiState, currency: Currency) {
+    val total = remember { state.lines.sumOf { it.price } } // stale: missing keys
+    state.lines.add(promoLine)                              // hidden write in composition
+    state.lines.forEachIndexed { index, line -&gt;
+        key(index) { EditableLine(line) }                   // identity follows position
+    }
+}</code></pre>
+<p>Symptoms: total is stale, mutation may not invalidate, recomposition can loop if another observed state is written, and editor state moves after insertion. Debug in order: identify owner/lifetime; log immutable state versions; find exact snapshot reads/writes and phase; verify setter/collection operation; inspect remember keys and sibling keys; remove false stability annotation. Fix with immutable replacement or snapshot collection under one owner, pure composition, <code>remember(state.lines, currency)</code> only if caching is justified, and <code>key(line.id)</code>. Then reproduce reorder/recreation/process restoration; performance tooling waits for Stage 16.</p>
+
+<h2 id="stage14-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice questions and answers" class="heading-anchor" href="#stage14-uk-likely-qa">#</a></h2>
+<p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
+<ol>
+<li><strong>Що робить composition?</strong> Виконує composable calls, зіставляє groups/slots за identity і створює або оновлює UI description; initial composition будує topology, recomposition інкрементально переглядає invalidated scopes.</li>
+<li><strong>Чи state write recomposes everything?</strong> Ні. Applied write invalidates observed scopes/phases; work may be coalesced, skipped or cancelled, а actual subtree залежить від reads, restart scopes і parameter changes.</li>
+<li><strong>Що гарантує <code>remember</code>?</strong> Positional retention, доки та сама identity лишається у composition. Не recreation, не leaving composition і не process death.</li>
+<li><strong>Чому <code>mutableStateOf(mutableListOf())</code> може не оновити UI?</strong> <code>add</code> mutates internals без State setter. Замініть immutable list або використайте snapshot state list.</li>
+<li><strong>Коли потрібен <code>rememberSaveable</code>?</strong> Для мінімального UI element state, який має відновитися через registry після recreation/process recreation; це не durable storage.</li>
+<li><strong>Коли потрібен <code>derivedStateOf</code>?</strong> Коли dependencies змінюються частіше, ніж meaningful derived result; не для кожного expression і не без cost.</li>
+<li><strong>Як працює identity в reordered list?</strong> Call-site position є default; stable unique item key переносить remembered state з logical item, тоді як index може прив’язати його до позиції.</li>
+<li><strong>Що дає mutation policy?</strong> Визначає, чи assignment вважається зміною: structural, referential або always changed; це не робить hidden mutation observable.</li>
+<li><strong>Чи <code>@Stable</code> робить клас safe?</strong> Ні. Це semantic promise runtime/compiler; усі observable mutations мають лишатися observable, а hidden mutable fields роблять promise false.</li>
+<li><strong>Як інтегрувати StateFlow/LiveData?</strong> Перетворити на Compose State через lifecycle-aware adapter і зберегти source semantics щодо initial value, lifetime, errors та equality.</li>
+</ol>
+
+<h2 id="stage14-uk-followups">4 senior follow-ups з відповідями<a aria-label="Посилання на розділ: 4 senior follow ups" class="heading-anchor" href="#stage14-uk-followups">#</a></h2>
+<ol>
+<li><strong>Background threads simultaneously edit snapshot state.</strong> Define owner and mutable snapshot boundaries; apply explicitly, handle conflicts/retry, and do not mix unsynchronized ordinary mutable fields. Validate against the exact runtime version.</li>
+<li><strong>Rows retain wrong text after sorting.</strong> Positional identity followed index. Use stable unique business keys and ensure nested remembers are inside that keyed identity.</li>
+<li><strong>Saved state exceeds limits.</strong> Persist durable model in repository; Saver stores IDs/query/position needed to reconstruct. Test registry restoration and schema fallback.</li>
+<li><strong>A draw-only animation causes recomposition.</strong> Find where the state is actually read. If structure is constant, defer read to draw/placement API; if measurement/structure depends on it, that earlier phase is correct.</li>
+</ol>
+
+<h2 id="stage14-uk-self-check">4 unanswered self-checks<a aria-label="Посилання на розділ: 4 unanswered self checks" class="heading-anchor" href="#stage14-uk-self-check">#</a></h2>
+<ol>
+<li>Для кожного mutable value на вашому screen: хто owner, який observable write path і який lifetime?</li>
+<li>Які remembered values можуть отримати stale dependencies або перейти до іншого item після reorder?</li>
+<li>Які reads відбуваються в composition, measure/place і draw, та яка найраніша правильна phase?</li>
+<li>Що реально відновиться після branch removal, Activity recreation і process death, а що реконструюється з durable truth?</li>
+</ol>
+
+<h2 id="stage14-uk-english-skeletons">Interview-ready English answer skeletons<a aria-label="Посилання на розділ: Interview ready English answer skeletons" class="heading-anchor" href="#stage14-uk-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How does Compose runtime state drive recomposition, and how do you choose state ownership and retention?</em></p>
+<h3 id="stage14-uk-answer-30">~30-second answer<a aria-label="Посилання на розділ: 30 second answer" class="heading-anchor" href="#stage14-uk-answer-30">#</a></h3>
+<blockquote><p>Compose is an incremental runtime. The compiler makes composable calls participate in groups and restart scopes, while the slot table retains values by call-site identity. Snapshot reads register dependencies; applied writes invalidate the scopes or phases that observed them, but work can be coalesced, skipped, or cancelled. I use observable immutable replacement or snapshot collections, hoist to the lowest owner, use remember only for composition lifetime, and rememberSaveable only for minimal registry-saveable reconstruction data. Stable item keys preserve identity. Composables remain idempotent and side-effect-free.</p></blockquote>
+<h3 id="stage14-uk-answer-2min">~2-minute answer<a aria-label="Посилання на розділ: 2 minute answer" class="heading-anchor" href="#stage14-uk-answer-2min">#</a></h3>
+<blockquote><p>I model Compose as incremental tree construction and update. The compiler transforms composable calls into a runtime protocol conceptually involving a Composer, groups, change metadata, restart scopes, and skipping. The slot table stores group structure and remembered values by positional call-site identity. Initial composition creates that topology; recomposition revisits invalidated scopes. A stable explicit key is essential when conditional or reordered content must retain logical item identity.</p><p>Snapshot state records reads and writes. An applied write invalidates observers that read the changed value. That is not a promise that the whole tree reruns: invalidations can be coalesced, groups can be skipped, and work can be cancelled. Mutable snapshots isolate changes until apply and concurrent writes can conflict, so low-level users need explicit apply, conflict, and thread ownership rules. Ordinary mutable fields and a MutableList inside mutableStateOf are not observed when mutated internally.</p><p>I separate composition, layout, and draw reads because invalidation can restart only the relevant later phase. I author local state with remember plus mutableStateOf, or snapshot lists/maps, and replace immutable values at ownership boundaries. Missing remember keys create stale caches; volatile keys recreate state. I hoist only to the lowest common owner, extract a plain state holder for cohesive UI logic, and keep business/durable state in a ViewModel and repository.</p><p>Remember survives only while its identity remains composed. RememberSaveable uses the SaveableStateRegistry and Bundle-compatible or custom-Saver values; it is not durable storage. A Saver stores minimal IDs or input needed to rebuild objects. derivedStateOf is justified when dependencies change more often than the meaningful result, and it has overhead. Mutation policy must match semantic equality. Compiler stability and skipping behavior are version-sensitive, and Stable is a promise—not a mechanism that makes mutable data safe. Therefore composables are idempotent and side-effect-free; effects belong to the next stage and deep profiling to Stage 16.</p></blockquote>
+
+<h2 id="stage14-uk-sources">Офіційні джерела<a aria-label="Посилання на розділ: Офіційні джерела" class="heading-anchor" href="#stage14-uk-sources">#</a></h2>
+<ul>
+<li><a href="https://developer.android.com/develop/ui/compose/mental-model">Thinking in Compose</a> та <a href="https://developer.android.com/develop/ui/compose/lifecycle">Lifecycle of composables</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/state">State and Jetpack Compose</a>, <a href="https://developer.android.com/develop/ui/compose/state-hoisting">Where to hoist state</a>, <a href="https://developer.android.com/develop/ui/compose/state-saving">Save UI state in Compose</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/phases">Jetpack Compose phases</a> та <a href="https://developer.android.com/develop/ui/compose/performance/phases">Compose phases and performance</a></li>
+<li><a href="https://developer.android.com/reference/kotlin/androidx/compose/runtime/package-summary">Compose runtime API</a>, <a href="https://developer.android.com/reference/kotlin/androidx/compose/runtime/snapshots/Snapshot">Snapshot API</a>, <a href="https://developer.android.com/reference/kotlin/androidx/compose/runtime/snapshots/MutableSnapshot">MutableSnapshot API</a></li>
+<li><a href="https://developer.android.com/reference/kotlin/androidx/compose/runtime/SnapshotMutationPolicy">SnapshotMutationPolicy API</a> та <a href="https://developer.android.com/reference/kotlin/androidx/compose/runtime/saveable/package-summary">runtime-saveable API</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/performance/stability">Stability in Compose</a> та <a href="https://developer.android.com/develop/ui/compose/compiler">Compose compiler</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/libraries">Compose and other libraries</a> та <a href="https://developer.android.com/reference/kotlin/androidx/lifecycle/compose/package-summary">Lifecycle Compose API</a></li>
 </ul>
 </div></details>
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
@@ -10831,6 +11041,208 @@ interface CheckoutRepository // next to implementation, no consumer capability</
 <li><a href="https://docs.gradle.org/current/userguide/performance.html">Gradle: Improve build performance</a></li>
 <li><a href="https://docs.gradle.org/current/userguide/sharing_build_logic_between_subprojects.html">Gradle: Sharing build logic / convention plugins</a></li>
 <li><a href="https://kotlinlang.org/docs/gradle-configure-project.html">Kotlin: Configure a Gradle project</a> and <a href="https://kotlinlang.org/docs/visibility-modifiers.html#modules">Kotlin: Modules and visibility</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="jetpack-compose-runtime-state" data-title="Jetpack Compose runtime and state" id="en-jetpack-compose-runtime-state" open=""><summary class="major-summary"><span class="major-title">Jetpack Compose runtime and state</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<h2 id="en-stage14-objective">Learning objective<a aria-label="Link to section: Learning objective" class="heading-anchor" href="#en-stage14-objective">#</a></h2>
+<p>After this stage, you should explain how composition and snapshot state construct and update UI; select an observable representation, owner, lifetime, and save boundary; distinguish invalidation, recomposition, skipping, and phase-specific work; use <code>remember</code>, <code>rememberSaveable</code>, snapshot collections, <code>derivedStateOf</code>, mutation policies, and <code>key</code> safely; and diagnose stale UI or lost identity. Stage 12 already covers screen-state architecture. <code>snapshotFlow</code> is comparative only; effects/navigation belong to Stage 15 and deep performance work to Stage 16.</p>
+
+<h2 id="en-stage14-mental-model">Senior mental model<a aria-label="Link to section: Senior mental model" class="heading-anchor" href="#en-stage14-mental-model">#</a></h2>
+<blockquote><p><strong>Composition is incremental execution with identity and tracked dependencies, not repeated tree inflation.</strong> The compiler adds a runtime protocol; a Composer associates call sites and groups with a slot table; snapshot reads are tracked; and a change can invalidate a restart scope or a later phase. Invalidation makes work eligible—it does not promise execution.</p></blockquote>
+<ul>
+<li>Separate state write, invalidation, scheduled work, and the composition/layout/draw work that actually executes.</li>
+<li>State must be observable, have one truthful owner, and match the required lifetime. <code>remember</code> provides only positional retention in composition.</li>
+<li>A composable can rerun, run in a different order, be skipped, or be cancelled, so it must be idempotent and side-effect-free.</li>
+</ul>
+
+<h2 id="en-stage14-runtime-topology">Runtime, internals, and topology<a aria-label="Link to section: Runtime internals and topology" class="heading-anchor" href="#en-stage14-runtime-topology">#</a></h2>
+<pre><code class="language-text">@Composable source
+  → compiler protocol (Composer + change/group metadata)
+  → initial composition: execute calls, create groups/slots, emit UI tree
+  → snapshot reads associate state with observing scopes/phases
+state write → snapshot/apply → invalidate affected observations
+  → recomposition may re-execute restart scopes and skip unchanged groups
+  → apply changes → layout (measure/place) → draw
+
+identity ≈ call-site/group position + explicit key where supplied
+remembered value lives in its slot while that identity remains composed</code></pre>
+<p>The slot table is a runtime representation of composition groups and remembered slots, not a public DOM or durable storage format. Compiler/runtime protocol creates eligible group and restart boundaries. Positional memoization normally identifies an invocation by call site and relative execution position. Initial composition builds topology and values; recomposition revisits invalidated portions and records updates. Do not claim that every write reruns a whole function or tree: restartability, skipping eligibility, actual parameter comparisons, and observation location determine work.</p>
+<p>Conditional calls alter positions. In loops or reordered siblings, <code>key(item.id)</code> gives stable local identity so remembered objects and lifecycle follow the logical item. A key must be stable and unique among siblings at that call site; an index preserves position, not item identity.</p>
+
+<h2 id="en-stage14-snapshots">Snapshot reads, writes, mutable snapshots, and threads<a aria-label="Link to section: Snapshot reads writes and mutable snapshots" class="heading-anchor" href="#en-stage14-snapshots">#</a></h2>
+<ul>
+<li><code>MutableState</code> and snapshot collections participate in the snapshot system. Reads are observed in context; writes create state records and, when applied, notify relevant observers according to mutation policy.</li>
+<li>A mutable snapshot isolates reads/writes until <code>apply</code>. Concurrent snapshots can conflict on incompatible writes; apply can fail, so low-level callers need an explicit retry, merge, or error policy. A snapshot is not a database transaction or global lock.</li>
+<li>Visibility follows snapshot/apply semantics. Arbitrary cross-thread ordinary-field mutation is neither tracked nor made safe. Use supported snapshot APIs, clear ownership, correct publication/apply, and normal synchronization for non-snapshot data.</li>
+<li>Atomic snapshot apply does not make external I/O atomic, serialize business operations, or guarantee rendering of every intermediate value.</li>
+</ul>
+
+<h2 id="en-stage14-phases">Composition, layout, and draw phases<a aria-label="Link to section: Composition layout and draw phases" class="heading-anchor" href="#en-stage14-phases">#</a></h2>
+<table><thead><tr><th>Read location</th><th>Describes</th><th>Typical invalidation</th></tr></thead><tbody>
+<tr><td>Composition</td><td>What UI exists and its parameters/modifiers</td><td>Recompose the observing scope; changes may then require layout/draw.</td></tr>
+<tr><td>Layout: measure/place</td><td>Size and position</td><td>Remeasure or placement; measurement can propagate.</td></tr>
+<tr><td>Draw</td><td>Pixels/graphics</td><td>Redraw without necessarily recomposing or laying out.</td></tr>
+</tbody></table>
+<p>The runtime tracks the phase of a snapshot read. Moving a fast-changing read to placement or draw can narrow work only when structure does not depend on the value. It is not a universal optimization; correctness and measurement dependencies come first, and Stage 16 owns detailed profiling.</p>
+
+<h2 id="en-stage14-state-authoring">State authoring: observable values and collections<a aria-label="Link to section: State authoring and collections" class="heading-anchor" href="#en-stage14-state-authoring">#</a></h2>
+<pre><code class="language-kotlin">@Composable
+fun Filters(initial: Set&lt;String&gt;) {
+    var query by remember { mutableStateOf("") }
+    val selected = remember { mutableStateListOf&lt;String&gt;() }
+    // Assigning query and selected.add/remove are observable snapshot writes.
+}
+
+val rows = remember { mutableStateOf(mutableListOf&lt;Row&gt;()) }
+rows.value.add(newRow) // Hidden mutation: State's value reference did not change.
+// Prefer SnapshotStateList, or rows.value = rows.value + newRow.</code></pre>
+<p><code>remember { mutableStateOf(x) }</code> retains the state holder while call identity remains and makes assignments observable. A plain local <code>var</code> resets on execution; a remembered ordinary mutable object survives but sends no notification. <code>mutableStateListOf</code>/<code>mutableStateMapOf</code> observe collection operations, not hidden mutation inside arbitrary element objects. Prefer immutable element replacement or explicitly owned observable fields.</p>
+<p><code>remember(key1, key2) { build(...) }</code> recreates the cached value when a key changes. A missing dependency creates a stale cache; a volatile key destroys retention. Its calculation should not perform external effects.</p>
+
+<h2 id="en-stage14-persistence">remember, rememberSaveable, ViewModel, and Saver<a aria-label="Link to section: Remember saveable ViewModel and Saver" class="heading-anchor" href="#en-stage14-persistence">#</a></h2>
+<table><thead><tr><th>Mechanism</th><th>Lifetime / purpose</th><th>Boundary</th></tr></thead><tbody>
+<tr><td><code>remember</code></td><td>Recomposition while identity remains composed</td><td>Does not survive leaving composition, Activity recreation, or process death.</td></tr>
+<tr><td><code>rememberSaveable</code></td><td>Small UI element state through <code>SaveableStateRegistry</code></td><td>Needs a Bundle-compatible value or custom <code>Saver</code>; it is not durable storage.</td></tr>
+<tr><td><code>ViewModel</code></td><td>Screen/business owner across configuration changes</td><td>Does not itself survive process death; use <code>SavedStateHandle</code> for minimal restoration input and a repository for durable truth.</td></tr>
+</tbody></table>
+<p><code>Saver</code>, <code>mapSaver</code>, and <code>listSaver</code> convert a holder to minimal saveable values and reconstruct it. Save a query, selected IDs, or a scroll key/index—not repositories, callbacks, coroutine scopes, huge object graphs, or duplicate server data. Validate missing/old restored values and rebuild runtime-only dependencies.</p>
+
+<h2 id="en-stage14-hoisting">State hoisting and plain state holders<a aria-label="Link to section: State hoisting and plain state holders" class="heading-anchor" href="#en-stage14-hoisting">#</a></h2>
+<ul>
+<li>Keep simple element state local when one composable owns it. Hoist value and events to the lowest common owner that must read or change them, not automatically to the screen root.</li>
+<li>Extract a plain state holder when cohesive UI behavior coordinates several element states. Create it through a <code>remember…State</code> factory; if restoration matters, save minimal reconstructible values with a truthful Saver.</li>
+<li>Business rules, repositories, and durable screen state belong to the Stage 12 screen owner such as a ViewModel/component. Feed observable immutable values and callbacks into stateless rendering.</li>
+<li>A holder's lifetime must match the objects it owns. Do not leak a composition-owned holder into a longer-lived owner.</li>
+</ul>
+
+<h2 id="en-stage14-derived-policies">derivedStateOf and mutation policies<a aria-label="Link to section: Derived state and mutation policies" class="heading-anchor" href="#en-stage14-derived-policies">#</a></h2>
+<p><code>derivedStateOf</code> tracks snapshot reads and is useful when dependencies change more often than the meaningful derived result—for example, scroll index versus “show back to top”. It is not generic memoization and it is not free: observation, calculation, and equality bookkeeping have a cost. Calculate ordinary values directly, or use keyed <code>remember</code> only to avoid a proven expensive recalculation.</p>
+<ul>
+<li><code>structuralEqualityPolicy()</code>: values equal by <code>==</code> are not a change; the common default.</li>
+<li><code>referentialEqualityPolicy()</code>: only a different reference counts; use when identity is the semantic contract.</li>
+<li><code>neverEqualPolicy()</code>: every assignment counts; it can amplify invalidation and is not event-delivery semantics.</li>
+</ul>
+<p>Choose the policy that matches semantic equality. <code>snapshotFlow</code> also observes snapshot reads but exports changes to Flow for effect/collection work; its cancellation and effect rules are reserved for Stage 15.</p>
+
+<h2 id="en-stage14-identity-lifecycle">Identity, remembered-object lifecycle, and disposal<a aria-label="Link to section: Identity lifecycle and disposal" class="heading-anchor" href="#en-stage14-identity-lifecycle">#</a></h2>
+<p>A remembered value belongs to a composition location. If a branch disappears, a parent is removed, a key changes, or the host composition is disposed, its slots are forgotten and later entry creates new objects. Reordering unkeyed siblings can associate retained state with the wrong item; stable keys move identity with data. Cleanup aligns with leaving composition, but imperative registration/unregistration belongs to Stage 15 effect APIs, not a <code>remember</code> initializer.</p>
+
+<h2 id="en-stage14-compiler-interop">Compiler protocol, stability, and non-Compose state interop<a aria-label="Link to section: Compiler stability and interoperability" class="heading-anchor" href="#en-stage14-compiler-interop">#</a></h2>
+<p>The compiler transforms composable calls into a protocol conceptually involving a <code>Composer</code>, groups, changed metadata, restart scopes, and skipping. This is a mental model, not a generated-signature or representation contract. Stability helps compiler/runtime reasoning about changes and comparisons. <code>@Stable</code>/<code>@Immutable</code> are promises; an annotation does not freeze an object, observe hidden fields, or make mutable data safe. A false promise can cause stale UI. Strong-skipping defaults and comparisons are compiler-version-sensitive; Stage 16 covers reports and performance.</p>
+<p>Flow/StateFlow, LiveData, RxJava, and custom observables are not automatically snapshot state. Adapt them with <code>collectAsStateWithLifecycle</code>, <code>observeAsState</code>, <code>subscribeAsState</code>, or a carefully implemented adapter. Collection lifetime, initial value, equality/conflation, thread, and error semantics remain part of the source/integration contract.</p>
+
+<h2 id="en-stage14-guarantees">Guarantees versus explicit non-guarantees<a aria-label="Link to section: Guarantees and non guarantees" class="heading-anchor" href="#en-stage14-guarantees">#</a></h2>
+<table><thead><tr><th>Useful contract</th><th>Does not guarantee</th></tr></thead><tbody>
+<tr><td>Observed snapshot reads establish dependencies; applied writes can invalidate observers.</td><td>Every invalidation reruns the entire UI or every intermediate write is rendered.</td></tr>
+<tr><td><code>remember</code> retains a slot while identity stays composed.</td><td>Survival after leaving composition, recreation, or process death.</td></tr>
+<tr><td><code>rememberSaveable</code> uses <code>SaveableStateRegistry</code>.</td><td>Durable storage; only Bundle-compatible or custom-saved minimal values qualify.</td></tr>
+<tr><td>Recomposition produces an updated description.</td><td>A fixed execution time/order: it may happen at any time and be skipped, coalesced, or cancelled.</td></tr>
+<tr><td><code>mutableStateOf</code> observes writes to its value property.</td><td>Observation of internal mutation of an arbitrary mutable object.</td></tr>
+<tr><td>Stability metadata supports change/skipping reasoning.</td><td>That <code>@Stable</code> makes mutable data immutable, observable, or thread-safe.</td></tr>
+</tbody></table>
+<p>Composables must therefore be idempotent and side-effect-free. <code>derivedStateOf</code> is not free, snapshot apply is not persistence, and scheduled recomposition is not delivery acknowledgement.</p>
+
+<h2 id="en-stage14-version-sensitive">Version-sensitive behavior<a aria-label="Link to section: Version sensitive behavior" class="heading-anchor" href="#en-stage14-version-sensitive">#</a></h2>
+<ul>
+<li>Compose compiler plugin/Kotlin integration, strong-skipping defaults, stability inference, lambda memoization, and generated protocol evolve. Pin versions and inspect current release notes/reports before a performance claim.</li>
+<li>Group, slot, and snapshot implementation details can change. Depend on public observable contracts, not group counts, generated parameter layouts, or slot-table shape.</li>
+<li>Saveable types and registry integration depend on host/platform/library version. Test custom Saver round trips and recreation on supported Android versions.</li>
+<li>Snapshot APIs can be experimental or evolve conflict behavior. Check the exact runtime API and never infer general thread safety from one successful test.</li>
+</ul>
+
+<h2 id="en-stage14-decision-framework">Decision framework<a aria-label="Link to section: Decision framework" class="heading-anchor" href="#en-stage14-decision-framework">#</a></h2>
+<ol>
+<li>Name the fact and owner: UI element, shared UI behavior, screen/business state, or durable data.</li>
+<li>Choose observable representation: immutable replacement, <code>MutableState</code>, snapshot list/map, or lifecycle-aware adapter from external state.</li>
+<li>Choose lifetime: local execution, composition identity, saveable recreation, ViewModel screen lifetime, or durable repository; save only minimal reconstruction input.</li>
+<li>Mark each snapshot read by phase and every mutable boundary. Check whether hidden mutation bypasses the State setter and snapshot collection operations.</li>
+<li>Check identity under conditions/reordering, use stable keys, and enumerate when remembered objects leave composition.</li>
+<li>Only then consider <code>derivedStateOf</code>, a custom policy, or phase deferral; reserve measured, version-specific performance work for Stage 16.</li>
+</ol>
+
+<h2 id="en-stage14-tradeoffs">Trade-offs and failure modes<a aria-label="Link to section: Trade offs and failure modes" class="heading-anchor" href="#en-stage14-tradeoffs">#</a></h2>
+<ul>
+<li>Local state minimizes coupling, but duplicate owners diverge; over-hoisting creates broad APIs and broad invalidation.</li>
+<li>Immutable replacement gives clear snapshots/equality but allocates; snapshot collections give granular operations but expose mutable ownership and do not observe mutable element internals.</li>
+<li><code>rememberSaveable</code> improves recreation UX, but Bundle size/schema and Saver defects matter; saving whole models duplicates durable truth.</li>
+<li>Structural equality can suppress equivalent assignments but costly/broken equality hurts; referential policy misses in-place semantic changes; never-equal amplifies work.</li>
+<li>Missing remember keys retain stale dependencies; excessive keys recreate holders. Missing item keys transfer state after reorder; unstable keys reset it.</li>
+<li>Fast state read in composition can broaden work; a draw read is incorrect when the value changes structure or measurement.</li>
+</ul>
+
+<h2 id="en-stage14-production-scenario">Production scenario: reorderable product filters<a aria-label="Link to section: Production scenario" class="heading-anchor" href="#en-stage14-production-scenario">#</a></h2>
+<p><strong>Hypothetical:</strong> a ViewModel exposes immutable product/filter results as <code>StateFlow</code>, collected with <code>collectAsStateWithLifecycle</code>. A query that drives repository search belongs to the ViewModel; expanded chips and draft selection stay at the lowest UI owner. A plain <code>FilterPanelState</code> coordinates UI behavior by stable category ID. Its Saver stores only selected IDs and query text and reconstructs runtime objects.</p>
+<pre><code class="language-kotlin">@Composable
+fun ProductRows(products: List&lt;ProductUi&gt;, onOpen: (String) -&gt; Unit) {
+    LazyColumn {
+        items(products, key = { it.id }) { product -&gt;
+            var expanded by rememberSaveable(product.id) { mutableStateOf(false) }
+            ProductRow(product, expanded, { expanded = !expanded }) { onOpen(product.id) }
+        }
+    }
+}</code></pre>
+<p>The stable item key keeps slots with product identity during sorting. A snapshot list is used only for UI-owned draft operations; repository results arrive as new immutable lists. <code>derivedStateOf { listState.firstVisibleItemIndex &gt; 0 }</code> can justify its cost because index changes more frequently than the Boolean. Scroll effects belong to Stage 15.</p>
+
+<h2 id="en-stage14-review-trap">Code-review/debug trap<a aria-label="Link to section: Code review and debugging trap" class="heading-anchor" href="#en-stage14-review-trap">#</a></h2>
+<pre><code class="language-kotlin">@Stable
+class CartUiState(val lines: MutableList&lt;Line&gt;) // false stability promise
+
+@Composable fun Cart(state: CartUiState, currency: Currency) {
+    val total = remember { state.lines.sumOf { it.price } } // stale: missing keys
+    state.lines.add(promoLine)                              // hidden write in composition
+    state.lines.forEachIndexed { index, line -&gt;
+        key(index) { EditableLine(line) }                   // identity follows position
+    }
+}</code></pre>
+<p>The total is stale, mutation may not invalidate, another observed write could loop, and editor state moves after insertion. Debug ownership/lifetime first; identify exact snapshot reads, writes, and phases; verify setter/collection operations; inspect remember and sibling keys; remove false stability. Fix with immutable replacement or one-owner snapshot collection, pure composition, truthful cache keys only when caching is justified, and <code>key(line.id)</code>. Reproduce reorder, recreation, and process restoration; reserve profiling for Stage 16.</p>
+
+<h2 id="en-stage14-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice questions and answers" class="heading-anchor" href="#en-stage14-likely-qa">#</a></h2>
+<p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
+<ol>
+<li><strong>What does composition do?</strong> It executes composable calls, associates groups/slots with identity, and creates or updates a UI description; initial composition builds topology and recomposition revisits invalidated scopes.</li>
+<li><strong>Does a state write recompose everything?</strong> No. Applied writes invalidate observed scopes/phases; work can be coalesced, skipped, or cancelled, and actual work depends on reads, restart scopes, and changed inputs.</li>
+<li><strong>What does <code>remember</code> guarantee?</strong> Positional retention while the same identity remains composed—not leaving composition, recreation, or process death.</li>
+<li><strong>Why can <code>mutableStateOf(mutableListOf())</code> leave stale UI?</strong> <code>add</code> mutates internals without assigning State. Replace an immutable list or use a snapshot state list.</li>
+<li><strong>When should you use <code>rememberSaveable</code>?</strong> For minimal UI element state restored through the registry; it is not durable storage.</li>
+<li><strong>When is <code>derivedStateOf</code> appropriate?</strong> When dependencies change more frequently than the meaningful result, not around every expression and not for free.</li>
+<li><strong>How does identity work in a reordered list?</strong> Position is the default; a stable unique key moves remembered state with the logical item, while index follows position.</li>
+<li><strong>What does a mutation policy control?</strong> Whether an assignment counts as a change by structural, referential, or never-equal semantics; it cannot observe hidden mutation.</li>
+<li><strong>Does <code>@Stable</code> make a class safe?</strong> No. It is a semantic promise; hidden mutable fields make that promise false and can produce stale UI.</li>
+<li><strong>How should StateFlow or LiveData enter Compose?</strong> Through an appropriate lifecycle-aware State adapter while preserving source initial-value, lifetime, equality, thread, and error semantics.</li>
+</ol>
+
+<h2 id="en-stage14-followups">4 senior follow-ups with answers<a aria-label="Link to section: 4 senior follow ups" class="heading-anchor" href="#en-stage14-followups">#</a></h2>
+<ol>
+<li><strong>Background threads simultaneously edit snapshot state.</strong> Define owner and mutable-snapshot boundaries, apply explicitly, handle conflicts/retry, and never mix unsynchronized ordinary fields. Validate the exact runtime version.</li>
+<li><strong>Rows retain the wrong text after sorting.</strong> Positional identity followed index. Use stable unique business keys and put nested remembers inside that keyed identity.</li>
+<li><strong>Saved state exceeds limits.</strong> Persist the durable model in a repository; save only IDs/query/position needed to rebuild, and test registry restoration/schema fallback.</li>
+<li><strong>A draw-only animation triggers recomposition.</strong> Find the actual read. If structure is fixed, defer to draw/placement; if measurement or structure depends on it, the earlier phase is correct.</li>
+</ol>
+
+<h2 id="en-stage14-self-check">4 unanswered self-checks<a aria-label="Link to section: 4 unanswered self checks" class="heading-anchor" href="#en-stage14-self-check">#</a></h2>
+<ol>
+<li>For every mutable value on your screen, who owns it, what observable write path does it use, and what lifetime does it require?</li>
+<li>Which remembered values can retain stale dependencies or move to another logical item after reorder?</li>
+<li>Which reads happen in composition, measure/place, and draw, and what is the earliest correct phase?</li>
+<li>What survives branch removal, Activity recreation, and process death, and what must be reconstructed from durable truth?</li>
+</ol>
+
+<h2 id="en-stage14-english-skeletons">Interview-ready English answer skeletons<a aria-label="Link to section: Interview ready English answer skeletons" class="heading-anchor" href="#en-stage14-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How does Compose runtime state drive recomposition, and how do you choose state ownership and retention?</em></p>
+<h3 id="en-stage14-answer-30">~30-second answer<a aria-label="Link to section: 30 second answer" class="heading-anchor" href="#en-stage14-answer-30">#</a></h3>
+<blockquote><p>Compose is an incremental runtime. The compiler makes composable calls participate in groups and restart scopes, while the slot table retains values by call-site identity. Snapshot reads register dependencies; applied writes invalidate the scopes or phases that observed them, but work can be coalesced, skipped, or cancelled. I use observable immutable replacement or snapshot collections, hoist to the lowest owner, use remember only for composition lifetime, and rememberSaveable only for minimal registry-saveable reconstruction data. Stable item keys preserve identity. Composables remain idempotent and side-effect-free.</p></blockquote>
+<h3 id="en-stage14-answer-2min">~2-minute answer<a aria-label="Link to section: 2 minute answer" class="heading-anchor" href="#en-stage14-answer-2min">#</a></h3>
+<blockquote><p>I model Compose as incremental tree construction and update. The compiler transforms composable calls into a runtime protocol conceptually involving a Composer, groups, change metadata, restart scopes, and skipping. The slot table stores group structure and remembered values by positional call-site identity. Initial composition creates that topology; recomposition revisits invalidated scopes. A stable explicit key is essential when conditional or reordered content must retain logical item identity.</p><p>Snapshot state records reads and writes. An applied write invalidates observers that read the changed value. That is not a promise that the whole tree reruns: invalidations can be coalesced, groups can be skipped, and work can be cancelled. Mutable snapshots isolate changes until apply and concurrent writes can conflict, so low-level users need explicit apply, conflict, and thread ownership rules. Ordinary mutable fields and a MutableList inside mutableStateOf are not observed when mutated internally.</p><p>I separate composition, layout, and draw reads because invalidation can restart only the relevant later phase. I author local state with remember plus mutableStateOf, or snapshot lists/maps, and replace immutable values at ownership boundaries. Missing remember keys create stale caches; volatile keys recreate state. I hoist only to the lowest common owner, extract a plain state holder for cohesive UI logic, and keep business/durable state in a ViewModel and repository.</p><p>Remember survives only while its identity remains composed. RememberSaveable uses the SaveableStateRegistry and Bundle-compatible or custom-Saver values; it is not durable storage. A Saver stores minimal IDs or input needed to rebuild objects. derivedStateOf is justified when dependencies change more often than the meaningful result, and it has overhead. Mutation policy must match semantic equality. Compiler stability and skipping behavior are version-sensitive, and Stable is a promise—not a mechanism that makes mutable data safe. Therefore composables are idempotent and side-effect-free; effects belong to the next stage and deep profiling to Stage 16.</p></blockquote>
+
+<h2 id="en-stage14-sources">Official references<a aria-label="Link to section: Official references" class="heading-anchor" href="#en-stage14-sources">#</a></h2>
+<ul>
+<li><a href="https://developer.android.com/develop/ui/compose/mental-model">Thinking in Compose</a> and <a href="https://developer.android.com/develop/ui/compose/lifecycle">Lifecycle of composables</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/state">State and Jetpack Compose</a>, <a href="https://developer.android.com/develop/ui/compose/state-hoisting">Where to hoist state</a>, <a href="https://developer.android.com/develop/ui/compose/state-saving">Save UI state in Compose</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/phases">Jetpack Compose phases</a> and <a href="https://developer.android.com/develop/ui/compose/performance/phases">Compose phases and performance</a></li>
+<li><a href="https://developer.android.com/reference/kotlin/androidx/compose/runtime/package-summary">Compose runtime API</a>, <a href="https://developer.android.com/reference/kotlin/androidx/compose/runtime/snapshots/Snapshot">Snapshot API</a>, <a href="https://developer.android.com/reference/kotlin/androidx/compose/runtime/snapshots/MutableSnapshot">MutableSnapshot API</a></li>
+<li><a href="https://developer.android.com/reference/kotlin/androidx/compose/runtime/SnapshotMutationPolicy">SnapshotMutationPolicy API</a> and <a href="https://developer.android.com/reference/kotlin/androidx/compose/runtime/saveable/package-summary">runtime-saveable API</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/performance/stability">Stability in Compose</a> and <a href="https://developer.android.com/develop/ui/compose/compiler">Compose compiler</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/libraries">Compose and other libraries</a> and <a href="https://developer.android.com/reference/kotlin/androidx/lifecycle/compose/package-summary">Lifecycle Compose API</a></li>
 </ul>
 </div></details>
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="en-kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
