@@ -489,6 +489,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="kotlin-coroutines-failures-supervision-testing" href="#kotlin-coroutines-failures-supervision-testing">Kotlin Coroutines: failures, supervision, cleanup, testing та debugging</a>
 </li>
 <li class="toc-major">
+<a data-target="kotlin-flow-foundations" href="#kotlin-flow-foundations">Kotlin Flow: foundations, operators та Android lifecycle</a>
+</li>
+<li class="toc-major">
 <a data-target="kotlin-for-android" href="#kotlin-for-android">Kotlin for Android</a>
 <ol class="toc-children">
 <li><a data-target="val-vs-var-immutability" href="#val-vs-var-immutability">val vs var, immutability</a></li>
@@ -789,6 +792,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-coroutines-failures-supervision-testing" href="#en-kotlin-coroutines-failures-supervision-testing">Kotlin Coroutines: failures, supervision, cleanup, testing, and debugging</a>
+</li>
+<li class="toc-major">
+<a data-target="en-kotlin-flow-foundations" href="#en-kotlin-flow-foundations">Kotlin Flow: foundations, operators, and Android lifecycle</a>
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-for-android" href="#en-kotlin-for-android">Kotlin for Android</a>
@@ -2950,6 +2956,231 @@ suspend fun consume(session: Session) {
 <li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/">kotlinx-coroutines-test</a>, <a href="https://developer.android.com/kotlin/coroutines/test">Testing Kotlin coroutines on Android</a>, <a href="https://developer.android.com/kotlin/coroutines/coroutines-best-practices">Android coroutine best practices</a></li>
 <li><a href="https://developer.android.com/topic/libraries/architecture/viewmodel#implement">ViewModel guidance</a>, <a href="https://developer.android.com/training/testing/local-tests">Android local tests</a>, <a href="https://developer.android.com/training/testing/instrumented-tests">Android instrumented tests</a>, <a href="https://developer.android.com/training/testing/instrumented-tests/androidx-test-libraries/test-setup">AndroidX Test setup</a></li>
 <li><a href="https://kotlinlang.org/docs/coroutines-debugging.html">Debug coroutines</a> та <a href="https://kotlinlang.org/docs/debug-coroutines-with-idea.html">Debug coroutines with IntelliJ IDEA</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="kotlin-flow-foundations" data-title="Kotlin Flow: foundations, operators та Android lifecycle" id="kotlin-flow-foundations" open=""><summary class="major-summary"><span class="major-title">Kotlin Flow: foundations, operators та Android lifecycle</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<h2 id="stage9-uk-objective">Learning objective<a aria-label="Посилання на розділ: Learning objective" class="heading-anchor" href="#stage9-uk-objective">#</a></h2>
+<p>Після цього етапу ви маєте вміти пояснити cold <code>Flow</code> як послідовний асинхронний контракт, передбачити context, cancellation і buffering кожної ділянки pipeline, обрати оператор за семантикою втрати значень або скасування роботи, безпечно адаптувати callbacks, прив’язати collection до Android lifecycle та протестувати per-collector поведінку. Deep dive у <code>StateFlow</code>/<code>SharedFlow</code>/<code>Channel</code> належить Stage 10, а combine/flatten/retry/sharing — Stage 11.</p>
+
+<h2 id="stage9-uk-mental-model">Senior mental model<a aria-label="Посилання на розділ: Senior mental model" class="heading-anchor" href="#stage9-uk-mental-model">#</a></h2>
+<blockquote><p><strong>Flow — це recipe для asynchronous sequence, а collection — його виконання в coroutine collector-а.</strong> Звичайний flow cold: builder не запускається до terminal operator і виконується заново для кожного collector-а. За замовчуванням upstream і downstream ідуть послідовно в context collector-а; cold не означає background, caching або single execution.</p></blockquote>
+<ul>
+<li><code>Flow&lt;T&gt;</code> має один suspending <code>collect</code> contract; intermediate operators будують новий lazy pipeline, terminal operators запускають його.</li>
+<li>Sequential означає, що без explicit concurrency/buffer emitter чекає обробки value downstream. Це natural suspension, але не Reactive Streams demand/protocol guarantee.</li>
+<li>Cancellation collector coroutine скасовує collection і cooperative upstream; blocking callback або CPU loop все одно потребує власного cancellation/cleanup design.</li>
+<li>Cold <code>Flow</code> відрізняється від hot <code>StateFlow</code>/<code>SharedFlow</code> та point-to-point <code>Channel</code>: він не має shared lifetime, replay/cache або event ownership за замовчуванням.</li>
+</ul>
+
+<h2 id="stage9-uk-internals">Internals / operator pipeline<a aria-label="Посилання на розділ: Internals operator pipeline" class="heading-anchor" href="#stage9-uk-internals">#</a></h2>
+<pre><code class="language-text">collector coroutine / downstream context
+collect { render(it) }
+        ↑ filter       sequential suspend calls unless a boundary is inserted
+        ↑ map
+-------- flowOn / buffer channel boundary --------
+        ↑ flow { emit(load()) }  upstream context selected by flowOn
+
+collection #1 → new builder execution → its own local state
+collection #2 → new builder execution → its own local state</code></pre>
+<p>Most operators are implemented as flows that collect upstream and emit transformed values downstream. Without <code>buffer</code>, <code>flowOn</code>, <code>channelFlow</code> or another concurrency boundary, one coroutine traverses the chain. A boundary introduces producer/consumer decoupling and a channel; ordering remains operator-defined, while timing and in-flight cancellation become observable design concerns.</p>
+
+<h3 id="stage9-uk-builders-sequential">Builders, cold execution та sequential collection<a aria-label="Посилання на розділ: Builders cold execution and sequential collection" class="heading-anchor" href="#stage9-uk-builders-sequential">#</a></h3>
+<ul>
+<li><code>flowOf(a, b)</code> represents fixed values; <code>Iterable</code>, <code>Sequence</code>, ranges and supported values can use <code>asFlow()</code>. <code>flow { }</code> is the general sequential builder with suspending <code>emit</code>.</li>
+<li>Код у <code>flow { }</code> виконується на кожен <code>collect</code>. Network read, DB query або listener registration усередині повториться per collector unless data is cached/shared elsewhere.</li>
+<li><code>take(n)</code> completes early by cancelling/aborting upstream collection through Flow machinery; upstream <code>finally</code> still must release resources. Empty finite flow completes normally; an infinite flow needs cancellation or a limiting terminal condition.</li>
+<li>Terminal operators include <code>collect</code>, <code>first</code>, <code>single</code>, <code>toList</code>, <code>reduce</code> and <code>fold</code>. Their empty/multiple-element contracts differ; do not substitute one only for convenience.</li>
+</ul>
+<pre><code class="language-kotlin">fun observeOrders(): Flow&lt;Order&gt; = flow {
+    repository.snapshot().forEach { emit(it) } // runs per collector
+}
+
+val labels = observeOrders()
+    .filter { it.visible }
+    .map { it.toLabel() }
+    .take(20)
+
+labels.collect { render(it) }                  // terminal, cancellable suspension</code></pre>
+
+<h3 id="stage9-uk-context">Context preservation, exception transparency та flowOn<a aria-label="Посилання на розділ: Context preservation exception transparency and flowOn" class="heading-anchor" href="#stage9-uk-context">#</a></h3>
+<ul>
+<li>The <code>flow</code> builder preserves context: do not <code>emit</code> from an arbitrary <code>withContext</code> or launched coroutine. Sequential emissions belong to the collection context. Use <code>flowOn</code> for upstream context or <code>channelFlow</code> for concurrent producers.</li>
+<li>Exception transparency means an implementation must stop emitting when <code>emit</code>/<code>emitAll</code> fails; do not catch a downstream failure and emit a fallback from the same builder. Handle only the boundary you own.</li>
+<li><code>flowOn(Dispatchers.IO)</code> changes only operators upstream of its position. It does not move downstream mapping or collector/UI rendering. The collector remains in its caller context.</li>
+<li>When dispatcher changes, <code>flowOn</code> commonly runs upstream in another coroutine and uses a channel with default buffering. Adjacent <code>channelFlow</code>/<code>flowOn</code>/<code>buffer</code> boundaries can fuse; explicit <code>buffer</code> controls capacity. Cancellation can leave an already-produced value undelivered, so do not infer exactly-once hand-off.</li>
+</ul>
+
+<h3 id="stage9-uk-operators">Intermediate and terminal operator semantics<a aria-label="Посилання на розділ: Intermediate and terminal operator semantics" class="heading-anchor" href="#stage9-uk-operators">#</a></h3>
+<table><thead><tr><th>Operator</th><th>Semantics</th><th>Senior caveat</th></tr></thead><tbody>
+<tr><td><code>map</code> / <code>filter</code></td><td>One-to-one transform / conditional forwarding.</td><td>Sequential by default; expensive code runs in the context at that pipeline position.</td></tr>
+<tr><td><code>transform</code></td><td>Can emit zero, one, or many values per input.</td><td>Keep emission and error ownership explicit; it is not implicit parallelism.</td></tr>
+<tr><td><code>collect</code></td><td>Processes every delivered value in order.</td><td>Slow action suspends the pipeline unless a buffer boundary exists.</td></tr>
+<tr><td><code>collectLatest</code></td><td>On a new value, cancels the previous action and starts the new one.</td><td>It cancels <em>work</em>; the action must be cancellable and safe to abandon.</td></tr>
+<tr><td><code>debounce</code></td><td>Emits after a quiet window; continuously changing input can postpone output.</td><td>Time-based and currently preview/experimental in some overloads; not a durable event queue.</td></tr>
+<tr><td><code>sample</code></td><td>Emits the latest available value at sampling ticks.</td><td>May omit the final value and intermediate values; check current API status/version.</td></tr>
+<tr><td><code>distinctUntilChanged</code></td><td>Suppresses consecutive equal values.</td><td>Equality quality matters; applying it to <code>StateFlow</code> has no effect because state is already distinct.</td></tr>
+</tbody></table>
+
+<h3 id="stage9-uk-rate-mismatch">Rate mismatch: buffer, conflate and latest families<a aria-label="Посилання на розділ: Rate mismatch buffer conflate and latest" class="heading-anchor" href="#stage9-uk-rate-mismatch">#</a></h3>
+<ul>
+<li><code>buffer(capacity)</code> lets producer and consumer run concurrently up to capacity. It changes suspension/timing and memory use, but with default overflow does not intentionally discard values.</li>
+<li><code>conflate()</code> keeps the most recent value while consumer is busy: emitter is not suspended by that slow collector and intermediate <strong>values are dropped</strong>. Appropriate for replaceable state/progress, not audit events or payments.</li>
+<li><code>collectLatest</code>, <code>mapLatest</code> and <code>transformLatest</code> cancel prior <strong>work</strong> when new input arrives. Cancellation is cooperative; non-cancellable blocking work may continue and side effects are not rolled back.</li>
+<li>Use “backpressure” only informally for producer/consumer rate mismatch and suspension/buffering policy. Kotlin Flow can interoperate with Reactive Streams, but ordinary Flow code should not claim Reactive Streams request accounting, delivery, or exactly-once guarantees.</li>
+</ul>
+
+<h3 id="stage9-uk-callbacks">callbackFlow, channelFlow та cleanup races<a aria-label="Посилання на розділ: callbackFlow channelFlow and cleanup races" class="heading-anchor" href="#stage9-uk-callbacks">#</a></h3>
+<pre><code class="language-kotlin">fun locations(): Flow&lt;Location&gt; = callbackFlow {
+    val listener = LocationListener { value -&gt;
+        trySend(value).onFailure { cause -&gt; logger.debug("location dropped", cause) }
+    }
+    client.register(listener)
+    awaitClose { client.unregister(listener) }
+}.buffer(capacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)</code></pre>
+<ul>
+<li>Both builders expose a <code>ProducerScope</code>. <code>channelFlow</code> permits concurrent child coroutines and thread-safe sends; it completes after its block and children. <code>callbackFlow</code> is the callback adapter and requires keeping the channel open for multi-shot callbacks.</li>
+<li><code>send</code> suspends according to channel capacity; <code>trySend</code> returns immediately with <code>ChannelResult</code>. Ignoring failure silently loses data. The builder has a channel/buffer boundary; adjacent <code>buffer</code> configures capacity/overflow.</li>
+<li><code>callbackFlow</code> requires cleanup: use <code>awaitClose { unregister(...) }</code>. Registration, callbacks, cancellation and unregistration can race; external API unregister must be safe from any required context/thread and ideally idempotent.</li>
+<li>Handle registration failure before/around <code>awaitClose</code>, and do not assume one callback maps to one collector delivery. Buffer overflow, cancellation and downstream policy can reject or drop values.</li>
+</ul>
+
+<h3 id="stage9-uk-lifecycle">Android lifecycle and Compose collection<a aria-label="Посилання на розділ: Android lifecycle and Compose collection" class="heading-anchor" href="#stage9-uk-lifecycle">#</a></h3>
+<pre><code class="language-kotlin">viewLifecycleOwner.lifecycleScope.launch {
+    viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+        launch { viewModel.ui.collect(::renderUi) }
+        launch { viewModel.messages.collect(::showMessage) }
+    }
+}
+
+// Compose UI boundary
+val ui by viewModel.ui.collectAsStateWithLifecycle()</code></pre>
+<ul>
+<li><code>repeatOnLifecycle</code> launches its block when at least the target state, cancels below it, and re-launches on re-entry. For multiple flows collected in parallel, launch a child per flow; sequentially collecting an infinite flow prevents reaching the next collect.</li>
+<li><code>flowWithLifecycle</code> is convenient for one flow, but operator position affects which surrounding pipeline remains active. For multiple streams or explicit ownership, <code>repeatOnLifecycle</code> is clearer.</li>
+<li>Lifecycle restart re-collects a cold flow and can repeat upstream network calls, registrations or writes. Put side effects behind idempotent/cache/shared ownership—not in a UI collection recipe by accident.</li>
+<li><code>collectAsStateWithLifecycle</code> is a Compose-to-<code>State</code> collection boundary, not a repository architecture or event-delivery guarantee. Keep lifecycle-free domain/data APIs where possible.</li>
+</ul>
+
+<h3 id="stage9-uk-exposure-ownership">Safe exposure, completion and error ownership<a aria-label="Посилання на розділ: Safe exposure completion and error ownership" class="heading-anchor" href="#stage9-uk-exposure-ownership">#</a></h3>
+<ul>
+<li>A repository can expose <code>Flow&lt;DomainModel&gt;</code> while keeping mutable callback/channel/source details private. A ViewModel exposes read-only streams/state and owns UI mapping; UI must not receive mutable producers.</li>
+<li>Document whether a flow is finite or long-lived, what starts per collection, dispatcher/main-safety, cancellation/cleanup, error types and who owns retry or fallback. Flow does not cache by default.</li>
+<li>Normal completion is a valid outcome, not an error. <code>onCompletion</code> observes completion cause but is not a universal catch; collector/action failures remain downstream ownership. Do not encode every failure as a nullable value.</li>
+<li>Cold/hot does not define “event”. Neither Flow, Channel nor lifecycle collection provides a blanket exactly-once UI/business event guarantee; durable effects need persisted identity, acknowledgement and reconciliation.</li>
+</ul>
+
+<h2 id="stage9-uk-guarantees">Guarantees vs non-guarantees<a aria-label="Посилання на розділ: Guarantees versus non guarantees" class="heading-anchor" href="#stage9-uk-guarantees">#</a></h2>
+<table><thead><tr><th>Можна стверджувати</th><th>Не можна обіцяти</th></tr></thead><tbody>
+<tr><td>Cold builder executes anew per collector.</td><td>Cold означає background, cached, single-shot або side-effect-free.</td></tr>
+<tr><td>Default pipeline is sequential; collection is cancellable and context-preserving.</td><td>Blocking work stops immediately or <code>flowOn</code> moves downstream collector.</td></tr>
+<tr><td><code>conflate</code> keeps latest and drops intermediate values.</td><td>Every emission is processed, or conflation is valid for non-replaceable events.</td></tr>
+<tr><td><code>collectLatest</code> cancels the prior action.</td><td>Prior blocking work stops or external side effects roll back.</td></tr>
+<tr><td><code>awaitClose</code> provides callback cleanup on close/cancel.</td><td>Registration/unregistration is race-free without explicit design.</td></tr>
+<tr><td>Lifecycle restart can start a fresh cold collection.</td><td>Upstream side effects execute once or events are delivered exactly once.</td></tr>
+</tbody></table>
+
+<h2 id="stage9-uk-version-sensitive">Version-sensitive behavior<a aria-label="Посилання на розділ: Version sensitive behavior" class="heading-anchor" href="#stage9-uk-version-sensitive">#</a></h2>
+<ul>
+<li>Pin a consistent <code>kotlinx-coroutines</code> family and inspect the resolved API: <code>debounce</code>/<code>sample</code> overloads, annotations, default capacities and fusion details can evolve.</li>
+<li><code>flowOn</code> channel behavior depends on whether dispatcher actually changes and adjacent fusible operators; never encode a business invariant from default buffer size.</li>
+<li><code>collectAsStateWithLifecycle</code> is supplied by AndroidX lifecycle-runtime-compose; available overloads, supported platforms and default lifecycle state depend on the resolved AndroidX version.</li>
+<li>Lifecycle operator behavior is stable at the conceptual boundary, but min active state and operator placement are code-level choices. Test with the versions in the app, not a remembered blog sample.</li>
+</ul>
+
+<h2 id="stage9-uk-decision-framework">Decision framework<a aria-label="Посилання на розділ: Decision framework" class="heading-anchor" href="#stage9-uk-decision-framework">#</a></h2>
+<ol>
+<li><strong>Define the stream:</strong> finite чи ongoing, cold recipe чи truly shared state/event, and what each collector starts.</li>
+<li><strong>Place ownership:</strong> source/cleanup in repository, UI mapping in ViewModel, lifecycle collection at UI boundary.</li>
+<li><strong>Draw contexts:</strong> collector context, upstream <code>flowOn</code> boundary, blocking calls and allowed emission scope.</li>
+<li><strong>Choose loss semantics:</strong> preserve every value with suspension/buffer, drop replaceable intermediate values with conflate/sample/debounce, or cancel obsolete work with latest operators.</li>
+<li><strong>Specify completion/errors:</strong> normal completion, cancellation, source failure, downstream failure, translation/retry owner.</li>
+<li><strong>Audit restarts and races:</strong> multiple collectors, lifecycle restart, callback registration/unregistration, buffer overflow and non-idempotent effects.</li>
+<li><strong>Test the public contract:</strong> per-collector execution, ordering, cancellation/cleanup, exact operator semantics and lifecycle integration separately.</li>
+</ol>
+
+<h2 id="stage9-uk-tradeoffs">Trade-offs і failure modes<a aria-label="Посилання на розділ: Trade offs and failure modes" class="heading-anchor" href="#stage9-uk-tradeoffs">#</a></h2>
+<ul>
+<li>Pure sequential flow is predictable and bounds production by suspension, but a slow collector increases end-to-end latency; buffering improves overlap at memory and in-flight-cancellation cost.</li>
+<li>Conflation/latest reduce obsolete work, but lose intermediate state or cancel actions. They are wrong when every item carries non-replaceable meaning.</li>
+<li>Cold per-collector execution gives isolation, but duplicate collectors duplicate I/O and callback registrations. Do not “fix” it with hidden global scope; choose explicit Stage 10/11 sharing when required.</li>
+<li>Lifecycle-aware collection prevents off-screen UI updates, but restart can repeat upstream side effects and lose transient non-durable events.</li>
+<li><code>callbackFlow</code> makes callbacks composable, but adds buffer/close/race semantics. Missing <code>awaitClose</code> leaks listeners; unchecked <code>trySend</code> hides loss.</li>
+</ul>
+
+<h2 id="stage9-uk-production-scenario">Production scenario: search suggestions<a aria-label="Посилання на розділ: Production scenario search suggestions" class="heading-anchor" href="#stage9-uk-production-scenario">#</a></h2>
+<p><strong>Гіпотетично:</strong> UI exposes query changes, ViewModel trims and <code>distinctUntilChanged</code>s text, debounces deliberate typing bursts, then performs cancellable latest search work. Repository returns a cold main-safe flow; blocking SDK work is isolated upstream with <code>flowOn(IO)</code>. Results are collected with lifecycle awareness; recreation may re-collect, so cache/request deduplication belongs to an owned data layer rather than an assumption about cold Flow.</p>
+<p>A location callback used for nearby suggestions is wrapped in <code>callbackFlow</code>; <code>trySend</code> result is observed, buffer overflow policy is explicit, and <code>awaitClose</code> unregisters race-safely. Search results are replaceable, so cancellation/conflation may be acceptable; analytics and purchase events are not, so they use a separate durable policy. Errors are mapped at repository/use-case boundary, while UI owns display and collector cancellation.</p>
+
+<h2 id="stage9-uk-review-trap">Code-review/debugging trap<a aria-label="Посилання на розділ: Code review debugging trap" class="heading-anchor" href="#stage9-uk-review-trap">#</a></h2>
+<pre><code class="language-kotlin">fun updates() = flow {
+    withContext(Dispatchers.IO) { emit(api.load()) } // violates flow context invariant
+}.conflate()                                       // silently wrong for audit events
+
+fun callbacks() = callbackFlow {
+    sdk.register { trySend(it) }                   // result ignored
+    // no awaitClose: registration leaks / builder contract fails
+}
+
+lifecycleScope.launch {
+    flowA.collect(::renderA)
+    flowB.collect(::renderB)                       // unreachable for infinite flowA
+}</code></pre>
+<p>Review should move upstream work with <code>flowOn</code> or call a main-safe suspend API, preserve every audit event, inspect <code>trySend</code>, unregister in race-safe <code>awaitClose</code>, and collect independent infinite flows in sibling coroutines under <code>repeatOnLifecycle</code>. Debug by marking collector identity, context, emission/action timestamps, cancellation cause, buffer policy and register/unregister counts; never infer exactly-once from a clean log.</p>
+
+<h2 id="stage9-uk-testing">Testing cold Flow fundamentals<a aria-label="Посилання на розділ: Testing cold Flow fundamentals" class="heading-anchor" href="#stage9-uk-testing">#</a></h2>
+<ul>
+<li>For a finite flow under <code>runTest</code>, use <code>toList()</code>/<code>first()</code> and assert values, order, completion and failure. For ongoing flow, collect in <code>backgroundScope</code> and cancel or bound with <code>take</code>.</li>
+<li>Collect the same cold flow twice and assert the source invocation/isolated local state twice when that is its contract. This catches accidental caching or accidental duplicated side effects.</li>
+<li>Use shared <code>TestCoroutineScheduler</code> to drive debounce/sample delays; test just-before, at, and after boundaries without treating virtual scheduling as production thread ordering.</li>
+<li>For <code>callbackFlow</code>, fake registration, trigger callbacks, cancel collector, and assert unregister exactly according to adapter contract—including cancellation during registration and failed <code>trySend</code>. Add real-thread integration/stress coverage for thread-safety races.</li>
+</ul>
+
+<h2 id="stage9-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice Q and A" class="heading-anchor" href="#stage9-uk-likely-qa">#</a></h2>
+<p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
+<ol>
+<li><strong>Що означає cold Flow?</strong> Builder starts at a terminal operator and executes independently per collector. It does not imply background execution, caching or no side effects.</li>
+<li><strong>Чи є collection sequential?</strong> By default, yes: emit waits through downstream processing. Explicit buffer/concurrency boundaries decouple producer and consumer.</li>
+<li><strong>Де виконується flow?</strong> In collector context unless an operator such as <code>flowOn</code> changes its upstream segment. <code>flowOn</code> never moves downstream collector.</li>
+<li><strong>Навіщо context preservation та exception transparency?</strong> They make upstream/downstream locally reasoned: emission cannot jump arbitrary context, and a failed emit cannot be followed by hidden fallback emissions.</li>
+<li><strong><code>collect</code> чи <code>collectLatest</code>?</strong> Collect handles every delivered value; collectLatest cancels prior action on a new one. Use latest only when obsolete work is cancellable and safe to abandon.</li>
+<li><strong><code>buffer</code> чи <code>conflate</code>?</strong> Buffer overlaps producer/consumer and normally preserves queued values; conflate keeps latest and drops intermediate values.</li>
+<li><strong>Чим debounce відрізняється від sample?</strong> Debounce waits for quiet; sample emits latest at periodic ticks. Both can omit inputs and are unsuitable as durable event delivery.</li>
+<li><strong>Коли callbackFlow?</strong> For multi-shot callback adaptation with explicit send result, capacity and mandatory race-safe <code>awaitClose</code> cleanup.</li>
+<li><strong>Як collect-ити у Fragment/Compose?</strong> Views use <code>repeatOnLifecycle</code>; Compose commonly uses <code>collectAsStateWithLifecycle</code> for state. Multiple infinite flows need parallel child collection.</li>
+<li><strong>Яку delivery guarantee дає Flow?</strong> Only its documented operator/context/cancellation contract. It gives no blanket caching or exactly-once business/event delivery guarantee.</li>
+</ol>
+
+<h2 id="stage9-uk-followups">4 senior follow-ups з відповідями<a aria-label="Посилання на розділ: 4 senior follow ups" class="heading-anchor" href="#stage9-uk-followups">#</a></h2>
+<ol>
+<li><strong>Two screens collect the same repository cold flow.</strong> Expect two executions and possibly two registrations/I/O calls. Decide whether isolation is desired; if not, define owned sharing in Stage 10/11 rather than assuming cache.</li>
+<li><strong>A value disappears around <code>flowOn</code> cancellation.</strong> A dispatcher-changing flowOn uses a channel boundary; cancellation can prevent in-flight delivery. Business-critical transfer needs durable identity/reconciliation, not timing assumptions.</li>
+<li><strong><code>collectLatest</code> starts duplicate server writes.</strong> Cancellation does not roll back a write and blocking code may ignore it. Do not use latest for non-idempotent effects; use operation IDs and explicit serialization/status.</li>
+<li><strong>Lifecycle restart registers the listener twice.</strong> Verify prior <code>awaitClose</code> unregister, race-safe SDK contract and collector ownership. A new cold collection legitimately registers again after cleanup.</li>
+</ol>
+
+<h2 id="stage9-uk-self-check">5 self-check без відповідей<a aria-label="Посилання на розділ: 5 self check without answers" class="heading-anchor" href="#stage9-uk-self-check">#</a></h2>
+<ol>
+<li>Які operations у вашому pipeline виконуються per collector і на якому context?</li>
+<li>Де values можуть buffer/drop, а де prior work може бути cancelled?</li>
+<li>Які lifecycle restarts повторять upstream side effects і чи вони safe?</li>
+<li>Чи callback adapter перевіряє <code>trySend</code> і race-safe unregister?</li>
+<li>Яка сторона володіє normal completion, source error, downstream error та cancellation?</li>
+</ol>
+
+<h2 id="stage9-uk-english-skeletons">Interview-ready English answer skeletons<a aria-label="Посилання на розділ: Interview ready English answer skeletons" class="heading-anchor" href="#stage9-uk-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do Kotlin Flow execution, context, rate mismatch, and Android lifecycle collection work?</em></p>
+<h3 id="stage9-uk-answer-30">~30-second answer<a aria-label="Посилання на розділ: 30 second answer" class="heading-anchor" href="#stage9-uk-answer-30">#</a></h3>
+<blockquote><p>A normal Flow is a cold recipe: each terminal collection runs its builder again. The pipeline is sequential in the collector context unless I add a boundary. flowOn moves only its upstream segment and may introduce a buffered channel; it never moves downstream UI collection. Buffer overlaps work, conflate drops intermediate values, and collectLatest cancels the previous action. callbackFlow needs checked sends and race-safe awaitClose cleanup. On Android I collect at the UI lifecycle boundary and remember that a restart can rerun cold upstream effects. Flow itself provides neither caching nor blanket exactly-once delivery.</p></blockquote>
+<h3 id="stage9-uk-answer-2min">~2-minute answer<a aria-label="Посилання на розділ: 2 minute answer" class="heading-anchor" href="#stage9-uk-answer-2min">#</a></h3>
+<blockquote><p>I model Flow as a suspending asynchronous sequence contract. flowOf and asFlow cover fixed sources, while flow builds a sequential producer. Intermediate operators are lazy; a terminal operator starts collection. A cold flow runs independently for every collector, so it is not automatically background, shared, or cached.</p><p>By default, emit and downstream operators form a sequential call chain in the collector coroutine. Context preservation prevents arbitrary cross-context emit, and exception transparency prevents continuing with hidden emissions after emit fails. I use flowOn only to change the upstream segment. If it changes dispatcher, it normally creates an upstream coroutine and channel boundary, so I make capacity and in-flight cancellation relevant rather than assuming delivery.</p><p>For rate mismatch I choose semantics explicitly. Buffer overlaps producer and consumer while normally retaining queued values; conflate drops intermediate values and retains the latest; latest operators cancel obsolete work. Cancellation is cooperative and never rolls back an external effect. Debounce, sample, and distinctUntilChanged suppress values under different time/equality rules, so they are for replaceable inputs, not durable events.</p><p>For callbacks I use callbackFlow or channelFlow with ProducerScope, check trySend or use suspending send deliberately, configure the buffer, and always use race-safe awaitClose unregister. In Android, repeatOnLifecycle restarts collection and parallel flows need child coroutines; flowWithLifecycle is convenient for one chain, while collectAsStateWithLifecycle is only the Compose state boundary. A restart can repeat cold upstream side effects. Repositories expose read-only, main-safe contracts and document completion/errors; tests verify per-collector execution, order, cancellation, timing policy, and cleanup. Hot state, sharing, flattening, retry, and combine require separate design rather than being implied by Flow.</p></blockquote>
+
+<h2 id="stage9-uk-sources">Офіційні джерела<a aria-label="Посилання на розділ: Офіційні джерела" class="heading-anchor" href="#stage9-uk-sources">#</a></h2>
+<ul>
+<li><a href="https://kotlinlang.org/docs/flow.html">Kotlin Flow guide</a> та <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-flow/">Flow API contract</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/flow-on.html">flowOn</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/buffer.html">buffer</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/conflate.html">conflate</a> та <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/collect-latest.html">collectLatest</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/callback-flow.html">callbackFlow</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/channel-flow.html">channelFlow</a> та <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.channels/await-close.html">awaitClose</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/debounce.html">debounce</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/sample.html">sample</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/distinct-until-changed.html">distinctUntilChanged</a> та <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/take.html">take</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/coroutines">Lifecycle-aware coroutines and Flow</a>, <a href="https://developer.android.com/reference/kotlin/androidx/lifecycle/package-summary#flowWithLifecycle(kotlinx.coroutines.flow.Flow,androidx.lifecycle.Lifecycle,androidx.lifecycle.Lifecycle.State)">flowWithLifecycle</a> та <a href="https://developer.android.com/reference/kotlin/androidx/lifecycle/compose/package-summary">Lifecycle Compose APIs</a></li>
+<li><a href="https://developer.android.com/kotlin/flow/test">Testing Kotlin flows on Android</a> та <a href="https://developer.android.com/topic/architecture/data-layer">Android data layer guidance</a></li>
 </ul>
 </div></details>
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
@@ -8999,6 +9230,231 @@ suspend fun consume(session: Session) {
 <li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/">kotlinx-coroutines-test</a>, <a href="https://developer.android.com/kotlin/coroutines/test">Testing Kotlin coroutines on Android</a>, and <a href="https://developer.android.com/kotlin/coroutines/coroutines-best-practices">Android coroutine best practices</a></li>
 <li><a href="https://developer.android.com/topic/libraries/architecture/viewmodel#implement">ViewModel guidance</a>, <a href="https://developer.android.com/training/testing/local-tests">Android local tests</a>, <a href="https://developer.android.com/training/testing/instrumented-tests">Android instrumented tests</a>, and <a href="https://developer.android.com/training/testing/instrumented-tests/androidx-test-libraries/test-setup">AndroidX Test setup</a></li>
 <li><a href="https://kotlinlang.org/docs/coroutines-debugging.html">Debug coroutines</a> and <a href="https://kotlinlang.org/docs/debug-coroutines-with-idea.html">Debug coroutines with IntelliJ IDEA</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="kotlin-flow-foundations" data-title="Kotlin Flow: foundations, operators, and Android lifecycle" id="en-kotlin-flow-foundations" open=""><summary class="major-summary"><span class="major-title">Kotlin Flow: foundations, operators, and Android lifecycle</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<h2 id="en-stage9-objective">Learning objective<a aria-label="Link to section: Learning objective" class="heading-anchor" href="#en-stage9-objective">#</a></h2>
+<p>After this stage, you should be able to explain cold <code>Flow</code> as a sequential asynchronous contract, predict context, cancellation, and buffering along a pipeline, select operators by value-loss or work-cancellation semantics, adapt callbacks safely, bind collection to Android lifecycle, and test per-collector behavior. Deep treatment of <code>StateFlow</code>, <code>SharedFlow</code>, and <code>Channel</code> is reserved for Stage 10; combine, flattening, retry, and sharing are reserved for Stage 11.</p>
+
+<h2 id="en-stage9-mental-model">Senior mental model<a aria-label="Link to section: Senior mental model" class="heading-anchor" href="#en-stage9-mental-model">#</a></h2>
+<blockquote><p><strong>A Flow is a recipe for an asynchronous sequence; collection executes that recipe in the collector coroutine.</strong> An ordinary flow is cold: its builder does not run until a terminal operator and runs again for every collector. Upstream and downstream are sequential in the collector context by default. Cold does not mean background, cached, or single execution.</p></blockquote>
+<ul>
+<li><code>Flow&lt;T&gt;</code> has a suspending collection contract. Intermediate operators create another lazy pipeline; terminal operators execute it.</li>
+<li>Sequential means that without an explicit concurrency or buffer boundary, the emitter waits for downstream handling. This is natural suspension, not a promise of Reactive Streams demand accounting.</li>
+<li>Cancelling the collector coroutine cancels collection and cooperative upstream work. A blocking callback or CPU loop still needs its own cancellation and cleanup design.</li>
+<li>Cold <code>Flow</code> differs from hot <code>StateFlow</code>/<code>SharedFlow</code> and a point-to-point <code>Channel</code>: it has no shared lifetime, replay/cache, or event ownership by default.</li>
+</ul>
+
+<h2 id="en-stage9-internals">Internals / operator pipeline<a aria-label="Link to section: Internals operator pipeline" class="heading-anchor" href="#en-stage9-internals">#</a></h2>
+<pre><code class="language-text">collector coroutine / downstream context
+collect { render(it) }
+        ↑ filter       sequential suspend calls unless a boundary is inserted
+        ↑ map
+-------- flowOn / buffer channel boundary --------
+        ↑ flow { emit(load()) }  upstream context selected by flowOn
+
+collection #1 → new builder execution → its own local state
+collection #2 → new builder execution → its own local state</code></pre>
+<p>Most operators are flows that collect upstream and emit transformed values downstream. Without <code>buffer</code>, <code>flowOn</code>, <code>channelFlow</code>, or another concurrency boundary, one coroutine traverses the chain. A boundary introduces producer/consumer decoupling and a channel. Ordering remains operator-defined, while timing and in-flight cancellation become observable design concerns.</p>
+
+<h3 id="en-stage9-builders-sequential">Builders, cold execution, and sequential collection<a aria-label="Link to section: Builders cold execution and sequential collection" class="heading-anchor" href="#en-stage9-builders-sequential">#</a></h3>
+<ul>
+<li><code>flowOf(a, b)</code> represents fixed values; supported values, <code>Iterable</code>, <code>Sequence</code>, and ranges can use <code>asFlow()</code>. <code>flow { }</code> is the general sequential builder with suspending <code>emit</code>.</li>
+<li>Code inside <code>flow { }</code> executes for every <code>collect</code>. A network read, database query, or listener registration inside it repeats per collector unless cached or shared elsewhere.</li>
+<li><code>take(n)</code> completes early by aborting upstream collection through Flow machinery; upstream <code>finally</code> must still release resources. A finite flow can complete normally; an infinite flow needs cancellation or a limiting condition.</li>
+<li>Terminal operators include <code>collect</code>, <code>first</code>, <code>single</code>, <code>toList</code>, <code>reduce</code>, and <code>fold</code>. Their empty and multiple-element contracts differ, so do not substitute one only for convenience.</li>
+</ul>
+<pre><code class="language-kotlin">fun observeOrders(): Flow&lt;Order&gt; = flow {
+    repository.snapshot().forEach { emit(it) } // runs per collector
+}
+
+val labels = observeOrders()
+    .filter { it.visible }
+    .map { it.toLabel() }
+    .take(20)
+
+labels.collect { render(it) }                  // terminal, cancellable suspension</code></pre>
+
+<h3 id="en-stage9-context">Context preservation, exception transparency, and flowOn<a aria-label="Link to section: Context preservation exception transparency and flowOn" class="heading-anchor" href="#en-stage9-context">#</a></h3>
+<ul>
+<li>The <code>flow</code> builder preserves context: do not <code>emit</code> from arbitrary <code>withContext</code> or a launched coroutine. Sequential emissions belong to the collection context. Use <code>flowOn</code> for upstream context or <code>channelFlow</code> for concurrent producers.</li>
+<li>Exception transparency means an implementation stops emitting when <code>emit</code> or <code>emitAll</code> fails. Do not catch a downstream failure and emit a fallback from the same builder; handle only the boundary you own.</li>
+<li><code>flowOn(Dispatchers.IO)</code> changes only operators upstream of its position. It does not move downstream mapping or collector/UI rendering. The collector stays in its caller context.</li>
+<li>When the dispatcher changes, <code>flowOn</code> commonly runs upstream in another coroutine and uses a channel with default buffering. Adjacent <code>channelFlow</code>, <code>flowOn</code>, and <code>buffer</code> boundaries can fuse; explicit <code>buffer</code> controls capacity. Cancellation can leave an already produced value undelivered, so do not infer exactly-once hand-off.</li>
+</ul>
+
+<h3 id="en-stage9-operators">Intermediate and terminal operator semantics<a aria-label="Link to section: Intermediate and terminal operator semantics" class="heading-anchor" href="#en-stage9-operators">#</a></h3>
+<table><thead><tr><th>Operator</th><th>Semantics</th><th>Senior caveat</th></tr></thead><tbody>
+<tr><td><code>map</code> / <code>filter</code></td><td>One-to-one transformation / conditional forwarding.</td><td>Sequential by default; expensive code runs in the context at that pipeline position.</td></tr>
+<tr><td><code>transform</code></td><td>Can emit zero, one, or many values for one input.</td><td>Keep emission and error ownership explicit; it is not implicit parallelism.</td></tr>
+<tr><td><code>collect</code></td><td>Processes every delivered value in order.</td><td>A slow action suspends the pipeline unless a buffer boundary exists.</td></tr>
+<tr><td><code>collectLatest</code></td><td>A new value cancels the previous action and starts the new one.</td><td>It cancels <em>work</em>; the action must be cancellable and safe to abandon.</td></tr>
+<tr><td><code>debounce</code></td><td>Emits after a quiet window; continuously changing input can postpone output.</td><td>Time-based and preview/experimental in some overloads; not a durable event queue.</td></tr>
+<tr><td><code>sample</code></td><td>Emits the latest available value at sampling ticks.</td><td>Can omit the final and intermediate values; check current API status and version.</td></tr>
+<tr><td><code>distinctUntilChanged</code></td><td>Suppresses consecutive equal values.</td><td>Equality quality matters; applying it to <code>StateFlow</code> has no effect because state is already distinct.</td></tr>
+</tbody></table>
+
+<h3 id="en-stage9-rate-mismatch">Rate mismatch: buffer, conflate, and latest families<a aria-label="Link to section: Rate mismatch buffer conflate and latest" class="heading-anchor" href="#en-stage9-rate-mismatch">#</a></h3>
+<ul>
+<li><code>buffer(capacity)</code> lets producer and consumer run concurrently up to capacity. It changes suspension, timing, and memory use, but with default overflow it does not intentionally discard values.</li>
+<li><code>conflate()</code> keeps the most recent value while the consumer is busy: the emitter is not suspended by that slow collector and intermediate <strong>values are dropped</strong>. This fits replaceable state or progress, not audit events or payments.</li>
+<li><code>collectLatest</code>, <code>mapLatest</code>, and <code>transformLatest</code> cancel prior <strong>work</strong> when a new input arrives. Cancellation is cooperative; non-cancellable blocking work may continue, and side effects are not rolled back.</li>
+<li>Use “backpressure” only informally for producer/consumer rate mismatch and suspension or buffering policy. Kotlin Flow can interoperate with Reactive Streams, but ordinary Flow code should not claim Reactive Streams request accounting, delivery, or exactly-once guarantees.</li>
+</ul>
+
+<h3 id="en-stage9-callbacks">callbackFlow, channelFlow, and cleanup races<a aria-label="Link to section: callbackFlow channelFlow and cleanup races" class="heading-anchor" href="#en-stage9-callbacks">#</a></h3>
+<pre><code class="language-kotlin">fun locations(): Flow&lt;Location&gt; = callbackFlow {
+    val listener = LocationListener { value -&gt;
+        trySend(value).onFailure { cause -&gt; logger.debug("location dropped", cause) }
+    }
+    client.register(listener)
+    awaitClose { client.unregister(listener) }
+}.buffer(capacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)</code></pre>
+<ul>
+<li>Both builders expose a <code>ProducerScope</code>. <code>channelFlow</code> permits concurrent child coroutines and thread-safe sends, and completes after its block and children. <code>callbackFlow</code> is the callback adapter and must keep the channel open for multi-shot callbacks.</li>
+<li><code>send</code> suspends according to channel capacity; <code>trySend</code> immediately returns a <code>ChannelResult</code>. Ignoring failure silently loses data. The builder has a channel/buffer boundary; adjacent <code>buffer</code> configures capacity and overflow.</li>
+<li><code>callbackFlow</code> requires cleanup with <code>awaitClose { unregister(...) }</code>. Registration, callbacks, cancellation, and unregistration can race; external unregister must be safe from the required thread/context and ideally idempotent.</li>
+<li>Handle registration failure before or around <code>awaitClose</code>, and do not assume one callback maps to one collector delivery. Buffer overflow, cancellation, and downstream policy can reject or drop values.</li>
+</ul>
+
+<h3 id="en-stage9-lifecycle">Android lifecycle and Compose collection<a aria-label="Link to section: Android lifecycle and Compose collection" class="heading-anchor" href="#en-stage9-lifecycle">#</a></h3>
+<pre><code class="language-kotlin">viewLifecycleOwner.lifecycleScope.launch {
+    viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+        launch { viewModel.ui.collect(::renderUi) }
+        launch { viewModel.messages.collect(::showMessage) }
+    }
+}
+
+// Compose UI boundary
+val ui by viewModel.ui.collectAsStateWithLifecycle()</code></pre>
+<ul>
+<li><code>repeatOnLifecycle</code> launches its block at or above the target state, cancels below it, and re-launches on re-entry. To collect multiple flows in parallel, launch one child per flow; sequentially collecting an infinite flow never reaches the next collect.</li>
+<li><code>flowWithLifecycle</code> is convenient for one flow, but operator position affects which surrounding pipeline remains active. For multiple streams or explicit ownership, <code>repeatOnLifecycle</code> is clearer.</li>
+<li>A lifecycle restart re-collects a cold flow and can repeat upstream network calls, registrations, or writes. Put side effects behind idempotent, cached, or explicitly shared ownership rather than accidentally in a UI collection recipe.</li>
+<li><code>collectAsStateWithLifecycle</code> is a Compose-to-<code>State</code> collection boundary, not a repository architecture or event-delivery guarantee. Keep domain and data APIs lifecycle-free where possible.</li>
+</ul>
+
+<h3 id="en-stage9-exposure-ownership">Safe exposure, completion, and error ownership<a aria-label="Link to section: Safe exposure completion and error ownership" class="heading-anchor" href="#en-stage9-exposure-ownership">#</a></h3>
+<ul>
+<li>A repository can expose <code>Flow&lt;DomainModel&gt;</code> while keeping mutable callback, channel, and source details private. A ViewModel exposes read-only streams or state and owns UI mapping; UI should not receive mutable producers.</li>
+<li>Document whether a flow is finite or long-lived, what starts per collection, dispatcher and main-safety, cancellation and cleanup, error types, and who owns retry or fallback. Flow does not cache by default.</li>
+<li>Normal completion is a valid outcome, not an error. <code>onCompletion</code> observes a completion cause but is not a universal catch; collector/action failures remain downstream ownership. Do not encode every failure as nullable data.</li>
+<li>Cold versus hot does not define “event.” Neither Flow, Channel, nor lifecycle collection provides a blanket exactly-once UI or business event guarantee; durable effects need persisted identity, acknowledgement, and reconciliation.</li>
+</ul>
+
+<h2 id="en-stage9-guarantees">Guarantees versus non-guarantees<a aria-label="Link to section: Guarantees versus non guarantees" class="heading-anchor" href="#en-stage9-guarantees">#</a></h2>
+<table><thead><tr><th>Safe claim</th><th>Do not promise</th></tr></thead><tbody>
+<tr><td>A cold builder executes anew for every collector.</td><td>Cold means background, cached, single-shot, or side-effect-free.</td></tr>
+<tr><td>The default pipeline is sequential; collection is cancellable and context-preserving.</td><td>Blocking work stops immediately, or <code>flowOn</code> moves the downstream collector.</td></tr>
+<tr><td><code>conflate</code> keeps the latest and drops intermediate values.</td><td>Every emission is processed, or conflation fits non-replaceable events.</td></tr>
+<tr><td><code>collectLatest</code> cancels the prior action.</td><td>Prior blocking work stops or external side effects roll back.</td></tr>
+<tr><td><code>awaitClose</code> supplies callback cleanup on close or cancellation.</td><td>Registration and unregistration are race-free without explicit design.</td></tr>
+<tr><td>A lifecycle restart can start a fresh cold collection.</td><td>Upstream side effects run once or events are delivered exactly once.</td></tr>
+</tbody></table>
+
+<h2 id="en-stage9-version-sensitive">Version-sensitive behavior<a aria-label="Link to section: Version sensitive behavior" class="heading-anchor" href="#en-stage9-version-sensitive">#</a></h2>
+<ul>
+<li>Pin one consistent <code>kotlinx-coroutines</code> family and inspect the resolved API. <code>debounce</code>/<code>sample</code> overloads, annotations, default capacities, and fusion details can evolve.</li>
+<li><code>flowOn</code> channel behavior depends on whether the dispatcher actually changes and on adjacent fusible operators. Never derive a business invariant from a default buffer size.</li>
+<li><code>collectAsStateWithLifecycle</code> comes from AndroidX lifecycle-runtime-compose; overloads, supported platforms, and default lifecycle state depend on the resolved AndroidX version.</li>
+<li>The lifecycle boundary is conceptually stable, but minimum active state and operator placement are code-level choices. Test the versions in the app, not a remembered blog sample.</li>
+</ul>
+
+<h2 id="en-stage9-decision-framework">Decision framework<a aria-label="Link to section: Decision framework" class="heading-anchor" href="#en-stage9-decision-framework">#</a></h2>
+<ol>
+<li><strong>Define the stream:</strong> finite or ongoing, cold recipe or truly shared state/event, and what every collector starts.</li>
+<li><strong>Place ownership:</strong> source and cleanup in the repository, UI mapping in the ViewModel, lifecycle collection at the UI boundary.</li>
+<li><strong>Draw contexts:</strong> collector context, upstream <code>flowOn</code> boundary, blocking calls, and allowed emission scope.</li>
+<li><strong>Choose loss semantics:</strong> preserve each value with suspension/buffer, drop replaceable intermediate values with conflate/sample/debounce, or cancel obsolete work with latest operators.</li>
+<li><strong>Specify completion and errors:</strong> normal completion, cancellation, source failure, downstream failure, and translation/retry owner.</li>
+<li><strong>Audit restarts and races:</strong> multiple collectors, lifecycle restart, callback registration/unregistration, buffer overflow, and non-idempotent effects.</li>
+<li><strong>Test the public contract:</strong> per-collector execution, ordering, cancellation and cleanup, exact operator semantics, and lifecycle integration separately.</li>
+</ol>
+
+<h2 id="en-stage9-tradeoffs">Trade-offs and failure modes<a aria-label="Link to section: Trade offs and failure modes" class="heading-anchor" href="#en-stage9-tradeoffs">#</a></h2>
+<ul>
+<li>A purely sequential flow is predictable and bounds production by suspension, but a slow collector increases end-to-end latency. Buffering improves overlap at the cost of memory and in-flight cancellation.</li>
+<li>Conflation and latest operators reduce obsolete work but lose intermediate state or cancel actions. They are wrong when each item carries non-replaceable meaning.</li>
+<li>Cold per-collector execution gives isolation, but duplicate collectors duplicate I/O and callback registrations. Do not “fix” this with a hidden global scope; choose explicit Stage 10/11 sharing when required.</li>
+<li>Lifecycle-aware collection prevents off-screen UI updates, but restart can repeat upstream effects and lose transient non-durable events.</li>
+<li><code>callbackFlow</code> makes callbacks composable but adds buffer, close, and race semantics. Missing <code>awaitClose</code> leaks listeners; unchecked <code>trySend</code> hides loss.</li>
+</ul>
+
+<h2 id="en-stage9-production-scenario">Production scenario: search suggestions<a aria-label="Link to section: Production scenario search suggestions" class="heading-anchor" href="#en-stage9-production-scenario">#</a></h2>
+<p><strong>Hypothetically:</strong> the UI exposes query changes; the ViewModel trims and applies <code>distinctUntilChanged</code>, debounces deliberate typing bursts, and performs cancellable latest search work. The repository returns a cold main-safe flow; blocking SDK work is isolated upstream with <code>flowOn(IO)</code>. Results are collected with lifecycle awareness. Recreation can re-collect, so cache and request deduplication belong to an owned data layer rather than an assumption about cold Flow.</p>
+<p>A location callback for nearby suggestions is wrapped in <code>callbackFlow</code>. The <code>trySend</code> result is observed, buffer overflow policy is explicit, and <code>awaitClose</code> unregisters race-safely. Search results are replaceable, so cancellation or conflation may fit; analytics and purchase events are not, so they use a separate durable policy. Errors map at the repository or use-case boundary, while UI owns presentation and collector cancellation.</p>
+
+<h2 id="en-stage9-review-trap">Code-review/debugging trap<a aria-label="Link to section: Code review debugging trap" class="heading-anchor" href="#en-stage9-review-trap">#</a></h2>
+<pre><code class="language-kotlin">fun updates() = flow {
+    withContext(Dispatchers.IO) { emit(api.load()) } // violates flow context invariant
+}.conflate()                                       // silently wrong for audit events
+
+fun callbacks() = callbackFlow {
+    sdk.register { trySend(it) }                   // result ignored
+    // no awaitClose: registration leaks / builder contract fails
+}
+
+lifecycleScope.launch {
+    flowA.collect(::renderA)
+    flowB.collect(::renderB)                       // unreachable for infinite flowA
+}</code></pre>
+<p>Review should move upstream work with <code>flowOn</code> or call a main-safe suspend API, preserve every audit event, inspect <code>trySend</code>, unregister in race-safe <code>awaitClose</code>, and collect independent infinite flows in sibling coroutines under <code>repeatOnLifecycle</code>. Debug by recording collector identity, context, emission and action timestamps, cancellation cause, buffer policy, and register/unregister counts. Never infer exactly-once from a clean log.</p>
+
+<h2 id="en-stage9-testing">Testing cold Flow fundamentals<a aria-label="Link to section: Testing cold Flow fundamentals" class="heading-anchor" href="#en-stage9-testing">#</a></h2>
+<ul>
+<li>For a finite flow under <code>runTest</code>, use <code>toList()</code> or <code>first()</code> and assert values, order, completion, and failure. For an ongoing flow, collect in <code>backgroundScope</code> and cancel or bound it with <code>take</code>.</li>
+<li>Collect the same cold flow twice and assert two source invocations and isolated local state when that is its contract. This catches accidental caching or accidentally duplicated effects.</li>
+<li>Use a shared <code>TestCoroutineScheduler</code> to drive debounce and sample delays. Test just before, at, and after boundaries without treating virtual scheduling as production thread ordering.</li>
+<li>For <code>callbackFlow</code>, fake registration, trigger callbacks, cancel the collector, and assert unregister according to the adapter contract, including cancellation during registration and failed <code>trySend</code>. Add real-thread integration or stress coverage for thread-safety races.</li>
+</ul>
+
+<h2 id="en-stage9-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice Q and A" class="heading-anchor" href="#en-stage9-likely-qa">#</a></h2>
+<p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
+<ol>
+<li><strong>What does cold Flow mean?</strong> Its builder starts at a terminal operator and executes independently for every collector. It does not imply background execution, caching, or absence of side effects.</li>
+<li><strong>Is collection sequential?</strong> By default, yes: emit waits through downstream processing. Explicit buffer or concurrency boundaries decouple producer and consumer.</li>
+<li><strong>Where does a flow execute?</strong> In the collector context unless an operator such as <code>flowOn</code> changes its upstream segment. <code>flowOn</code> never moves the downstream collector.</li>
+<li><strong>Why context preservation and exception transparency?</strong> They support local reasoning: emission cannot jump arbitrary context, and a failed emit cannot be followed by hidden fallback emissions.</li>
+<li><strong><code>collect</code> or <code>collectLatest</code>?</strong> Collect handles every delivered value; collectLatest cancels the prior action for a new one. Use latest only when obsolete work is cancellable and safe to abandon.</li>
+<li><strong><code>buffer</code> or <code>conflate</code>?</strong> Buffer overlaps producer and consumer and normally preserves queued values; conflate keeps the latest and drops intermediate values.</li>
+<li><strong>How do debounce and sample differ?</strong> Debounce waits for quiet; sample emits the latest at periodic ticks. Both can omit inputs and do not provide durable event delivery.</li>
+<li><strong>When should you use callbackFlow?</strong> For a multi-shot callback adapter with explicit send-result and capacity policy plus mandatory race-safe <code>awaitClose</code> cleanup.</li>
+<li><strong>How do you collect in a Fragment or Compose?</strong> Views use <code>repeatOnLifecycle</code>; Compose commonly uses <code>collectAsStateWithLifecycle</code> for state. Multiple infinite flows need parallel child collection.</li>
+<li><strong>What delivery guarantee does Flow provide?</strong> Only its documented operator, context, and cancellation contract. It has no blanket caching or exactly-once business/event delivery guarantee.</li>
+</ol>
+
+<h2 id="en-stage9-followups">4 senior follow-ups with answers<a aria-label="Link to section: 4 senior follow ups" class="heading-anchor" href="#en-stage9-followups">#</a></h2>
+<ol>
+<li><strong>Two screens collect the same repository cold flow.</strong> Expect two executions and possibly two registrations or I/O calls. Decide whether isolation is desired; otherwise define owned sharing in Stage 10/11 rather than assuming cache.</li>
+<li><strong>A value disappears around <code>flowOn</code> cancellation.</strong> A dispatcher-changing flowOn uses a channel boundary; cancellation can prevent in-flight delivery. A business-critical transfer needs durable identity and reconciliation, not timing assumptions.</li>
+<li><strong><code>collectLatest</code> starts duplicate server writes.</strong> Cancellation does not roll back a write, and blocking code may ignore it. Do not use latest for non-idempotent effects; use operation IDs and explicit serialization or status.</li>
+<li><strong>Lifecycle restart registers the listener twice.</strong> Verify prior <code>awaitClose</code> unregister, the race-safe SDK contract, and collector ownership. A new cold collection legitimately registers again after cleanup.</li>
+</ol>
+
+<h2 id="en-stage9-self-check">5 self-check questions without answers<a aria-label="Link to section: 5 self check questions without answers" class="heading-anchor" href="#en-stage9-self-check">#</a></h2>
+<ol>
+<li>Which operations in your pipeline execute per collector, and in which context?</li>
+<li>Where can values buffer or drop, and where can prior work be cancelled?</li>
+<li>Which lifecycle restarts repeat upstream side effects, and are they safe?</li>
+<li>Does the callback adapter inspect <code>trySend</code> and unregister race-safely?</li>
+<li>Which layer owns normal completion, source error, downstream error, and cancellation?</li>
+</ol>
+
+<h2 id="en-stage9-english-skeletons">Interview-ready English answer skeletons<a aria-label="Link to section: Interview ready English answer skeletons" class="heading-anchor" href="#en-stage9-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do Kotlin Flow execution, context, rate mismatch, and Android lifecycle collection work?</em></p>
+<h3 id="en-stage9-answer-30">~30-second answer<a aria-label="Link to section: 30 second answer" class="heading-anchor" href="#en-stage9-answer-30">#</a></h3>
+<blockquote><p>A normal Flow is a cold recipe: each terminal collection runs its builder again. The pipeline is sequential in the collector context unless I add a boundary. flowOn moves only its upstream segment and may introduce a buffered channel; it never moves downstream UI collection. Buffer overlaps work, conflate drops intermediate values, and collectLatest cancels the previous action. callbackFlow needs checked sends and race-safe awaitClose cleanup. On Android I collect at the UI lifecycle boundary and remember that a restart can rerun cold upstream effects. Flow itself provides neither caching nor blanket exactly-once delivery.</p></blockquote>
+<h3 id="en-stage9-answer-2min">~2-minute answer<a aria-label="Link to section: 2 minute answer" class="heading-anchor" href="#en-stage9-answer-2min">#</a></h3>
+<blockquote><p>I model Flow as a suspending asynchronous sequence contract. flowOf and asFlow cover fixed sources, while flow builds a sequential producer. Intermediate operators are lazy and a terminal operator starts collection. A cold flow runs independently for every collector, so it is not automatically background, shared, or cached.</p><p>By default, emit and downstream operators form a sequential call chain in the collector coroutine. Context preservation prevents arbitrary cross-context emit, and exception transparency prevents continuing with hidden emissions after emit fails. I use flowOn only to change the upstream segment. If it changes dispatcher, it normally creates an upstream coroutine and channel boundary, so capacity and in-flight cancellation matter rather than assumed delivery.</p><p>For rate mismatch I choose semantics explicitly. Buffer overlaps producer and consumer while normally retaining queued values; conflate drops intermediate values and retains the latest; latest operators cancel obsolete work. Cancellation is cooperative and never rolls back an external effect. Debounce, sample, and distinctUntilChanged suppress values under different time or equality rules, so they fit replaceable inputs, not durable events.</p><p>For callbacks I use callbackFlow or channelFlow with ProducerScope, inspect trySend or use suspending send deliberately, configure the buffer, and always use race-safe awaitClose unregister. On Android, repeatOnLifecycle restarts collection and parallel flows need child coroutines; flowWithLifecycle is convenient for one chain, while collectAsStateWithLifecycle is only the Compose state boundary. A restart can repeat cold upstream effects. Repositories expose read-only, main-safe contracts and document completion and errors; tests verify per-collector execution, order, cancellation, timing policy, and cleanup. Hot state, sharing, flattening, retry, and combine require separate design rather than being implied by Flow.</p></blockquote>
+
+<h2 id="en-stage9-sources">Official sources<a aria-label="Link to section: Official sources" class="heading-anchor" href="#en-stage9-sources">#</a></h2>
+<ul>
+<li><a href="https://kotlinlang.org/docs/flow.html">Kotlin Flow guide</a> and <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-flow/">Flow API contract</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/flow-on.html">flowOn</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/buffer.html">buffer</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/conflate.html">conflate</a>, and <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/collect-latest.html">collectLatest</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/callback-flow.html">callbackFlow</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/channel-flow.html">channelFlow</a>, and <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.channels/await-close.html">awaitClose</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/debounce.html">debounce</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/sample.html">sample</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/distinct-until-changed.html">distinctUntilChanged</a>, and <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/take.html">take</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/coroutines">Lifecycle-aware coroutines and Flow</a>, <a href="https://developer.android.com/reference/kotlin/androidx/lifecycle/package-summary#flowWithLifecycle(kotlinx.coroutines.flow.Flow,androidx.lifecycle.Lifecycle,androidx.lifecycle.Lifecycle.State)">flowWithLifecycle</a>, and <a href="https://developer.android.com/reference/kotlin/androidx/lifecycle/compose/package-summary">Lifecycle Compose APIs</a></li>
+<li><a href="https://developer.android.com/kotlin/flow/test">Testing Kotlin flows on Android</a> and <a href="https://developer.android.com/topic/architecture/data-layer">Android data layer guidance</a></li>
 </ul>
 </div></details>
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="en-kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">

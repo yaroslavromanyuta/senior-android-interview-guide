@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Headless mobile smoke test for the bilingual Stage 8 guide section."""
+"""Headless mobile smoke test for the bilingual Stage 9 guide section."""
 
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 
 ROOT = Path(__file__).resolve().parents[1]
-UA_ID = "kotlin-coroutines-failures-supervision-testing"
-EN_ID = "en-kotlin-coroutines-failures-supervision-testing"
+UA_ID = "kotlin-flow-foundations"
+EN_ID = "en-kotlin-flow-foundations"
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
@@ -120,7 +120,7 @@ def main() -> None:
                 f"{metrics['width']}×{metrics['height']} without horizontal overflow"
             )
 
-            print("Stage 8 browser smoke passed: " + "; ".join(results))
+            print("Stage 9 browser smoke passed: " + "; ".join(results))
         finally:
             driver.quit()
 
