@@ -501,6 +501,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="android-ui-architecture-state-modeling" href="#android-ui-architecture-state-modeling">Android UI architecture та state modeling: MVVM, MVI, UDF</a>
 </li>
 <li class="toc-major">
+<a data-target="clean-architecture-android-modularization" href="#clean-architecture-android-modularization">Clean Architecture та Android modularization</a>
+</li>
+<li class="toc-major">
 <a data-target="kotlin-for-android" href="#kotlin-for-android">Kotlin for Android</a>
 <ol class="toc-children">
 <li><a data-target="val-vs-var-immutability" href="#val-vs-var-immutability">val vs var, immutability</a></li>
@@ -813,6 +816,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </li>
 <li class="toc-major">
 <a data-target="en-android-ui-architecture-state-modeling" href="#en-android-ui-architecture-state-modeling">Android UI architecture and state modeling: MVVM, MVI, UDF</a>
+</li>
+<li class="toc-major">
+<a data-target="en-clean-architecture-android-modularization" href="#en-clean-architecture-android-modularization">Clean Architecture and Android modularization</a>
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-for-android" href="#en-kotlin-for-android">Kotlin for Android</a>
@@ -3819,6 +3825,181 @@ fun refresh() = viewModelScope.launch {
 <li><a href="https://developer.android.com/develop/ui/compose/libraries#streams">Compose: lifecycle-aware streams</a></li>
 <li><a href="https://kotlinlang.org/docs/sealed-classes.html">Kotlin: Sealed classes and interfaces</a> та <a href="https://kotlinlang.org/docs/data-classes.html">Data classes</a></li>
 <li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/update.html">Kotlin: MutableStateFlow.update</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="clean-architecture-android-modularization" data-title="Clean Architecture та Android modularization" id="clean-architecture-android-modularization" open=""><summary class="major-summary"><span class="major-title">Clean Architecture та Android modularization</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<h2 id="stage13-uk-objective">Learning objective<a aria-label="Посилання на розділ: Learning objective" class="heading-anchor" href="#stage13-uk-objective">#</a></h2>
+<p>Після етапу ви маєте проєктувати межі за напрямом змін, ownership і залежностями, а не за назвами папок: застосувати dependency rule, відділити policy від mechanism, вирішити, чи потрібен domain layer/use case/repository interface, обрати model boundaries і ціну mapping, перейти від logical packages до Gradle modules лише з вимірюваною користю, та мігрувати моноліт поступово з автоматичними dependency fitness rules. Це не повтор Stage 12 про UI state і не детальний Stage 17 про DI framework.</p>
+
+<h2 id="stage13-uk-mental-model">Senior mental model<a aria-label="Посилання на розділ: Senior mental model" class="heading-anchor" href="#stage13-uk-mental-model">#</a></h2>
+<blockquote><p><strong>Architecture is controlled coupling.</strong> Clean Architecture — це dependency rule, а не кільця, назви <code>domain/data/presentation</code> чи фіксована кількість шарів. Високорівнева policy не повинна знати нестабільний mechanism; source-code dependencies спрямовують до стабільної policy, а runtime control flow може йти назовні через implementation, підставлену composition root.</p></blockquote>
+<ul>
+<li><strong>Policy</strong> — бізнес-рішення та інваріанти: eligibility, pricing, retry classification. <strong>Mechanism</strong> — Android, HTTP, SQL, analytics, clock. Мінливість і ownership важливіші за назву package.</li>
+<li>Boundary цінна, якщо вона локалізує change, дає незалежний contract/test або ownership. Interface, mapper чи module без такої причини — ceremony.</li>
+<li>Оцінюйте систему двома графами: compile-time dependencies і runtime calls/data flow. Dependency inversion змінює перший, не заперечуючи другий.</li>
+</ul>
+
+<h2 id="stage13-uk-dependency-graph">Dependency graph та internals<a aria-label="Посилання на розділ: Dependency graph and internals" class="heading-anchor" href="#stage13-uk-dependency-graph">#</a></h2>
+<pre><code class="language-text">compile time:
+:app ──&gt; :feature:checkout ──&gt; :feature:checkout:api (owns port/policy)
+  │                                             ▲
+  ├──&gt; :data:orders ────────────────────────────┘ (implements port)
+  └──&gt; :core:navigation-api
+
+runtime:
+UI → CheckoutPolicy → OrderRepository(port) → Sql/HttpOrderRepository(adapter)
+
+Forbidden: :core:domain → Android/Retrofit/Room/feature implementation
+Risk: feature A ↔ feature B cycle; shared module with unbounded fan-out</code></pre>
+<p>Gradle створює directed project graph і task graph. Цикл project dependencies не є «двосторонньою співпрацею», а ознакою неправильного ownership; винесіть малий contract, переорієнтуйте orchestration або об’єднайте те, що змінюється разом. Високий fan-out означає багато причин зміни для consumer; високий fan-in робить boundary стабільною й дорогою для breaking changes. Stable dependency principle: нестабільні features залежать від стабільних contracts, але «stable» не означає «ніколи не змінюється».</p>
+
+<h2 id="stage13-uk-layers-models">Presentation/domain/data та моделі<a aria-label="Посилання на розділ: Layers and models" class="heading-anchor" href="#stage13-uk-layers-models">#</a></h2>
+<ul>
+<li><strong>Presentation</strong> адаптує interaction/result до UI contract; <strong>data</strong> координує sources, cache, conflict/freshness і persistence; optional <strong>domain</strong> концентрує reusable/complex policy. Немає обов’язкової кількості шарів: простий CRUD screen може напряму викликати data boundary, а складна pricing policy виграє від pure domain.</li>
+<li>Domain layer допомагає, коли правило повторно використовується кількома callers, комбінує repositories, має нетривіальні invariants або потребує platform-free тестів. Він шкодить, коли кожен клас лише делегує один method, дублює names/types і розтягує tracing.</li>
+<li><strong>DTO</strong> відображає wire schema і tolerates transport concerns; database entity — storage schema/index/relations; domain model виражає validated business meaning; UI model — formatted/permission-aware display contract. Не називайте Room entity «domain entity» лише через Clean Architecture vocabulary.</li>
+<li>Mapping ізолює schema evolution і invalid data, але коштує allocations, boilerplate, defaults, lost fields та debugging hops. Мапте на trust/change boundaries; не створюйте чотири ідентичні моделі автоматично. Для простого stable internal value спільна модель може бути чеснішою.</li>
+</ul>
+
+<h2 id="stage13-uk-inversion-use-cases">Repository ownership, inversion та use cases<a aria-label="Посилання на розділ: Repository inversion and use cases" class="heading-anchor" href="#stage13-uk-inversion-use-cases">#</a></h2>
+<p>Repository не є автоматично domain abstraction. Якщо API — CRUD façade над endpoint і витікає paging/HTTP DTO, це data gateway незалежно від назви. Repository interface належить policy-side consumer, коли policy визначає потрібні capability й має кілька implementations/test substitutes; adapter module реалізує цей port. Якщо contract суто data-centric і використовується багатьма features, ownership у data API може бути кращим. Уникайте одного god repository.</p>
+<p><strong>Interfaces alone do not decouple.</strong> Consumer лишається coupled до semantics, models, errors, threading, versioning і lifetime. Interface корисний, коли відділяє volatile implementation або формує consumer-owned narrow port; one-to-one interface для кожного concrete class лише додає navigation cost.</p>
+<p>Use case виправданий, коли називає business operation, оркеструє кілька ports, enforce-ить policy/transaction boundary або повторно використовується. <code>GetUserUseCase(repo).invoke() = repo.getUser()</code> без окремої semantics — pass-through layer. Простий call можна лишити на repository; додайте use case, коли виникне policy seam.</p>
+
+<h2 id="stage13-uk-packages-modules">Package-by-feature/layer; logical та Gradle modules<a aria-label="Посилання на розділ: Packages and modules" class="heading-anchor" href="#stage13-uk-packages-modules">#</a></h2>
+<ul>
+<li><strong>package-by-layer</strong> (<code>ui/</code>, <code>domain/</code>, <code>data/</code>) показує technical role, але feature change розкиданий і accidental cross-feature access легкий. <strong>Package-by-feature</strong> colocalizes change та ownership; усередині великої feature можна мати локальні layers. Packages — logical organization/visibility, не окрема compilation unit.</li>
+<li>Gradle module дає enforced dependency edge, окрему compilation/cache/task/API surface і ownership boundary, але додає configuration, variants, plugins, resources, dependency wiring та IDE/build overhead. Спочатку доведіть seam logical packages/internal visibility; фізично виділяйте за change cadence, reuse, build graph або командною межею.</li>
+<li>Типовий graph: thin <code>:app</code> як composition/manifest entry; vertical <code>:feature:*</code>; вузькі <code>:core:*</code>; конкретні <code>:data:*</code>; <code>:design-system</code> для owned tokens/components/resources; <code>:testing</code> або test fixtures для reusable test tools. Не робіть <code>:core:common</code> звалищем.</li>
+</ul>
+
+<h2 id="stage13-uk-module-types">Module types, <code>api</code>/<code>implementation</code> та delivery<a aria-label="Посилання на розділ: Module types and dependency exposure" class="heading-anchor" href="#stage13-uk-module-types">#</a></h2>
+<ul>
+<li><code>implementation</code> приховує dependency від compile classpath consumers і зменшує accidental API/fan-out; <code>api</code> потрібен, коли public signature модуля справді expose-ить type dependency. Це Gradle classpath contract, не security boundary.</li>
+<li><strong>Kotlin/JVM</strong> module підходить pure policy/models без Android resources/classes і часто має простіший variant/task surface. <strong>Android library</strong> потрібна для resources, manifest, Android APIs, BuildConfig або Android tests; AAR/resource namespace і variants мають ціну.</li>
+<li><strong>dynamic feature</strong> — Play Feature Delivery/deployment concern з install-time/on-demand/conditional behavior, base-module relationship, install failure та unavailable-code/resource states. Не використовуйте її як синонім звичайного feature library і не припускайте, що compile module фізично завантажується окремо.</li>
+</ul>
+
+<h2 id="stage13-uk-boundaries">Navigation, DI contracts, resources та stable boundaries<a aria-label="Посилання на розділ: Boundary contracts" class="heading-anchor" href="#stage13-uk-boundaries">#</a></h2>
+<ul>
+<li>Feature не повинна import implementation іншої feature. Expose малий navigation contract: typed destination/entry interface або registrar; app-level composition connects graph. Не передавайте internal screen classes чи NavController через core. Деталі navigation — Stage 4.</li>
+<li>DI contract складається з required ports та exported entry point; composition root обирає implementation. Не створюйте bidirectional «DI module» dependency і не ховайте service locator у core. Scope/binding internals належать Stage 17.</li>
+<li>Resource ownership: feature володіє своїми strings/drawables; design system — shared tokens/assets із versioned naming. Не покладайтеся на випадкові transitive <code>R</code> references; namespace/non-transitive R behavior залежить від AGP.</li>
+<li>Convention plugin централізує повторювану build policy — toolchains, lint, test defaults, Android options — без copy/paste. Це executable build governance, але plugin має бути малим, versioned/tested і не застосовувати всі plugins/dependencies усюди.</li>
+</ul>
+
+<h2 id="stage13-uk-build-ownership">Build performance, teams, blast radius та testability<a aria-label="Посилання на розділ: Build performance and ownership" class="heading-anchor" href="#stage13-uk-build-ownership">#</a></h2>
+<p>Модулі можуть дозволити parallelism, caching та recompilation лише affected projects, але граф, ABI changes, annotation/code generation, configuration cost і critical path визначають результат. Більше modules не завжди швидше: serial chain із tiny modules може погіршити configuration і task overhead. Міряйте clean build, incremental ABI/non-ABI edit, configuration time, cache hit rate і critical path на CI/репрезентативних machines.</p>
+<p>Організаційно boundary може дати CODEOWNERS, локальні tests, менший blast radius і незалежну evolution. Але shared core із десятками consumers збільшує coordination; test doubles, які повторюють implementation, дають фальшиву впевненість. Test pure policy locally, adapter contract/integration на boundary, feature flow із fakes та кілька app composition tests.</p>
+
+<h2 id="stage13-uk-guarantees">Guarantees та explicit non-guarantees<a aria-label="Посилання на розділ: Guarantees and non guarantees" class="heading-anchor" href="#stage13-uk-guarantees">#</a></h2>
+<table><thead><tr><th>Корисний contract</th><th>Не гарантує</th></tr></thead><tbody>
+<tr><td>Dependency rule забороняє policy compile against конкретний mechanism.</td><td>Назви <code>domain/data</code> або mandated layer count; There is no mandated layer count.</td></tr>
+<tr><td>Consumer-owned port дозволяє підставити adapter.</td><td>A repository is not automatically a domain abstraction; Interfaces alone do not decouple.</td></tr>
+<tr><td>Gradle module enforce-ить declared compile dependency graph.</td><td>Modules do not guarantee runtime isolation or security; код часто потрапляє в один process/APK.</td></tr>
+<tr><td><code>implementation</code> звужує compile exposure.</td><td>Runtime encapsulation, semantic independence або відсутність transitive runtime code.</td></tr>
+<tr><td>Measured seams можуть зменшити change/test blast radius.</td><td>Modularization does not guarantee quality or build speed.</td></tr>
+</tbody></table>
+
+<h2 id="stage13-uk-version-sensitive">Version/build-sensitive behavior<a aria-label="Посилання на розділ: Version and build sensitive behavior" class="heading-anchor" href="#stage13-uk-version-sensitive">#</a></h2>
+<ul>
+<li>AGP/Gradle/Kotlin compatibility, variant APIs, namespace, non-transitive/non-final R, test fixtures, configuration cache і Kotlin compiler behavior змінюються. Pin toolchains, читайте release notes й перевіряйте resolved graph.</li>
+<li><code>api</code>/<code>implementation</code> semantics залежать від applied library plugins і public signatures; перевіряйте dependency reports/ABI, а не назву configuration у вакуумі.</li>
+<li>Dynamic delivery залежить від Android App Bundle, Play/installer, device/API, delivery conditions і Play Core API version; тестуйте install/uninstall/failure paths.</li>
+<li>Build-performance твердження валідні лише для конкретного graph, hardware, cache, daemon, CI та edit scenario. Зберігайте baseline до/після migration.</li>
+</ul>
+
+<h2 id="stage13-uk-decision-framework">Decision framework<a aria-label="Посилання на розділ: Decision framework" class="heading-anchor" href="#stage13-uk-decision-framework">#</a></h2>
+<ol>
+<li>Намалюйте current package/project dependency graph, owners, cycles, fan-in/fan-out і hotspots change.</li>
+<li>Для candidate boundary назвіть policy, volatile mechanism, contract owner, allowed direction і дані/errors, що перетинають seam.</li>
+<li>Оцініть benefit: independent change/team/reuse/test/build/delivery; і cost: mapping, API versioning, variants, resources, navigation/DI wiring.</li>
+<li>Спробуйте cheapest enforcement: package-by-feature, <code>internal</code>, lint/architecture test. Створюйте Gradle module, якщо потрібен compile/build/ownership boundary.</li>
+<li>Зафіксуйте fitness rule та before/after metrics; rollback/merge boundary, якщо cost перевищує benefit.</li>
+</ol>
+
+<h2 id="stage13-uk-tradeoffs">Trade-offs та failure modes<a aria-label="Посилання на розділ: Trade offs and failure modes" class="heading-anchor" href="#stage13-uk-tradeoffs">#</a></h2>
+<ul>
+<li>Layer-first architecture породжує horizontal god modules і довгі зміни; feature-only може дублювати policy або створити direct feature dependencies.</li>
+<li>Надмірні models/mappers гублять fields і збільшують allocations; shared DTO протікає transport schema в policy та робить backend change blast radius.</li>
+<li>Pass-through use cases/interfaces ускладнюють tracing; відсутній seam прив’язує policy до Retrofit/Room/Android.</li>
+<li><code>:core:common</code>, design-system або navigation module з необмеженим API набуває високий fan-out і стає coordination bottleneck.</li>
+<li>Надто дрібні Gradle modules збільшують plugin/configuration/variant cost; один app module не enforce-ить ownership і recompiles broad graph.</li>
+<li>Dependency cycle, reflection/service locator або duplicate model копіювання обходять intended graph; green compilation ще не доводить correct runtime composition.</li>
+</ul>
+
+<h2 id="stage13-uk-production-migration">Production migration: seams та strangler<a aria-label="Посилання на розділ: Production migration scenario" class="heading-anchor" href="#stage13-uk-production-migration">#</a></h2>
+<p><strong>Гіпотетично:</strong> checkout живе в monolithic <code>:app</code>; UI напряму викликає Retrofit service, Room DAO і pricing singleton. Baseline: checkout files/change coupling, module build critical path, incremental edit time, flaky integration tests, cycle count і owners. Команда спершу вводить package-by-feature та narrow <code>CheckoutPolicy</code>/<code>OrderRepository</code> seam, адаптує legacy implementation і переключає один user journey — strangler, не big-bang rewrite.</p>
+<p>Далі pure pricing/order contracts переходять у Kotlin/JVM <code>:feature:checkout:api</code> або domain module лише якщо reuse/ownership це виправдовує; Android UI/resources лишаються в feature Android library, Retrofit/Room adapter — у <code>:data:orders</code>, app — composition root. Старий path видаляють після parity metrics: conversion/error rate, contract tests, compile graph, incremental/CI time. Кожен slice deployable; rollback повертає composition binding, а не весь rewrite.</p>
+
+<h2 id="stage13-uk-review-trap">Code-review/debugging trap<a aria-label="Посилання на розділ: Code review and debugging trap" class="heading-anchor" href="#stage13-uk-review-trap">#</a></h2>
+<pre><code class="language-kotlin">// :feature:checkout depends on :feature:catalog:impl
+class CheckoutUseCase(
+    private val repo: CheckoutRepositoryImpl,
+) {
+    suspend operator fun invoke(id: String) = repo.loadDto(id) // pass-through + DTO leak
+}
+
+interface CheckoutRepository // declared beside the implementation, no consumer capability
+</code></pre>
+<p>Trap: diagram має «clean» boxes, але dependency йде до implementation, use case не містить policy, DTO перетинає всі boundaries, а catalog/checkout можуть утворити cycle. Debug спочатку через <code>dependencies</code>/<code>dependencyInsight</code> і project graph, потім знайдіть public signature, що expose-ить edge, owner contract і runtime composition. Fix: narrow consumer-owned port, explicit mapper/error contract, app orchestration або neutral API module — не ще один generic interface.</p>
+
+<h2 id="stage13-uk-fitness-rules">Dependency fitness rules у CI<a aria-label="Посилання на розділ: Dependency fitness rules in CI" class="heading-anchor" href="#stage13-uk-fitness-rules">#</a></h2>
+<ul>
+<li>Fail CI on project/package cycles, forbidden edges (<code>domain → android.*</code>, <code>feature → feature:impl</code>) і unexpected public API growth; allowlist має owner/expiry.</li>
+<li>Перевіряйте graph snapshot, dependency locks/verification, lint/architecture tests, Kotlin explicit API/API dumps для published contracts і Android resource-prefix/namespace conventions.</li>
+<li>Track fan-out/fan-in, changed modules per PR, ABI vs implementation invalidation, configuration/critical-path time, cache hits, flaky tests і cross-team review count. Threshold має сигналізувати regression, не gamify число modules.</li>
+<li>CI rule повинно пояснювати violation і локальну команду; version convention plugins і contract tests разом із boundary.</li>
+</ul>
+
+<h2 id="stage13-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice questions and answers" class="heading-anchor" href="#stage13-uk-likely-qa">#</a></h2>
+<p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
+<ol>
+<li><strong>Що є суттю Clean Architecture?</strong> Dependency rule: policy не компілюється проти volatile mechanisms; naming і кількість layers вторинні.</li>
+<li><strong>Коли потрібен domain layer?</strong> Для reused/complex policy, multi-repository orchestration або platform-free invariants; не для автоматичних one-line wrappers.</li>
+<li><strong>Де має жити repository interface?</strong> У owner потрібного contract: часто consumer/policy для inversion, інколи stable data API для shared data capability.</li>
+<li><strong>Чи потрібні DTO, domain і UI model завжди?</strong> Ні. Розділяйте різні schemas/trust/change cadence; враховуйте mapping і debugging cost.</li>
+<li><strong>Package-by-feature чи layer?</strong> Feature зазвичай локалізує change/ownership; локальні layers усередині feature зберігають roles без horizontal god packages.</li>
+<li><strong>Package і Gradle module — те саме?</strong> Ні. Package організує/обмежує source; Gradle project створює compilation, dependency, task та API boundary з overhead.</li>
+<li><strong><code>api</code> чи <code>implementation</code>?</strong> Default <code>implementation</code>; <code>api</code> лише коли dependency type є навмисною частиною public consumer surface.</li>
+<li><strong>Android library чи Kotlin/JVM?</strong> Kotlin/JVM для pure code; Android library, коли потрібні resources, manifest, Android APIs або Android-specific tests.</li>
+<li><strong>Чи більше модулів прискорює build?</strong> Не гарантовано. Parallel/cache isolation може допомогти, але configuration, variants і serial critical path можуть погіршити; міряйте scenarios.</li>
+<li><strong>Як мігрувати моноліт?</strong> Baseline metrics → logical seam → adapter → один strangler slice → enforce graph → extract physical module only when benefit is proven.</li>
+</ol>
+
+<h2 id="stage13-uk-followups">4 senior follow-ups з відповідями<a aria-label="Посилання на розділ: 4 senior follow ups" class="heading-anchor" href="#stage13-uk-followups">#</a></h2>
+<ol>
+<li><strong>Дві features потребують переходу одна в одну.</strong> Не додавайте cycle: app-level navigator/orchestrator залежить від їхніх destination contracts або neutral navigation API.</li>
+<li><strong>Після extraction build став повільнішим.</strong> Порівняйте configuration, task count, critical path, cache і ABI invalidation; скоротіть plugin/variant surface або merge tiny serial modules.</li>
+<li><strong>Domain model майже дорівнює DTO.</strong> Якщо trust/schema/cadence справді однакові, shared model може бути дешевшою; додайте mapping, коли boundary diverges, не за шаблоном.</li>
+<li><strong>Dynamic feature не встановилася.</strong> Base має працювати без її code/resources, показати retry/fallback і зберегти route intent; test install cancellation, failure, update та unavailable state.</li>
+</ol>
+
+<h2 id="stage13-uk-self-check">4 unanswered self-checks<a aria-label="Посилання на розділ: 4 unanswered self checks" class="heading-anchor" href="#stage13-uk-self-check">#</a></h2>
+<ol>
+<li>Які три найбільші change hotspots/cycles/fan-out edges у вашому current graph?</li>
+<li>Яка policy зараз знає Android, network або storage mechanism, і який narrow port їй реально потрібен?</li>
+<li>Які mappings захищають різні schemas, а які лише дублюють fields без користі?</li>
+<li>Які before/after product, ownership, test і build metrics доведуть, що extraction варта cost?</li>
+</ol>
+
+<h2 id="stage13-uk-english-skeletons">Interview-ready English answer skeletons<a aria-label="Посилання на розділ: Interview ready English answer skeletons" class="heading-anchor" href="#stage13-uk-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you apply Clean Architecture and modularization in an Android app?</em></p>
+<h3 id="stage13-uk-answer-30">~30-second answer<a aria-label="Посилання на розділ: 30 second answer" class="heading-anchor" href="#stage13-uk-answer-30">#</a></h3>
+<blockquote><p>I treat Clean Architecture as a dependency rule, not a mandated folder diagram. Stable business policy owns narrow contracts; Android, database, and network mechanisms implement them at the composition boundary. I add domain models, use cases, and mappers only when they protect real invariants or change boundaries. I start with package-by-feature and extract Gradle modules for measurable ownership, reuse, build, or delivery needs. I prevent cycles and implementation leaks in CI and compare incremental build, test, and change-blast-radius metrics, because more modules do not automatically improve quality or speed.</p></blockquote>
+<h3 id="stage13-uk-answer-2min">~2-minute answer<a aria-label="Посилання на розділ: 2 minute answer" class="heading-anchor" href="#stage13-uk-answer-2min">#</a></h3>
+<blockquote><p>I begin with policy and volatility. Business rules should not compile against Retrofit, Room, Android, or a feature implementation. A consumer-owned port describes the capability the policy needs, an outer adapter implements it, and the app composition root connects them. Runtime calls can still go outward; dependency inversion is about source dependencies.</p><p>I do not mandate presentation, domain, and data for every feature. A domain layer earns its cost when it centralizes reused or complex policy. A use case should name an operation or coordinate rules, not just forward one repository call. DTOs, persistence entities, domain models, and UI models are separate when schemas, trust, or change cadence differ; every mapper also adds allocation, defaults, and debugging cost.</p><p>Organizationally, I prefer package-by-feature, then extract Gradle modules when I need an enforced compile boundary, ownership, reuse, cache isolation, or delivery. The app is a thin composition root; features expose narrow APIs; core, data, design-system, and testing modules each have explicit ownership. I default to implementation dependencies, use api only for intentional public types, and keep pure policy in Kotlin/JVM modules. Dynamic features are a delivery mechanism, not ordinary architecture modules.</p><p>I reject cycles, feature-to-implementation edges, and unbounded shared modules with CI fitness rules. Navigation and DI cross features through small contracts; resources stay with their owner and convention plugins centralize build policy. For a monolith I establish metrics, introduce a logical seam and legacy adapter, migrate one strangler slice, then extract physically. I verify product parity, fan-out, changed modules, incremental and CI critical-path time. Modules enforce a build graph, not runtime isolation, security, quality, or guaranteed speed.</p></blockquote>
+
+<h2 id="stage13-uk-sources">Офіційні джерела<a aria-label="Посилання на розділ: Офіційні джерела" class="heading-anchor" href="#stage13-uk-sources">#</a></h2>
+<ul>
+<li><a href="https://developer.android.com/topic/architecture">Android: Guide to app architecture</a>, <a href="https://developer.android.com/topic/architecture/data-layer">Data layer</a>, <a href="https://developer.android.com/topic/architecture/domain-layer">Domain layer</a></li>
+<li><a href="https://developer.android.com/topic/modularization">Android: Guide to app modularization</a> та <a href="https://developer.android.com/topic/modularization/patterns">Common modularization patterns</a></li>
+<li><a href="https://developer.android.com/build/optimize-your-build">Android: Optimize your build speed</a></li>
+<li><a href="https://developer.android.com/guide/playcore/feature-delivery">Android: Play Feature Delivery overview</a></li>
+<li><a href="https://docs.gradle.org/current/userguide/multi_project_builds.html">Gradle: Multi-project builds</a> та <a href="https://docs.gradle.org/current/userguide/java_library_plugin.html">Java Library plugin — API and implementation separation</a></li>
+<li><a href="https://docs.gradle.org/current/userguide/performance.html">Gradle: Improve build performance</a></li>
+<li><a href="https://docs.gradle.org/current/userguide/sharing_build_logic_between_subprojects.html">Gradle: Sharing build logic / convention plugins</a></li>
+<li><a href="https://kotlinlang.org/docs/gradle-configure-project.html">Kotlin: Configure a Gradle project</a> та <a href="https://kotlinlang.org/docs/visibility-modifiers.html#modules">Kotlin: Modules and visibility</a></li>
 </ul>
 </div></details>
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
@@ -10529,6 +10710,127 @@ fun refresh() = viewModelScope.launch {
 <li><a href="https://developer.android.com/develop/ui/compose/libraries#streams">Compose: lifecycle-aware streams</a></li>
 <li><a href="https://kotlinlang.org/docs/sealed-classes.html">Kotlin: Sealed classes and interfaces</a> and <a href="https://kotlinlang.org/docs/data-classes.html">Data classes</a></li>
 <li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/update.html">Kotlin: MutableStateFlow.update</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="clean-architecture-android-modularization" data-title="Clean Architecture and Android modularization" id="en-clean-architecture-android-modularization" open=""><summary class="major-summary"><span class="major-title">Clean Architecture and Android modularization</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<h2 id="en-stage13-objective">Learning objective<a aria-label="Link to section: Learning objective" class="heading-anchor" href="#en-stage13-objective">#</a></h2>
+<p>After this stage, you should design boundaries around direction of change, ownership, and dependencies rather than folder names: apply the dependency rule, separate policy from mechanism, decide whether a domain layer, use case, repository interface, or model mapping earns its cost, move from logical packages to Gradle modules only for measurable value, and migrate a monolith incrementally with dependency fitness rules. This section avoids Stage 12 UI-state detail and Stage 17 DI-framework detail.</p>
+
+<h2 id="en-stage13-mental-model">Senior mental model<a aria-label="Link to section: Senior mental model" class="heading-anchor" href="#en-stage13-mental-model">#</a></h2>
+<blockquote><p><strong>Architecture is controlled coupling.</strong> Clean Architecture is the dependency rule, not rings, <code>presentation/domain/data</code> names, or a fixed layer count. High-level policy should not know a volatile mechanism. Source dependencies point toward stable policy, although runtime control can call outward through an implementation selected at the composition root.</p></blockquote>
+<ul><li><strong>Policy</strong> is a business decision or invariant such as eligibility, pricing, or failure classification. <strong>Mechanism</strong> is Android, HTTP, SQL, analytics, or a clock. Volatility and ownership matter more than package names.</li><li>A boundary earns its cost when it localizes change, defines an independently testable contract, or supports ownership. An interface, mapper, or module without that reason is ceremony.</li><li>Keep two graphs visible: compile-time dependencies and runtime calls/data flow. Dependency inversion changes the first; it does not deny the second.</li></ul>
+
+<h2 id="en-stage13-dependency-graph">Dependency graph and internals<a aria-label="Link to section: Dependency graph and internals" class="heading-anchor" href="#en-stage13-dependency-graph">#</a></h2>
+<pre><code class="language-text">compile time:
+:app ──&gt; :feature:checkout ──&gt; :feature:checkout:api (owns port/policy)
+  │                                             ▲
+  ├──&gt; :data:orders ────────────────────────────┘ (implements port)
+  └──&gt; :core:navigation-api
+
+runtime:
+UI → CheckoutPolicy → OrderRepository(port) → Sql/HttpOrderRepository(adapter)
+
+Forbidden: :core:domain → Android/Retrofit/Room/feature implementation
+Risk: feature A ↔ feature B cycle; shared module with unbounded fan-out</code></pre>
+<p>Gradle has a directed project graph and derives task execution from it. A dependency cycle is not healthy collaboration; extract a small contract, move orchestration upward, reverse an edge, or reunite code that changes together. High fan-out gives a consumer many reasons to change; high fan-in makes a boundary stable and expensive to break. Stable dependencies should point from volatile features toward stable contracts, where stable means costly to change, not frozen forever.</p>
+
+<h2 id="en-stage13-layers-models">Presentation, domain, data, and model boundaries<a aria-label="Link to section: Layers and models" class="heading-anchor" href="#en-stage13-layers-models">#</a></h2>
+<ul>
+<li><strong>Presentation</strong> adapts interaction and results to a UI contract. <strong>Data</strong> coordinates sources, cache, freshness/conflicts, and persistence. An optional <strong>domain</strong> layer concentrates reusable or complex policy. There is no mandated layer count: simple CRUD may call a data boundary directly, while pricing or entitlement policy benefits from a pure domain.</li>
+<li>A domain layer helps when rules serve several callers, combine repositories, enforce non-trivial invariants, or need platform-free tests. It hurts when every class delegates one method, duplicates names and types, and stretches traces.</li>
+<li>A <strong>DTO</strong> mirrors a wire schema; a persistence entity mirrors tables, indexes, and relations; a domain model carries validated business meaning; a UI model carries formatted display needs. A Room entity is not a domain entity because of its name.</li>
+<li>Mapping isolates schema evolution and invalid input, but costs allocations, boilerplate, defaults, lost fields, and debugging hops. Map at real trust/change boundaries. Do not create four identical models by default; a small stable internal value can honestly be shared.</li>
+</ul>
+
+<h2 id="en-stage13-inversion-use-cases">Repository ownership, inversion, and useful use cases<a aria-label="Link to section: Repository inversion and use cases" class="heading-anchor" href="#en-stage13-inversion-use-cases">#</a></h2>
+<p>A repository is not automatically a domain abstraction. A CRUD façade that leaks paging or HTTP DTOs remains a data gateway. A repository interface belongs to the policy-side consumer when that consumer defines a narrow capability and adapters or substitutes vary. A broadly shared data capability can instead be owned by a stable data API. Avoid one god repository.</p>
+<p><strong>Interfaces alone do not decouple.</strong> The consumer still depends on semantics, models, errors, threading, versioning, and lifetime. An interface is valuable when it protects a volatile implementation or defines a consumer-owned port; one interface per concrete class only adds navigation cost.</p>
+<p>A use case earns its place by naming a business operation, coordinating ports, enforcing policy/transaction rules, or supporting reuse. <code>GetUserUseCase.invoke() = repository.getUser()</code> with no distinct semantics is a pass-through layer. Keep a simple call on the repository until a policy seam appears.</p>
+
+<h2 id="en-stage13-packages-modules">Package-by-feature/layer; logical versus Gradle modules<a aria-label="Link to section: Packages and modules" class="heading-anchor" href="#en-stage13-packages-modules">#</a></h2>
+<ul><li><strong>Package-by-layer</strong> shows technical roles but scatters a feature change and permits accidental cross-feature access. <strong>Package-by-feature</strong> colocates change and ownership; a large feature can have local layers. Packages provide logical organization and language visibility, not a separate compilation unit.</li><li>A Gradle module enforces project edges and adds compilation/cache/task/API and ownership boundaries, but also configuration, variants, plugins, resources, dependency wiring, and IDE/build overhead. Prove a seam with packages and <code>internal</code> first; extract for change cadence, reuse, build graph, delivery, or team ownership.</li><li>A common graph uses a thin <code>:app</code> composition/manifest entry, vertical <code>:feature:*</code>, narrow <code>:core:*</code>, concrete <code>:data:*</code>, an owned <code>:design-system</code>, and <code>:testing</code> or test fixtures for reusable test support. Do not turn <code>:core:common</code> into a dump.</li></ul>
+
+<h2 id="en-stage13-module-types">Module types, <code>api</code>/<code>implementation</code>, and delivery<a aria-label="Link to section: Module types and dependency exposure" class="heading-anchor" href="#en-stage13-module-types">#</a></h2>
+<ul><li><code>implementation</code> keeps a dependency off consumers' compile classpaths and reduces accidental API/fan-out. Use <code>api</code> when the module's intentional public signature exposes that dependency's type. This is a Gradle classpath contract, not a security boundary.</li><li>A <strong>Kotlin/JVM</strong> module suits pure policy and models without Android classes/resources and usually has a smaller variant/task surface. An <strong>Android library</strong> is required for resources, manifest, Android APIs, BuildConfig, or Android tests; AAR, namespace, resources, and variants cost more.</li><li>A <strong>dynamic feature</strong> is a Play Feature Delivery concern with install-time/on-demand/conditional delivery, a base-module relationship, install failures, and unavailable-code/resource states. It is not a synonym for an ordinary feature library, and a compile module is not automatically downloaded separately.</li></ul>
+
+<h2 id="en-stage13-boundaries">Navigation, DI, resource, and build contracts<a aria-label="Link to section: Boundary contracts" class="heading-anchor" href="#en-stage13-boundaries">#</a></h2>
+<ul><li>A feature should not import another feature's implementation. Expose a small navigation contract such as a typed destination, entry interface, or registrar; app-level composition connects the graph. Do not put internal screen classes or NavController in core. Navigation mechanics belong to Stage 4.</li><li>A DI contract is the required ports plus an exported entry point; the composition root selects implementations. Avoid bidirectional “DI module” edges and service locators in core. Scope and framework binding detail belongs to Stage 17.</li><li>Resources belong to the feature; the design system owns shared tokens/components/assets. Avoid accidental transitive <code>R</code> access. Namespace and non-transitive R behavior depend on AGP.</li><li>A convention plugin centralizes repeated build policy—toolchains, lint, test defaults, Android options—without copy/paste. Keep it small, versioned, and tested; do not apply every plugin and dependency to every module.</li></ul>
+
+<h2 id="en-stage13-build-ownership">Build performance, ownership, blast radius, and testability<a aria-label="Link to section: Build performance and ownership" class="heading-anchor" href="#en-stage13-build-ownership">#</a></h2>
+<p>Modules can enable parallelism, caching, and recompilation of affected projects, but graph shape, ABI changes, code generation, configuration, and the critical path decide the result. More modules are not always faster: a serial chain of tiny projects can increase configuration and task overhead. Measure clean build, incremental ABI and non-ABI edits, configuration time, cache hits, and critical path on CI and representative machines.</p>
+<p>A boundary can support CODEOWNERS, local tests, smaller blast radius, and independent evolution. Conversely, a shared core with many consumers creates coordination, while mocks that restate implementation create false confidence. Test pure policy locally, adapters with contract/integration tests, features with fakes, and a few app composition paths.</p>
+
+<h2 id="en-stage13-guarantees">Guarantees and explicit non-guarantees<a aria-label="Link to section: Guarantees and non guarantees" class="heading-anchor" href="#en-stage13-guarantees">#</a></h2>
+<table><thead><tr><th>Useful contract</th><th>Non-guarantee</th></tr></thead><tbody>
+<tr><td>The dependency rule prevents policy from compiling against a concrete mechanism.</td><td>There is no mandated layer count, and names such as domain/data prove nothing.</td></tr>
+<tr><td>A consumer-owned port permits an adapter to be substituted.</td><td>A repository is not automatically a domain abstraction; Interfaces alone do not decouple.</td></tr>
+<tr><td>A Gradle module enforces its declared compile dependency graph.</td><td>Modules do not guarantee runtime isolation or security; code can share one process/APK.</td></tr>
+<tr><td><code>implementation</code> narrows compile exposure.</td><td>Runtime isolation, semantic independence, or absence of transitive runtime code.</td></tr>
+<tr><td>Measured seams can reduce change and test blast radius.</td><td>Modularization does not guarantee quality or build speed.</td></tr>
+</tbody></table>
+
+<h2 id="en-stage13-version-sensitive">Version/build-sensitive behavior<a aria-label="Link to section: Version and build sensitive behavior" class="heading-anchor" href="#en-stage13-version-sensitive">#</a></h2>
+<ul><li>AGP/Gradle/Kotlin compatibility, variant APIs, namespace, non-transitive/non-final R, test fixtures, configuration cache, and compiler behavior evolve. Pin toolchains, read release notes, and inspect the resolved graph.</li><li><code>api</code>/<code>implementation</code> behavior depends on the applied library plugins and public signatures. Verify dependency reports and ABI rather than reasoning from a configuration name alone.</li><li>Dynamic delivery depends on App Bundles, Play/installer behavior, device/API, delivery conditions, and Play Core version. Test install, cancellation, failure, update, and unavailable states.</li><li>A build-performance claim is valid only for its graph, hardware, cache, daemon, CI, and edit scenario. Keep before/after baselines.</li></ul>
+
+<h2 id="en-stage13-decision-framework">Decision framework<a aria-label="Link to section: Decision framework" class="heading-anchor" href="#en-stage13-decision-framework">#</a></h2>
+<ol><li>Draw the current package/project graph, owners, cycles, fan-in/fan-out, and change hotspots.</li><li>For a candidate boundary, name the policy, volatile mechanism, contract owner, allowed direction, and crossing data/errors.</li><li>Score independent change/team/reuse/test/build/delivery benefit against mapping, API versioning, variants, resources, navigation, and DI wiring cost.</li><li>Try the cheapest enforcement: package-by-feature, <code>internal</code>, lint, or an architecture test. Create a Gradle module when a compile/build/ownership boundary is needed.</li><li>Record a fitness rule and before/after metrics; merge or remove a boundary whose cost exceeds its benefit.</li></ol>
+
+<h2 id="en-stage13-tradeoffs">Trade-offs and failure modes<a aria-label="Link to section: Trade offs and failure modes" class="heading-anchor" href="#en-stage13-tradeoffs">#</a></h2>
+<ul><li>Layer-first organization produces horizontal god modules and wide changes; feature-only organization can duplicate policy or create direct feature edges.</li><li>Excess models/mappers lose fields and add allocations; one shared DTO leaks transport schema into policy and widens backend-change blast radius.</li><li>Pass-through use cases/interfaces stretch traces; no seam binds policy to Retrofit, Room, or Android.</li><li>An unbounded common, design-system, or navigation module gains high fan-out and becomes a coordination bottleneck.</li><li>Tiny Gradle modules multiply plugin, configuration, variant, and task costs; one app module cannot enforce ownership and may invalidate a broad graph.</li><li>Cycles, reflection/service locators, and duplicate copied models bypass the intended graph. Successful compilation does not prove correct runtime composition.</li></ul>
+
+<h2 id="en-stage13-production-migration">Production migration: seams and strangler<a aria-label="Link to section: Production migration scenario" class="heading-anchor" href="#en-stage13-production-migration">#</a></h2>
+<p><strong>Hypothetically:</strong> checkout lives in monolithic <code>:app</code>; UI directly calls Retrofit, a Room DAO, and a pricing singleton. First capture checkout file/change coupling, build critical path, incremental edit time, flaky integration tests, cycles, and owners. Introduce package-by-feature plus narrow <code>CheckoutPolicy</code> and <code>OrderRepository</code> seams, adapt the legacy implementation, and switch one journey: a strangler rather than a big-bang rewrite.</p>
+<p>Move pure pricing/order contracts to Kotlin/JVM <code>:feature:checkout:api</code> or domain only if reuse and ownership justify it. Keep Android UI/resources in an Android feature library, Retrofit/Room adapter in <code>:data:orders</code>, and composition in <code>:app</code>. Delete the old path after product conversion/error parity, contract tests, graph checks, and incremental/CI metrics pass. Each slice stays deployable; rollback changes composition rather than discarding a rewrite.</p>
+
+<h2 id="en-stage13-review-trap">Code-review/debugging trap<a aria-label="Link to section: Code review and debugging trap" class="heading-anchor" href="#en-stage13-review-trap">#</a></h2>
+<pre><code class="language-kotlin">// :feature:checkout depends on :feature:catalog:impl
+class CheckoutUseCase(private val repo: CheckoutRepositoryImpl) {
+    suspend operator fun invoke(id: String) = repo.loadDto(id) // pass-through + DTO leak
+}
+interface CheckoutRepository // next to implementation, no consumer capability</code></pre>
+<p>The diagram has clean boxes, but the source edge points to implementation, the use case has no policy, a DTO crosses every boundary, and catalog/checkout can cycle. Debug with Gradle <code>dependencies</code>/<code>dependencyInsight</code> and the project graph, then identify the public signature exposing the edge, contract owner, and runtime composition. Fix with a narrow consumer-owned port, explicit model/error mapping, app orchestration, or a neutral API—not another generic interface.</p>
+
+<h2 id="en-stage13-fitness-rules">Dependency fitness rules in CI<a aria-label="Link to section: Dependency fitness rules in CI" class="heading-anchor" href="#en-stage13-fitness-rules">#</a></h2>
+<ul><li>Fail CI for project/package cycles, forbidden edges such as <code>domain → android.*</code> or <code>feature → feature:impl</code>, and unexpected public-API growth. Every exception needs an owner and expiry.</li><li>Check graph snapshots, dependency locking/verification, lint or architecture tests, explicit API/API dumps for published contracts, and resource-prefix/namespace conventions.</li><li>Track fan-out/fan-in, changed modules per PR, ABI versus implementation invalidation, configuration and critical-path time, cache hits, flaky tests, and cross-team reviews. Thresholds should catch regression, not reward module count.</li><li>A CI rule must explain the violation and local reproduction command; version convention plugins and contract tests with the boundary.</li></ul>
+
+<h2 id="en-stage13-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice questions and answers" class="heading-anchor" href="#en-stage13-likely-qa">#</a></h2>
+<p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
+<ol>
+<li><strong>What is the essence of Clean Architecture?</strong> The dependency rule: policy does not compile against volatile mechanisms. Layer names and count are secondary.</li>
+<li><strong>When does a domain layer help?</strong> For reused or complex policy, multi-repository orchestration, or platform-free invariants—not automatic one-line wrappers.</li>
+<li><strong>Who owns a repository interface?</strong> The owner of the needed contract: often policy/consumer for inversion, sometimes a stable data API for a shared data capability.</li>
+<li><strong>Do DTO, domain, persistence, and UI models always need separation?</strong> No. Separate differing schemas, trust, and change cadence; include mapping and debugging cost.</li>
+<li><strong>Package-by-feature or package-by-layer?</strong> Feature usually localizes change and ownership; local layers inside it retain roles without horizontal god packages.</li>
+<li><strong>Is a package the same as a Gradle module?</strong> No. A package organizes source and visibility; a Gradle project adds compilation, dependency, task, and API boundaries with overhead.</li>
+<li><strong><code>api</code> or <code>implementation</code>?</strong> Default to implementation; use api only for a dependency type intentionally exposed in the public consumer surface.</li>
+<li><strong>Android library or Kotlin/JVM?</strong> Kotlin/JVM for pure code; Android library for resources, manifest, Android APIs, or Android-specific tests.</li>
+<li><strong>Do more modules make builds faster?</strong> Not necessarily. Parallel/cache isolation can help, while configuration, variants, and a serial critical path can hurt. Measure scenarios.</li>
+<li><strong>How do you migrate a monolith?</strong> Baseline metrics, create a logical seam and adapter, move one strangler slice, enforce the graph, and extract physically only for proven benefit.</li>
+</ol>
+
+<h2 id="en-stage13-followups">4 senior follow-ups with answers<a aria-label="Link to section: 4 senior follow ups" class="heading-anchor" href="#en-stage13-followups">#</a></h2>
+<ol><li><strong>Two features need to navigate to each other.</strong> Do not add a cycle; app-level orchestration depends on their destination contracts or a neutral navigation API.</li><li><strong>The build became slower after extraction.</strong> Compare configuration, task count, critical path, cache, and ABI invalidation; reduce plugin/variant surface or merge tiny serial modules.</li><li><strong>The domain model is almost the DTO.</strong> If trust, schema, and cadence truly match, sharing can be cheaper. Add mapping when the boundary diverges, not from a template.</li><li><strong>A dynamic feature failed to install.</strong> Base must work without its code/resources, retain route intent, and show retry/fallback. Test cancellation, failure, update, and unavailable states.</li></ol>
+
+<h2 id="en-stage13-self-check">4 unanswered self-checks<a aria-label="Link to section: 4 unanswered self checks" class="heading-anchor" href="#en-stage13-self-check">#</a></h2>
+<ol><li>What are the three largest change hotspots, cycles, or fan-out edges in your current graph?</li><li>Which policy currently knows an Android, network, or storage mechanism, and what narrow port does it need?</li><li>Which mappings protect genuinely different schemas, and which merely copy identical fields?</li><li>Which product, ownership, test, and build metrics would prove an extraction is worth its cost?</li></ol>
+
+<h2 id="en-stage13-english-skeletons">Interview-ready English answer skeletons<a aria-label="Link to section: Interview ready English answer skeletons" class="heading-anchor" href="#en-stage13-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you apply Clean Architecture and modularization in an Android app?</em></p>
+<h3 id="en-stage13-answer-30">~30-second answer<a aria-label="Link to section: 30 second answer" class="heading-anchor" href="#en-stage13-answer-30">#</a></h3>
+<blockquote><p>I treat Clean Architecture as a dependency rule, not a mandated folder diagram. Stable business policy owns narrow contracts; Android, database, and network mechanisms implement them at the composition boundary. I add domain models, use cases, and mappers only when they protect real invariants or change boundaries. I start with package-by-feature and extract Gradle modules for measurable ownership, reuse, build, or delivery needs. I prevent cycles and implementation leaks in CI and compare incremental build, test, and change-blast-radius metrics, because more modules do not automatically improve quality or speed.</p></blockquote>
+<h3 id="en-stage13-answer-2min">~2-minute answer<a aria-label="Link to section: 2 minute answer" class="heading-anchor" href="#en-stage13-answer-2min">#</a></h3>
+<blockquote><p>I begin with policy and volatility. Business rules should not compile against Retrofit, Room, Android, or a feature implementation. A consumer-owned port describes the capability policy needs, an outer adapter implements it, and the app composition root connects them. Runtime calls can still go outward; inversion is about source dependencies.</p><p>I do not mandate presentation, domain, and data for every feature. A domain layer earns its cost when it centralizes reused or complex policy. A use case names an operation or coordinates rules rather than forwarding one call. DTOs, persistence entities, domain models, and UI models separate when schema, trust, or cadence differ; mapping also costs allocations, defaults, and debugging.</p><p>I prefer package-by-feature, then extract Gradle modules for an enforced boundary, ownership, reuse, cache isolation, or delivery. The app stays a thin composition root; features expose narrow APIs; core, data, design-system, and testing modules have explicit ownership. I default to implementation dependencies, use api only for intentional public types, and place pure policy in Kotlin/JVM. Dynamic features are delivery, not ordinary modules.</p><p>CI rejects cycles, feature-to-implementation edges, and unbounded shared APIs. Navigation and DI cross features through small contracts; resources retain an owner and convention plugins encode build policy. In a monolith, I baseline metrics, introduce a logical seam and legacy adapter, migrate one strangler slice, then extract physically. I verify product parity, fan-out, changed modules, and incremental/CI critical path. Modules enforce a build graph, not runtime isolation, security, quality, or guaranteed speed.</p></blockquote>
+
+<h2 id="en-stage13-sources">Official references<a aria-label="Link to section: Official references" class="heading-anchor" href="#en-stage13-sources">#</a></h2>
+<ul>
+<li><a href="https://developer.android.com/topic/architecture">Android: Guide to app architecture</a>, <a href="https://developer.android.com/topic/architecture/data-layer">Data layer</a>, <a href="https://developer.android.com/topic/architecture/domain-layer">Domain layer</a></li>
+<li><a href="https://developer.android.com/topic/modularization">Android: Guide to app modularization</a> and <a href="https://developer.android.com/topic/modularization/patterns">Common modularization patterns</a></li>
+<li><a href="https://developer.android.com/build/optimize-your-build">Android: Optimize your build speed</a></li>
+<li><a href="https://developer.android.com/guide/playcore/feature-delivery">Android: Play Feature Delivery overview</a></li>
+<li><a href="https://docs.gradle.org/current/userguide/multi_project_builds.html">Gradle: Multi-project builds</a> and <a href="https://docs.gradle.org/current/userguide/java_library_plugin.html">Java Library plugin — API and implementation separation</a></li>
+<li><a href="https://docs.gradle.org/current/userguide/performance.html">Gradle: Improve build performance</a></li>
+<li><a href="https://docs.gradle.org/current/userguide/sharing_build_logic_between_subprojects.html">Gradle: Sharing build logic / convention plugins</a></li>
+<li><a href="https://kotlinlang.org/docs/gradle-configure-project.html">Kotlin: Configure a Gradle project</a> and <a href="https://kotlinlang.org/docs/visibility-modifiers.html#modules">Kotlin: Modules and visibility</a></li>
 </ul>
 </div></details>
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="en-kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
