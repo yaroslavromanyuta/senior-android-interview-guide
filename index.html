@@ -480,6 +480,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="android-background-execution" href="#android-background-execution">Android background execution: Services, BroadcastReceiver, WorkManager, FGS та alarms</a>
 </li>
 <li class="toc-major">
+<a data-target="android-permissions-storage-notifications" href="#android-permissions-storage-notifications">Android permissions, storage і notifications крізь версії</a>
+</li>
+<li class="toc-major">
 <a data-target="kotlin-for-android" href="#kotlin-for-android">Kotlin for Android</a>
 <ol class="toc-children">
 <li><a data-target="val-vs-var-immutability" href="#val-vs-var-immutability">val vs var, immutability</a></li>
@@ -771,6 +774,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </li>
 <li class="toc-major">
 <a data-target="en-android-background-execution" href="#en-android-background-execution">Android background execution: Services, BroadcastReceiver, WorkManager, foreground services, and alarms</a>
+</li>
+<li class="toc-major">
+<a data-target="en-android-permissions-storage-notifications" href="#en-android-permissions-storage-notifications">Android permissions, storage, and notifications across versions</a>
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-for-android" href="#en-kotlin-for-android">Kotlin for Android</a>
@@ -2309,6 +2315,223 @@ adb shell am compat enable FGS_INTRODUCE_TIME_LIMITS com.example.app</code></pre
 <li><a href="https://developer.android.com/develop/background-work/background-tasks/uidt">User-initiated data transfer</a> та <a href="https://developer.android.com/about/versions/15/changes/foreground-service-types">Android 15 FGS changes</a></li>
 <li><a href="https://developer.android.com/develop/background-work/services/alarms">Schedule alarms</a> та <a href="https://developer.android.com/topic/performance/power/power-details">Power-management resource limits</a></li>
 <li><a href="https://developer.android.com/develop/background-work/background-tasks/testing/persistent/debug">Debug WorkManager</a>, <a href="https://developer.android.com/develop/background-work/background-tasks/testing/persistent/integration-testing">WorkManager integration testing</a> та <a href="https://developer.android.com/topic/performance/power/test-power">Test power-related issues</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="android-permissions-storage-notifications" data-title="Android permissions, storage і notifications крізь версії" id="android-permissions-storage-notifications" open=""><summary class="major-summary"><span class="major-title">Android permissions, storage і notifications крізь версії</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<h2 id="stage6-uk-objective">Learning objective<a aria-label="Посилання на розділ: Learning objective" class="heading-anchor" href="#stage6-uk-objective">#</a></h2>
+<p>Після цього етапу ви маєте вміти проєктувати capability flow, який коректно працює після deny, process recreation, зміни permission у Settings, OS/target SDK upgrade та звуження доступу; обрати найменш привілейований storage/notification API; пояснити, що гарантує Android platform, а що є Google Play, OEM або app policy; і відтворити критичні стани тестами та <code>adb</code>.</p>
+
+<h2 id="stage6-uk-mental-model">Senior mental model<a aria-label="Посилання на розділ: Senior mental model" class="heading-anchor" href="#stage6-uk-mental-model">#</a></h2>
+<blockquote><p><strong>Permission — не dialog і не boolean, а revocable capability.</strong> Рішення залежить щонайменше від device API, <code>targetSdk</code>, manifest, поточного grant/app-op/channel state, lifecycle і конкретного ресурсу. Request лише запускає system-mediated transition; перед кожною sensitive operation код знову перевіряє effective access і має degraded path.</p></blockquote>
+<ul>
+<li><strong>Platform behavior:</strong> runtime grants, one-time/while-in-use scope, auto-reset, scoped storage, channel state і package visibility визначає Android/API contract.</li>
+<li><strong>Distribution policy:</strong> eligibility для background location, all-files access або full-screen intents у Google Play — окремий review/policy layer; manifest grant не доводить відповідність policy.</li>
+<li><strong>OEM/app policy:</strong> виробник може додати settings, battery/privacy UX або bugs, а продукт — власний pre-prompt. Не приписуйте універсальну OEM-поведінку Android platform; тестуйте named devices/firmware і документуйте спостереження.</li>
+<li><strong>Minimize first:</strong> Photo Picker, SAF, system camera/contact pickers, Companion Device Manager і app-specific storage часто прибирають broad permission. Збирайте лише потрібні дані, на мінімальний строк, із локальною/серверною retention та delete semantics.</li>
+</ul>
+
+<h2 id="stage6-uk-internals">Internals і state transitions<a aria-label="Посилання на розділ: Internals and state transitions" class="heading-anchor" href="#stage6-uk-internals">#</a></h2>
+<h3 id="stage6-uk-permissions-state">Permission state machine і UX<a aria-label="Посилання на розділ: Permission state machine" class="heading-anchor" href="#stage6-uk-permissions-state">#</a></h3>
+<table><thead><tr><th>Спостережуваний стан</th><th>Дія</th><th>Caveat</th></tr></thead><tbody>
+<tr><td>Granted</td><td>Виконати feature; перевірити scope (foreground/background, coarse/fine, selected media).</td><td>Grant може змінитися поза app: Settings, auto-reset, policy, upgrade або one-time expiry.</td></tr>
+<tr><td>Not requested</td><td>App зберігає власний факт, показує contextual explanation і system request у момент цінності.</td><td>Platform не дає універсального окремого enum «never asked».</td></tr>
+<tr><td>Denied + rationale</td><td>Пояснити потребу без coercion, дозволити retry або degraded mode.</td><td><code>shouldShowRequestPermissionRationale()</code> — UX hint, не повна state machine.</td></tr>
+<tr><td>Denied без rationale після request</td><td>Не зациклювати dialog; пояснити feature і за явною дією відкрити app Settings.</td><td><strong><code>shouldShowRequestPermissionRationale()</code> не є повним oracle постійної відмови:</strong> false можливий до першого request, після «don’t ask again»/повторних deny, за policy або інших platform states. Корелюйте з власним requested flag, але перевіряйте реальний grant.</td></tr>
+<tr><td>Partial/temporary</td><td>Моделювати coarse, selected photos, while-in-use або one-time як окремі capabilities.</td><td>Не підвищувати їх у UI до «повного доступу».</td></tr>
+</tbody></table>
+<p>На Android 11+ location/camera/microphone можуть бути <strong>one-time</strong>: доступ тимчасовий і system згодом revoke-ить його; process може бути завершений. Auto-reset/hibernation для невикористаних apps може скинути runtime grants. Android 12+ дозволяє approximate location навіть коли app просить fine: просіть coarse і fine разом, а feature має працювати з coarse або пояснювати, чому точність справді потрібна. While-in-use permission не означає довільний background access.</p>
+<p>Permission group — presentation/management detail, не transactional grant. Просіть і перевіряйте кожну permission; групи та UI можуть змінюватися між releases. Result map із <code>RequestMultiplePermissions</code> може містити змішані результати.</p>
+
+<h3 id="stage6-uk-activity-results">Activity Result API, lifecycle і recreation<a aria-label="Посилання на розділ: Activity Result API lifecycle and recreation" class="heading-anchor" href="#stage6-uk-activity-results">#</a></h3>
+<pre><code class="language-kotlin">class ImportFragment : Fragment() {
+    // Register unconditionally on every creation, in stable order.
+    private val requestLocation = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants -&gt;
+        renderLocationAccess(
+            coarse = grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true,
+            fine = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        )
+    }
+
+    private val pickImage = registerForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri -&gt; uri?.let(viewModel::onImageSelected) }
+}</code></pre>
+<p><code>ActivityResultRegistry</code> відновлює pending result після configuration change/process recreation, якщо launcher реєструється <strong>безумовно щоразу і в тому самому порядку</strong>; запуск робіть лише коли lifecycle дозволяє. Callback не повинен залежати від старого View чи in-memory «current request». Зберігайте business intent/operation ID у <code>SavedStateHandle</code>/DB, а після callback повторно перевіряйте permission/URI і current state. Не запускайте request автоматично при кожній recreation.</p>
+
+<h3 id="stage6-uk-location">Location: foreground, precision і background sequence<a aria-label="Посилання на розділ: Location permission sequence" class="heading-anchor" href="#stage6-uk-location">#</a></h3>
+<ul>
+<li>Foreground flow починається з <code>ACCESS_COARSE_LOCATION</code>; додавайте <code>ACCESS_FINE_LOCATION</code> тільки коли exact feature не може працювати приблизно. На Android 12+ request coarse+fine разом; user може лишити лише approximate.</li>
+<li><code>ACCESS_BACKGROUND_LOCATION</code> з’явився в Android 10 (API 29). На Android 11+ спочатку отримайте foreground access, потім окремо поясніть background use і ведіть user через system Settings flow; одночасний foreground+background request не дає очікуваного dialog.</li>
+<li>Background location має бути core user-visible functionality; Android platform restriction і Google Play background-location policy — різні gates. FGS location type/while-in-use start rules не замінюють background permission.</li>
+<li>Якщо user downgrade-ить precise до approximate або revoke-ить location у Settings, Android може restart/kill app process. Rebuild із durable state і re-check.</li>
+</ul>
+
+<h3 id="stage6-uk-capability-evolution">Bluetooth, Nearby, media, camera і microphone<a aria-label="Посилання на розділ: Capability evolution" class="heading-anchor" href="#stage6-uk-capability-evolution">#</a></h3>
+<ul>
+<li><strong>Android 12 / target 31+:</strong> <code>BLUETOOTH_SCAN</code>, <code>BLUETOOTH_CONNECT</code>, <code>BLUETOOTH_ADVERTISE</code> замінили broad legacy Bluetooth/location coupling для відповідних дій. Використовуйте <code>maxSdkVersion="30"</code> для legacy declarations; <code>neverForLocation</code> заявляйте лише якщо scan results справді не виводять location, бо system може фільтрувати частину BLE beacons.</li>
+<li><strong>Android 13 / target 33+:</strong> common Wi‑Fi discovery/control перейшов до <code>NEARBY_WIFI_DEVICES</code>; media read розділено на <code>READ_MEDIA_IMAGES</code>, <code>READ_MEDIA_VIDEO</code>, <code>READ_MEDIA_AUDIO</code> замість <code>READ_EXTERNAL_STORAGE</code>.</li>
+<li><strong>Android 14 / target 34+:</strong> <code>READ_MEDIA_VISUAL_USER_SELECTED</code> моделює вибрані user photos/videos. Якщо app не реалізує власний reselection flow, system compatibility mode може керувати selection; перевіряйте access при кожному resume/use.</li>
+<li><strong>Camera/microphone:</strong> runtime + one-time/while-in-use semantics, privacy indicators і device-wide toggles — окремі failure states. Permission «granted» не гарантує доступність hardware, exclusive resource, sensor privacy toggle або background start.</li>
+</ul>
+
+<h2 id="stage6-uk-notifications">Notifications: permission, channels і interruption<a aria-label="Посилання на розділ: Notifications" class="heading-anchor" href="#stage6-uk-notifications">#</a></h2>
+<ul>
+<li><strong>Android 13 / API 33:</strong> non-exempt notifications потребують runtime <code>POST_NOTIFICATIONS</code>. Для target 33+ app контролює contextual request; для target ≤32 system timing і повторний prompt обмежені. Fresh installs починають blocked; eligible upgrades можуть отримати pre-grant, але попередня user block зберігається.</li>
+<li>FGS можна стартувати без grant <code>POST_NOTIFICATIONS</code>, але notification все одно обов’язкова; за denial FGS notice може бути лише в Task Manager, не drawer. Перевіряйте <code>areNotificationsEnabled()</code> і channel state для UX, не для обходу service rules.</li>
+<li><strong>Channels (API 26+)</strong> треба створити до post. ID — довгоживучий product contract: <strong>channels persist, і app не може підняти importance, яку user знизив</strong>. Після створення app не може змінити importance/sound semantics; може змінити name/description. Не delete/recreate channel, щоб «скинути» user choice; version/new ID лише для справді нової semantics.</li>
+<li>App-level permission, channel importance, channel/user settings, DND, runtime delivery/ranking — незалежні gates. Importance — не гарантія heads-up; user/system має фінальне слово.</li>
+<li><strong>Android 12 / target 31+:</strong> notification trampoline забороняє Service/BroadcastReceiver як посередника, що стартує Activity після tap. Дайте notification прямий immutable/mutable-as-needed activity <code>PendingIntent</code> і коректний back stack.</li>
+<li><strong>Full-screen intent:</strong> це виняток для time-sensitive calling/alarm use cases, не generic engagement. Android 14 / target 34+ обмежує <code>USE_FULL_SCREEN_INTENT</code>; перевіряйте <code>canUseFullScreenIntent()</code> і fallback notification. Google Play eligibility/default-grant review — distribution policy окремо від platform API.</li>
+</ul>
+
+<h2 id="stage6-uk-storage">Storage: ownership, collections і durable access<a aria-label="Посилання на розділ: Storage" class="heading-anchor" href="#stage6-uk-storage">#</a></h2>
+<table><thead><tr><th>Потреба</th><th>Default API</th><th>Lifetime / ризик</th></tr></thead><tbody>
+<tr><td>Private app data</td><td>Internal <code>filesDir</code>/<code>cacheDir</code></td><td>No permission; sandbox; видаляється при uninstall. Cache може бути evicted.</td></tr>
+<tr><td>App-specific large files</td><td><code>getExternalFilesDir()</code></td><td>No storage permission; volume може бути unavailable; видаляється при uninstall.</td></tr>
+<tr><td>App-created shared media</td><td><code>MediaStore</code>, <code>RELATIVE_PATH</code>, <code>IS_PENDING</code></td><td>Ваші inserts зазвичай без broad read permission; shared media лишається після uninstall. Для edit/delete чужого content потрібен scoped consent.</td></tr>
+<tr><td>User-selected photos/videos</td><td>Photo Picker / <code>PickVisualMedia</code></td><td>Без broad library permission; URI grant scoped. Persist access when contract supports it and still handle loss.</td></tr>
+<tr><td>Arbitrary document/create/export</td><td>SAF: <code>OPEN_DOCUMENT</code>, <code>CREATE_DOCUMENT</code>, <code>OPEN_DOCUMENT_TREE</code></td><td><code>content://</code> document URI; request/take persistable grant when needed; provider/reinstall/user action can invalidate it.</td></tr>
+</tbody></table>
+<p>Scoped storage is default on Android 10 and enforced for apps targeting Android 11+; <code>requestLegacyExternalStorage</code> ігнорується при target 30+. Legacy app має <strong>до target upgrade</strong> мігрувати файли у app-specific storage, MediaStore або user-chosen SAF location, робити migration resumable/idempotent і не видаляти source до verified copy.</p>
+<p><strong>File paths і document URIs не взаємозамінні.</strong> Не перетворюйте <code>content://</code> на guessed <code>/storage/...</code> path. Працюйте через <code>ContentResolver</code>, streams/file descriptor, MIME/display-name metadata. Навіть коли MediaStore дозволяє direct path для окремих media cases, це не універсальна властивість SAF/cloud/provider URI.</p>
+<p><code>MANAGE_EXTERNAL_STORAGE</code> — broad special access для вузьких core use cases, не shortcut; platform access і Google Play approval — окремі вимоги.</p>
+
+<h2 id="stage6-uk-visibility-sharing">Package visibility, URI grants і FileProvider<a aria-label="Посилання на розділ: Package visibility URI grants and FileProvider" class="heading-anchor" href="#stage6-uk-visibility-sharing">#</a></h2>
+<ul>
+<li>Android 11 / target 30+ фільтрує результати package queries. Декларуйте вузькі <code>&lt;queries&gt;</code> для package/intent/provider; <code>QUERY_ALL_PACKAGES</code> — рідкісний special case і subject to Play approval. «Не знайдено» може означати invisible, а не uninstalled.</li>
+<li>Для share private file використовуйте <code>FileProvider</code> із вузьким whitelist paths, <code>content://</code>, <code>FLAG_GRANT_READ_URI_PERMISSION</code>/<code>WRITE</code> і <code>ClipData</code> для всіх URI. Не expose broad root і не використовуйте <code>file://</code>.</li>
+<li>URI permission — capability token конкретного resource/mode/time. Validate scheme, authority, MIME та size; catch <code>SecurityException</code>/<code>FileNotFoundException</code>; не логайте sensitive URI; revoke temporary grants коли доречно.</li>
+</ul>
+
+<h2 id="stage6-uk-guarantees">Guarantees vs non-guarantees<a aria-label="Посилання на розділ: Guarantees versus non guarantees" class="heading-anchor" href="#stage6-uk-guarantees">#</a></h2>
+<table><thead><tr><th>Можна стверджувати</th><th>Не можна обіцяти</th></tr></thead><tbody>
+<tr><td>System повертає current grant check для конкретної permission.</td><td>Grant лишиться незмінним до наступного app launch або що rationale=false точно означає permanent deny.</td></tr>
+<tr><td>Activity Result Registry може доставити pending result після recreation за коректної registration.</td><td>Старий View/in-memory request context переживе process death або callback прийде лише один раз у бажаному business state.</td></tr>
+<tr><td>Channel зберігає user-controlled settings.</td><td>App підніме user-lowered importance або гарантує heads-up/full-screen delivery.</td></tr>
+<tr><td>Persistable SAF grant може пережити process/reboot.</td><td>URI вічний, це filesystem path, provider існує після reinstall або cloud content завжди local.</td></tr>
+<tr><td>Platform APIs мають documented version/target gates.</td><td>Google Play approval чи однакова поведінка всіх OEM UI/power/privacy layers.</td></tr>
+</tbody></table>
+
+<h2 id="stage6-uk-version-matrix">Version timeline / targetSdk matrix<a aria-label="Посилання на розділ: Version timeline target SDK matrix" class="heading-anchor" href="#stage6-uk-version-matrix">#</a></h2>
+<table><thead><tr><th>OS/API</th><th>Ключова зміна</th><th>Gate / upgrade caveat</th></tr></thead><tbody>
+<tr><td>6 / 23</td><td>Dangerous permissions runtime.</td><td>Runtime model залежав від target 23+; завжди тестуйте current target.</td></tr>
+<tr><td>8 / 26</td><td>Notification channels.</td><td>Без channel notifications не post-яться при target 26+; user settings persist.</td></tr>
+<tr><td>10 / 29</td><td>Scoped storage default; separate background location.</td><td>Temporary legacy opt-out existed; manifest + runtime background grant.</td></tr>
+<tr><td>11 / 30</td><td>One-time permissions, auto-reset, package visibility, stricter background-location sequence.</td><td>Scoped storage enforced at target 30; <code>requestLegacyExternalStorage</code> ignored.</td></tr>
+<tr><td>12 / 31</td><td>Approximate location choice, Nearby Bluetooth permissions, notification trampoline restriction.</td><td>Many changes activate at target 31; permission downgrade can restart process.</td></tr>
+<tr><td>13 / 33</td><td><code>POST_NOTIFICATIONS</code>, granular media, Nearby Wi‑Fi, system Photo Picker.</td><td>Fresh install vs eligible OS upgrade/pre-grant differ; old-target prompt timing differs.</td></tr>
+<tr><td>14 / 34</td><td>Selected Photos Access; full-screen intent tightening.</td><td>Implement reselection when owning media permission UX; check special access at runtime.</td></tr>
+<tr><td>15–16 / 35–36</td><td>Privacy/security behavior continues to evolve (including Android 16 granular health permissions).</td><td>Read both “all apps” and “targeting N” docs; Play target API deadlines are separate and change over time.</td></tr>
+</tbody></table>
+<p>Для release matrix розділяйте <strong>device OS</strong>, <strong>targetSdk</strong>, fresh install/restore/OS upgrade і app update. Не робіть лише <code>SDK_INT</code> branch: manifest <code>maxSdkVersion</code>, target-gated behavior, current user state та store policy теж впливають.</p>
+
+<h2 id="stage6-uk-decision-framework">Decision framework<a aria-label="Посилання на розділ: Decision framework" class="heading-anchor" href="#stage6-uk-decision-framework">#</a></h2>
+<ol>
+<li><strong>Назвіть user value і data:</strong> який exact resource/action, sensitivity, retention, sharing і deletion?</li>
+<li><strong>Знайдіть permissionless API:</strong> picker/SAF/app-specific/MediaStore-own-write/CDM замість broad access.</li>
+<li><strong>Побудуйте capability matrix:</strong> OS × target × manifest × grant/scope × lifecycle × store policy; визначте degraded mode.</li>
+<li><strong>Просіть контекстно:</strong> лише після explicit action, окремими stages, без dark patterns; rationale лише коли корисний.</li>
+<li><strong>Виконуйте defense-in-depth:</strong> check immediately before use, handle revocation/partial result/exception, minimize persistence і telemetry.</li>
+<li><strong>Верифікуйте transitions:</strong> fresh/upgrade/restore, deny/revoke/auto-reset, process recreation, channel/user settings, URI loss і OEM-specific tests як named observations.</li>
+</ol>
+
+<h2 id="stage6-uk-tradeoffs">Trade-offs і failure modes<a aria-label="Посилання на розділ: Trade offs and failure modes" class="heading-anchor" href="#stage6-uk-tradeoffs">#</a></h2>
+<ul>
+<li>Broad permission спрощує query, але збільшує privacy blast radius, denial rate і policy cost; picker/SAF додає URI lifecycle та provider failure.</li>
+<li>Pre-prompt може дати контекст, але зайвий modal перед system dialog — friction. Ніколи не маскуйте deny як обов’язковий, якщо feature має degraded path.</li>
+<li>Кешований «granted=true» стає stale; permission/channel/URI можуть змінитися поза app. Перевірка лише в onboarding — production bug.</li>
+<li>Один channel для всього зв’язує transactional і marketing opt-out; забагато channels перевантажує settings. Семантика та stable IDs — product contract.</li>
+<li>Persisted URI без metadata/validation ламається після provider removal, user move, expiry або reinstall; copied file без retention створює privacy debt.</li>
+<li>Target SDK upgrade може активувати кілька змін одночасно. Міграція має inventory manifest/API, staged rollout, compatibility tests і rollback-safe data format.</li>
+</ul>
+
+<h2 id="stage6-uk-production-scenario">Production scenario: chat attachment + nearby device + alerts<a aria-label="Посилання на розділ: Production scenario" class="heading-anchor" href="#stage6-uk-production-scenario">#</a></h2>
+<p><strong>Гіпотетично:</strong> chat attachment використовує Photo Picker, зберігає URI + MIME/size та одразу копіює лише якщо offline resend/retention цього вимагає; upload читає через <code>ContentResolver</code>, ловить втрату grant і просить reselect замість crash. Camera capture просить camera лише при tap, а text/file flow працює без неї. Nearby pairing спершу розглядає CDM; інакше versioned Bluetooth permissions з legacy <code>maxSdkVersion</code>.</p>
+<p>Delivery alerts мають окремий transactional channel від marketing. App просить <code>POST_NOTIFICATIONS</code> після opt-in до alerts, показує in-app inbox при deny і ніколи не delete/recreate channel для підняття importance. Call-style full-screen flow доступний лише для справжнього incoming call, перевіряє special access і має heads-up/in-app fallback. Analytics записує лише transition category і feature outcome, без URI/location/content.</p>
+
+<h2 id="stage6-uk-review-trap">Code-review/debugging trap<a aria-label="Посилання на розділ: Code review debugging trap" class="heading-anchor" href="#stage6-uk-review-trap">#</a></h2>
+<pre><code class="language-kotlin">if (!shouldShowRequestPermissionRationale(READ_MEDIA_IMAGES)) {
+    openSettings() // BUG: also false before first request
+}
+val path = selectedUri.path!!
+File(path).copyTo(uploadFile) // BUG: document URI is not a filesystem path
+
+notificationManager.createNotificationChannel(
+    NotificationChannel("orders", "Orders", IMPORTANCE_HIGH)
+) // does not override a user's lower importance</code></pre>
+<p>Review має знайти три різні дефекти: incomplete denial oracle; URI/path confusion; channel assumption. Далі перевірте request history, actual <code>checkSelfPermission</code>, partial-media scope, persistable grant/stream close, size/MIME bounds, process recreation, channel/app notification state та target-specific manifest. Fix — explicit UI state + current capability check; <code>ContentResolver.openInputStream/openFileDescriptor</code>; повага до channel settings із deep link у Settings лише за user action.</p>
+
+<h2 id="stage6-uk-testing">Test matrix і adb/debug techniques<a aria-label="Посилання на розділ: Test matrix and adb debugging" class="heading-anchor" href="#stage6-uk-testing">#</a></h2>
+<table><thead><tr><th>Вісь</th><th>Мінімальні cases</th></tr></thead><tbody>
+<tr><td>OS / target</td><td>API 23, 29/30, 31/32, 33, 34 і current 35/36; legacy target лише для migration test, current target для release.</td></tr>
+<tr><td>Install path</td><td>Fresh install, app update with target bump, OS upgrade, backup/restore, reinstall.</td></tr>
+<tr><td>Permission</td><td>Never asked, allow, deny once/twice, Settings revoke, one-time expiry, auto-reset, coarse-only, foreground-only, selected photos/reselect.</td></tr>
+<tr><td>Notification</td><td>App deny, channel NONE/LOW/HIGH, user-lowered importance, DND, eligible/non-eligible upgrade, trampoline tap, full-screen fallback.</td></tr>
+<tr><td>Storage/URI</td><td>Local/cloud provider, persistable vs temporary grant, provider removed, low storage, large/spoofed MIME, process kill during copy, legacy migration replay.</td></tr>
+</tbody></table>
+<pre><code class="language-bash">adb shell pm list permissions -d -g
+adb shell pm grant com.example.app android.permission.CAMERA
+adb shell pm revoke com.example.app android.permission.CAMERA
+adb shell pm clear-permission-flags com.example.app android.permission.CAMERA user-set user-fixed
+adb shell pm revoke com.example.app android.permission.POST_NOTIFICATIONS
+adb shell pm clear-permission-flags com.example.app android.permission.POST_NOTIFICATIONS user-set user-fixed
+adb shell dumpsys package com.example.app
+adb shell cmd appops get com.example.app
+adb shell dumpsys notification --noredact
+adb shell am kill com.example.app
+adb shell am force-stop com.example.app</code></pre>
+<p>Команди й flags можуть відрізнятися за API/build, тому фіксуйте emulator image/device. Для auto-reset/hibernation та compatibility changes використовуйте documented page-specific commands на відповідній версії, після test відновлюйте state. UI/instrumentation tests не можуть підмінити system permission dialogs стабільним app selector; керуйте preconditions через shell/test APIs і assert-те app state після system result.</p>
+
+<h2 id="stage6-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice Q and A" class="heading-anchor" href="#stage6-uk-likely-qa">#</a></h2>
+<p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
+<ol>
+<li><strong>Чому permission — state machine?</strong> Є never-requested app state, denied/rationale, blocked-like denial, temporary/partial scopes і granted; стан може змінитися поза app, тому перевірка перед use обов’язкова.</li>
+<li><strong>Чи rationale=false означає “don’t ask again”?</strong> Ні. Це не повний permanent-denial oracle: false також буває до першого request та за іншими platform/policy states. Додайте власний requested flag і current grant, не робіть абсолютний висновок.</li>
+<li><strong>Як Activity Result API переживає recreation?</strong> Registry зберігає pending result; launcher реєструється безумовно і в стабільному порядку, callback відновлює business intent із durable/saved state.</li>
+<li><strong>Як просити background location?</strong> Foreground coarse/fine спочатку, background — окремий educational + system Settings flow на Android 11+, лише для core case і окремо від Play approval.</li>
+<li><strong>Що змінилося для Bluetooth/media?</strong> Android 12 додав granular Nearby Bluetooth; Android 13 — Nearby Wi‑Fi та split media; Android 14 — selected visual media. Versioned manifest і per-permission checks.</li>
+<li><strong>Що означає notification permission?</strong> Це app-level gate з API 33; channel/user state — додаткові gates. FGS notification requirement лишається навіть при deny.</li>
+<li><strong>Чому не можна просто підняти channel importance?</strong> Channel settings persist і user їх контролює; app не може override user-lowered importance. Новий ID не використовують для обходу choice.</li>
+<li><strong>MediaStore, SAF чи Photo Picker?</strong> MediaStore для media collections/own writes, SAF для user-chosen arbitrary docs/trees, Photo Picker для scoped photo selection без broad library permission.</li>
+<li><strong>Чому <code>uri.path</code> не файл?</strong> <code>content://</code> — provider capability, можливо remote/virtual. Читайте через ContentResolver; file paths/document URIs не взаємозамінні.</li>
+<li><strong>Як відділити platform від OEM/Play?</strong> Назвати official Android contract і target gate; store eligibility та конкретні OEM observations позначити окремо, не універсалізувати.</li>
+</ol>
+
+<h2 id="stage6-uk-followups">4 senior follow-ups з відповідями<a aria-label="Посилання на розділ: 4 senior follow ups" class="heading-anchor" href="#stage6-uk-followups">#</a></h2>
+<ol>
+<li><strong>Result callback прийшов після process recreation, але upload target зник.</strong> Callback не виконує стару lambda business assumption: читає operation ID із SavedStateHandle/DB, revalidates URI/grant і або продовжує, або повертає user до reselect.</li>
+<li><strong>User дав approximate, а route feature потребує точності.</strong> Спочатку покажіть coarse результат/degraded UX; request precision upgrade лише після explicit action з конкретною цінністю. Deny не блокує весь app.</li>
+<li><strong>Після target 34 users бачать лише частину photos.</strong> Inventory permission/manifest, реалізуйте selected-media/reselection flow або перейдіть на Photo Picker; не кешуйте старий full-library assumption і тестуйте app update.</li>
+<li><strong>Critical notification не heads-up.</strong> Перевірте POST_NOTIFICATIONS, app/channel block, user-lowered importance, DND і payload. App не може підняти importance; поясніть settings за user action і забезпечте in-app fallback. Full-screen intent — лише lawful call/alarm case.</li>
+</ol>
+
+<h2 id="stage6-uk-self-check">5 self-check без відповідей<a aria-label="Посилання на розділ: 5 self check without answers" class="heading-anchor" href="#stage6-uk-self-check">#</a></h2>
+<ol>
+<li>Які states ваш permission reducer розрізняє, і що доводить кожен state?</li>
+<li>Який permissionless API може замінити найширший grant у вашому app?</li>
+<li>Що станеться з pending request, URI і UI після process death та Settings revoke?</li>
+<li>Які OS × target × install-path combinations критичні для наступного targetSdk upgrade?</li>
+<li>Де ваша документація відділяє Android guarantee від Google Play policy та named OEM observation?</li>
+</ol>
+
+<h2 id="stage6-uk-english-skeletons">Interview-ready English answer skeletons<a aria-label="Посилання на розділ: Interview ready English answer skeletons" class="heading-anchor" href="#stage6-uk-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you design permissions, storage, and notifications across Android versions?</em></p>
+<h3 id="stage6-uk-answer-30">~30-second answer<a aria-label="Посилання на розділ: 30 second answer" class="heading-anchor" href="#stage6-uk-answer-30">#</a></h3>
+<blockquote><p>I model permission as a revocable capability, not a dialog or cached Boolean. I first choose a permissionless API such as Photo Picker, SAF, or app-specific storage. Otherwise I request contextually through Activity Result APIs, handle denial, one-time and partial scope, and re-check immediately before use. I version behavior by both OS and target SDK. For notifications I respect the app grant and persistent user-owned channel importance. For storage I keep content URIs distinct from file paths. I test fresh installs, upgrades, recreation, Settings changes, URI loss, and named OEM devices without claiming universal OEM behavior.</p></blockquote>
+<h3 id="stage6-uk-answer-2min">~2-minute answer<a aria-label="Посилання на розділ: 2 minute answer" class="heading-anchor" href="#stage6-uk-answer-2min">#</a></h3>
+<blockquote><p>I begin with data minimization: the exact user value, resource, sensitivity, retention, and deletion semantics. Then I look for a system-mediated, permissionless API—Photo Picker for selected visual media, SAF for documents, MediaStore for app-owned shared media, or app-specific storage for private data.</p><p>When a dangerous permission is required, I model observable states rather than treating the result as a Boolean. A rationale false value is not a complete permanent-denial oracle. I combine the current grant with app-owned request history, support denial and Settings recovery without loops, and represent one-time, while-in-use, approximate, background, and selected-media scopes explicitly. Permissions can change outside the app, so every sensitive operation re-checks and handles failure. Activity Result launchers register unconditionally in stable order so pending results survive recreation; business intent lives in saved or durable state.</p><p>I maintain an OS-and-target matrix: Android 11 changed one-time grants, auto-reset, package visibility, and background-location flow; Android 12 added approximate location, Nearby Bluetooth, and notification-trampoline restrictions; Android 13 added notification permission, granular media, Nearby Wi-Fi, and Photo Picker; Android 14 added selected-photo access and tighter full-screen intent rules. Store policy is a separate gate.</p><p>Notification channels are persistent user-owned settings, so the app cannot raise importance the user lowered. Storage code treats content URIs as provider capabilities, never guessed paths, and validates persisted grants. Finally I test fresh install, app and OS upgrades, restore, partial and denied states, process death, channel overrides, provider loss, and current target SDK images, with OEM findings reported only for the tested device and firmware.</p></blockquote>
+
+<h2 id="stage6-uk-sources">Офіційні джерела<a aria-label="Посилання на розділ: Офіційні джерела" class="heading-anchor" href="#stage6-uk-sources">#</a></h2>
+<ul>
+<li><a href="https://developer.android.com/training/permissions/requesting">Request runtime permissions</a>, <a href="https://developer.android.com/training/permissions/usage-notes">Permission best practices</a> та <a href="https://developer.android.com/guide/topics/permissions/overview">Permissions overview</a></li>
+<li><a href="https://developer.android.com/training/basics/intents/result">Activity Result APIs</a>, <a href="https://developer.android.com/develop/sensors-and-location/location/permissions/runtime">Runtime location</a> та <a href="https://developer.android.com/develop/sensors-and-location/location/permissions/background">Background location</a></li>
+<li><a href="https://developer.android.com/develop/connectivity/bluetooth/bt-permissions">Bluetooth permissions</a>, <a href="https://developer.android.com/develop/connectivity/wifi/wifi-permissions">Nearby Wi‑Fi</a> та <a href="https://developer.android.com/about/versions/14/changes/partial-photo-video-access">Selected Photos Access</a></li>
+<li><a href="https://developer.android.com/develop/ui/views/notifications/notification-permission">Notification runtime permission</a>, <a href="https://developer.android.com/develop/ui/views/notifications/channels">Notification channels</a>, <a href="https://developer.android.com/about/versions/12/behavior-changes-12#notification-trampolines">Notification trampolines</a> та <a href="https://developer.android.com/about/versions/14/behavior-changes-14#secure-fsi">Full-screen intent limits</a></li>
+<li><a href="https://developer.android.com/training/data-storage/">Storage overview</a>, <a href="https://developer.android.com/training/data-storage/shared/media">MediaStore</a>, <a href="https://developer.android.com/guide/topics/providers/document-provider">Storage Access Framework</a>, <a href="https://developer.android.com/training/data-storage/shared/photo-picker">Photo Picker</a> та <a href="https://developer.android.com/about/versions/11/privacy/storage">Android 11 storage changes</a></li>
+<li><a href="https://developer.android.com/training/package-visibility">Package visibility</a>, <a href="https://developer.android.com/training/secure-file-sharing/share-file">Secure file sharing</a> та <a href="https://developer.android.com/reference/androidx/core/content/FileProvider">FileProvider</a></li>
+<li><a href="https://developer.android.com/about/versions/16/behavior-changes-16">Android 16 target behavior changes</a> та <a href="https://developer.android.com/google/play/requirements/target-sdk">Google Play target API requirements</a></li>
 </ul>
 </div></details>
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
@@ -7735,6 +7958,223 @@ adb shell am compat enable FGS_INTRODUCE_TIME_LIMITS com.example.app</code></pre
 <li><a href="https://developer.android.com/develop/background-work/background-tasks/uidt">User-initiated data transfer</a> and <a href="https://developer.android.com/about/versions/15/changes/foreground-service-types">Android 15 FGS changes</a></li>
 <li><a href="https://developer.android.com/develop/background-work/services/alarms">Schedule alarms</a> and <a href="https://developer.android.com/topic/performance/power/power-details">Power-management resource limits</a></li>
 <li><a href="https://developer.android.com/develop/background-work/background-tasks/testing/persistent/debug">Debug WorkManager</a>, <a href="https://developer.android.com/develop/background-work/background-tasks/testing/persistent/integration-testing">WorkManager integration testing</a>, and <a href="https://developer.android.com/topic/performance/power/test-power">Test power-related issues</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="android-permissions-storage-notifications" data-title="Android permissions, storage, and notifications across versions" id="en-android-permissions-storage-notifications" open=""><summary class="major-summary"><span class="major-title">Android permissions, storage, and notifications across versions</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<h2 id="en-stage6-objective">Learning objective<a aria-label="Link to section: Learning objective" class="heading-anchor" href="#en-stage6-objective">#</a></h2>
+<p>After this stage, you should be able to design capability flows that remain correct after denial, process recreation, Settings changes, OS or target SDK upgrades, and narrowed access; select the least-privileged storage and notification API; distinguish Android platform behavior from Google Play, OEM, and app policy; and reproduce critical states with tests and <code>adb</code>.</p>
+
+<h2 id="en-stage6-mental-model">Senior mental model<a aria-label="Link to section: Senior mental model" class="heading-anchor" href="#en-stage6-mental-model">#</a></h2>
+<blockquote><p><strong>A permission is not a dialog or Boolean; it is a revocable capability.</strong> Effective access depends on device API, <code>targetSdk</code>, manifest declarations, current grant/app-op/channel state, lifecycle, and the resource. A request merely starts a system-mediated transition. Re-check immediately before every sensitive operation and provide a degraded path.</p></blockquote>
+<ul>
+<li><strong>Platform behavior:</strong> runtime grants, one-time and while-in-use scope, auto-reset, scoped storage, channel state, and package visibility are Android/API contracts.</li>
+<li><strong>Distribution policy:</strong> Google Play eligibility for background location, all-files access, or full-screen intents is a separate review and policy layer. A manifest declaration or device grant does not prove policy compliance.</li>
+<li><strong>OEM/app policy:</strong> a manufacturer can add settings, battery/privacy UX, or defects, while the product can add a pre-prompt. Do not present any OEM behavior as universal Android behavior; record the tested device and firmware.</li>
+<li><strong>Minimize first:</strong> Photo Picker, SAF, system pickers, Companion Device Manager, and app-specific storage often remove broad permissions. Collect only required data for the minimum retention period with explicit deletion semantics.</li>
+</ul>
+
+<h2 id="en-stage6-internals">Internals and state transitions<a aria-label="Link to section: Internals and state transitions" class="heading-anchor" href="#en-stage6-internals">#</a></h2>
+<h3 id="en-stage6-permissions-state">Permission state machine and UX<a aria-label="Link to section: Permission state machine" class="heading-anchor" href="#en-stage6-permissions-state">#</a></h3>
+<table><thead><tr><th>Observable state</th><th>Action</th><th>Caveat</th></tr></thead><tbody>
+<tr><td>Granted</td><td>Run the feature after checking scope: foreground/background, coarse/fine, or selected media.</td><td>The grant can change outside the app through Settings, auto-reset, policy, upgrade, or one-time expiry.</td></tr>
+<tr><td>Not requested</td><td>The app records its own request history, explains context, and asks at the moment of value.</td><td>The platform has no universal separate “never asked” enum.</td></tr>
+<tr><td>Denied + rationale</td><td>Explain the need without coercion; allow retry or degraded mode.</td><td><code>shouldShowRequestPermissionRationale()</code> is a UX hint, not a complete state machine.</td></tr>
+<tr><td>Denied without rationale after a request</td><td>Avoid request loops; explain the feature and open app Settings only after explicit user action.</td><td><strong><code>shouldShowRequestPermissionRationale()</code> is not a complete permanent-denial oracle:</strong> false can mean before the first request, “don’t ask again” or repeated denial, policy, or another platform state. Correlate app-owned request history, but trust the current grant.</td></tr>
+<tr><td>Partial or temporary</td><td>Model coarse, selected photos, while-in-use, and one-time as distinct capabilities.</td><td>Never display them as full access.</td></tr>
+</tbody></table>
+<p>On Android 11+, location, camera, and microphone may be <strong>one-time</strong>; the system later revokes access and can terminate the process. Auto-reset or app hibernation can reset runtime grants for unused apps. Android 12+ lets the user choose approximate location even when fine is requested: request coarse and fine together, support coarse, and explain precision only where essential. While-in-use does not imply arbitrary background access.</p>
+<p>A permission group is presentation and management metadata, not an atomic grant. Request and check each permission; groups and system UI can change across releases. A <code>RequestMultiplePermissions</code> result can be mixed.</p>
+
+<h3 id="en-stage6-activity-results">Activity Result API, lifecycle, and recreation<a aria-label="Link to section: Activity Result API lifecycle and recreation" class="heading-anchor" href="#en-stage6-activity-results">#</a></h3>
+<pre><code class="language-kotlin">class ImportFragment : Fragment() {
+    // Register unconditionally on every creation, in stable order.
+    private val requestLocation = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants -&gt;
+        renderLocationAccess(
+            coarse = grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true,
+            fine = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        )
+    }
+
+    private val pickImage = registerForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri -&gt; uri?.let(viewModel::onImageSelected) }
+}</code></pre>
+<p><code>ActivityResultRegistry</code> can deliver a pending result after configuration change or process recreation when launchers register <strong>unconditionally on every creation and in the same order</strong>; launch only when lifecycle state permits. The callback must not depend on an old View or an in-memory “current request.” Store business intent or operation ID in <code>SavedStateHandle</code> or a database, then re-check the permission or URI and current state. Do not relaunch automatically on every recreation.</p>
+
+<h3 id="en-stage6-location">Location: foreground, precision, and background sequence<a aria-label="Link to section: Location permission sequence" class="heading-anchor" href="#en-stage6-location">#</a></h3>
+<ul>
+<li>Begin foreground flow with <code>ACCESS_COARSE_LOCATION</code>; add <code>ACCESS_FINE_LOCATION</code> only when the feature cannot work approximately. On Android 12+, request coarse and fine together; the user can retain approximate only.</li>
+<li><code>ACCESS_BACKGROUND_LOCATION</code> arrived in Android 10. On Android 11+, obtain foreground access first, then separately educate and route the user through the system Settings flow; a simultaneous foreground-plus-background request does not produce the expected dialog.</li>
+<li>Background location must support core, user-visible functionality. Android platform restrictions and Google Play background-location policy are separate gates. An FGS location type and while-in-use rules do not replace the background permission.</li>
+<li>If the user downgrades precise to approximate or revokes location in Settings, Android can restart or kill the app process. Rebuild from durable state and re-check.</li>
+</ul>
+
+<h3 id="en-stage6-capability-evolution">Bluetooth, Nearby, media, camera, and microphone<a aria-label="Link to section: Capability evolution" class="heading-anchor" href="#en-stage6-capability-evolution">#</a></h3>
+<ul>
+<li><strong>Android 12 / target 31+:</strong> <code>BLUETOOTH_SCAN</code>, <code>BLUETOOTH_CONNECT</code>, and <code>BLUETOOTH_ADVERTISE</code> replace broad legacy Bluetooth and location coupling for corresponding actions. Cap legacy declarations with <code>maxSdkVersion="30"</code>. Declare <code>neverForLocation</code> only when scan results truly are not used to derive location because the system may filter some BLE beacons.</li>
+<li><strong>Android 13 / target 33+:</strong> common Wi‑Fi discovery and control uses <code>NEARBY_WIFI_DEVICES</code>; media reads split into <code>READ_MEDIA_IMAGES</code>, <code>READ_MEDIA_VIDEO</code>, and <code>READ_MEDIA_AUDIO</code> instead of <code>READ_EXTERNAL_STORAGE</code>.</li>
+<li><strong>Android 14 / target 34+:</strong> <code>READ_MEDIA_VISUAL_USER_SELECTED</code> represents user-selected photos and videos. If the app does not own a reselection flow, system compatibility mode can manage selection; re-check access on resume and use.</li>
+<li><strong>Camera and microphone:</strong> runtime plus one-time or while-in-use semantics, privacy indicators, and device-wide sensor toggles are separate failure states. A grant does not guarantee hardware availability, exclusive access, sensor privacy state, or a legal background start.</li>
+</ul>
+
+<h2 id="en-stage6-notifications">Notifications: permission, channels, and interruption<a aria-label="Link to section: Notifications" class="heading-anchor" href="#en-stage6-notifications">#</a></h2>
+<ul>
+<li><strong>Android 13 / API 33:</strong> non-exempt notifications need runtime <code>POST_NOTIFICATIONS</code>. With target 33+, the app controls contextual timing; target ≤32 has system-controlled timing and tighter re-prompt behavior. Fresh installs begin blocked. Eligible OS upgrades can be pre-granted, while an earlier user block persists.</li>
+<li>An FGS may start without a <code>POST_NOTIFICATIONS</code> grant, but its notification remains mandatory. After denial, the FGS notice can appear in Task Manager rather than the notification drawer. Use <code>areNotificationsEnabled()</code> and channel state for UX, never to bypass service rules.</li>
+<li><strong>Channels (API 26+)</strong> must exist before posting. Their ID is a long-lived product contract: <strong>channels persist, and an app cannot raise importance that the user lowered</strong>. After creation the app cannot change importance or sound semantics, though it can update name and description. Never delete and recreate a channel to reset user choice; use a new ID only for genuinely new semantics.</li>
+<li>App permission, channel importance and user settings, DND, plus system ranking and delivery are separate gates. Importance does not guarantee heads-up; the user and system have final control.</li>
+<li><strong>Android 12 / target 31+:</strong> notification-trampoline restrictions prevent a Service or BroadcastReceiver intermediary from starting an Activity after a tap. Give the notification a direct activity <code>PendingIntent</code> with correct mutability and back stack.</li>
+<li><strong>Full-screen intent:</strong> this is an exception for time-sensitive calling or alarm use cases, not engagement. Android 14 / target 34+ tightens <code>USE_FULL_SCREEN_INTENT</code>; check <code>canUseFullScreenIntent()</code> and provide a normal-notification fallback. Google Play eligibility and default-grant review are distribution policy, separate from the platform API.</li>
+</ul>
+
+<h2 id="en-stage6-storage">Storage: ownership, collections, and durable access<a aria-label="Link to section: Storage" class="heading-anchor" href="#en-stage6-storage">#</a></h2>
+<table><thead><tr><th>Need</th><th>Default API</th><th>Lifetime / risk</th></tr></thead><tbody>
+<tr><td>Private app data</td><td>Internal <code>filesDir</code>/<code>cacheDir</code></td><td>No permission; sandboxed; removed at uninstall. Cache can be evicted.</td></tr>
+<tr><td>Large app-specific files</td><td><code>getExternalFilesDir()</code></td><td>No storage permission; volume can be unavailable; removed at uninstall.</td></tr>
+<tr><td>App-created shared media</td><td><code>MediaStore</code>, <code>RELATIVE_PATH</code>, <code>IS_PENDING</code></td><td>Own inserts normally need no broad read permission; shared media survives uninstall. Editing or deleting others' content needs scoped consent.</td></tr>
+<tr><td>User-selected photos/videos</td><td>Photo Picker / <code>PickVisualMedia</code></td><td>No broad library permission; scoped URI grant. Persist when the contract supports it and still handle loss.</td></tr>
+<tr><td>Arbitrary document, create, export</td><td>SAF: <code>OPEN_DOCUMENT</code>, <code>CREATE_DOCUMENT</code>, <code>OPEN_DOCUMENT_TREE</code></td><td><code>content://</code> document URI; request and take a persistable grant where needed; provider, reinstall, or user action can invalidate it.</td></tr>
+</tbody></table>
+<p>Scoped storage is the default on Android 10 and enforced for apps targeting Android 11+; <code>requestLegacyExternalStorage</code> is ignored at target 30+. Before the target upgrade, a legacy app must migrate into app-specific storage, MediaStore, or a user-chosen SAF location. Make migration resumable and idempotent, and retain the source until the copy is verified.</p>
+<p><strong>File paths and document URIs are not interchangeable.</strong> Do not turn <code>content://</code> into a guessed <code>/storage/...</code> path. Use <code>ContentResolver</code>, streams or file descriptors, and MIME/display-name metadata. Even where MediaStore supports a direct path for particular media cases, that is not a universal SAF, cloud, or provider property.</p>
+<p><code>MANAGE_EXTERNAL_STORAGE</code> is broad special access for narrow core use cases, not a shortcut. Platform access and Google Play approval remain separate requirements.</p>
+
+<h2 id="en-stage6-visibility-sharing">Package visibility, URI grants, and FileProvider<a aria-label="Link to section: Package visibility URI grants and FileProvider" class="heading-anchor" href="#en-stage6-visibility-sharing">#</a></h2>
+<ul>
+<li>Android 11 / target 30+ filters package query results. Declare narrow <code>&lt;queries&gt;</code> entries for packages, intents, or providers. <code>QUERY_ALL_PACKAGES</code> is a rare special case subject to Play approval. “Not found” can mean invisible rather than uninstalled.</li>
+<li>Share a private file using <code>FileProvider</code> with narrowly whitelisted paths, a <code>content://</code> URI, <code>FLAG_GRANT_READ_URI_PERMISSION</code> or write permission, and <code>ClipData</code> for every URI. Do not expose a broad root or use <code>file://</code>.</li>
+<li>A URI permission is a capability token for a resource, mode, and lifetime. Validate scheme, authority, MIME, and size; handle <code>SecurityException</code> and <code>FileNotFoundException</code>; do not log sensitive URIs; revoke temporary grants where appropriate.</li>
+</ul>
+
+<h2 id="en-stage6-guarantees">Guarantees versus non-guarantees<a aria-label="Link to section: Guarantees versus non guarantees" class="heading-anchor" href="#en-stage6-guarantees">#</a></h2>
+<table><thead><tr><th>Safe claim</th><th>Do not promise</th></tr></thead><tbody>
+<tr><td>The system returns the current grant check for a permission.</td><td>The grant remains unchanged until next launch, or rationale=false definitively means permanent denial.</td></tr>
+<tr><td>Activity Result Registry can deliver a pending result after recreation with correct registration.</td><td>An old View or in-memory request context survives process death, or the callback matches the desired business state.</td></tr>
+<tr><td>A channel preserves user-controlled settings.</td><td>The app can raise user-lowered importance or guarantee heads-up/full-screen delivery.</td></tr>
+<tr><td>A persistable SAF grant can survive process and reboot.</td><td>The URI is eternal, is a file path, survives reinstall, or cloud content is always local.</td></tr>
+<tr><td>Platform APIs have documented OS and target gates.</td><td>Google Play approval or identical behavior across every OEM UI, power, and privacy layer.</td></tr>
+</tbody></table>
+
+<h2 id="en-stage6-version-matrix">Version timeline / targetSdk matrix<a aria-label="Link to section: Version timeline target SDK matrix" class="heading-anchor" href="#en-stage6-version-matrix">#</a></h2>
+<table><thead><tr><th>OS/API</th><th>Key change</th><th>Gate / upgrade caveat</th></tr></thead><tbody>
+<tr><td>6 / 23</td><td>Dangerous permissions become runtime.</td><td>The runtime model depended on target 23+; always test the current target.</td></tr>
+<tr><td>8 / 26</td><td>Notification channels.</td><td>Without a channel, notifications do not post for target 26+; user settings persist.</td></tr>
+<tr><td>10 / 29</td><td>Scoped storage default; separate background location.</td><td>A temporary legacy opt-out existed; background requires manifest plus runtime grant.</td></tr>
+<tr><td>11 / 30</td><td>One-time permissions, auto-reset, package visibility, and stricter background-location sequence.</td><td>Scoped storage enforced at target 30; <code>requestLegacyExternalStorage</code> ignored.</td></tr>
+<tr><td>12 / 31</td><td>Approximate location, Nearby Bluetooth, and notification-trampoline restriction.</td><td>Many changes activate at target 31; precision downgrade can restart the process.</td></tr>
+<tr><td>13 / 33</td><td><code>POST_NOTIFICATIONS</code>, granular media, Nearby Wi‑Fi, and system Photo Picker.</td><td>Fresh install differs from eligible OS upgrade or pre-grant; old-target prompt timing differs.</td></tr>
+<tr><td>14 / 34</td><td>Selected Photos Access and tighter full-screen intents.</td><td>Implement reselection when owning media-permission UX; check special access at runtime.</td></tr>
+<tr><td>15–16 / 35–36</td><td>Privacy and security continue evolving, including granular health permissions at Android 16.</td><td>Read both “all apps” and “targeting N” docs; Play target API deadlines are separate and change over time.</td></tr>
+</tbody></table>
+<p>A release matrix separates <strong>device OS</strong>, <strong>targetSdk</strong>, fresh install/restore/OS upgrade, and app update. Do not branch only on <code>SDK_INT</code>: manifest <code>maxSdkVersion</code>, target-gated behavior, current user state, and store policy also matter.</p>
+
+<h2 id="en-stage6-decision-framework">Decision framework<a aria-label="Link to section: Decision framework" class="heading-anchor" href="#en-stage6-decision-framework">#</a></h2>
+<ol>
+<li><strong>Name user value and data:</strong> exact resource or action, sensitivity, retention, sharing, and deletion.</li>
+<li><strong>Find a permissionless API:</strong> picker, SAF, app-specific storage, own MediaStore write, or CDM before broad access.</li>
+<li><strong>Build a capability matrix:</strong> OS × target × manifest × grant/scope × lifecycle × store policy; define degraded mode.</li>
+<li><strong>Ask contextually:</strong> after explicit action, in separate stages, without dark patterns; show rationale only when useful.</li>
+<li><strong>Use defence in depth:</strong> check immediately before use, handle revocation, partial result, and exceptions; minimize persistence and telemetry.</li>
+<li><strong>Verify transitions:</strong> fresh, upgrade, restore, denial, auto-reset, process recreation, channel settings, URI loss, plus named OEM observations.</li>
+</ol>
+
+<h2 id="en-stage6-tradeoffs">Trade-offs and failure modes<a aria-label="Link to section: Trade offs and failure modes" class="heading-anchor" href="#en-stage6-tradeoffs">#</a></h2>
+<ul>
+<li>A broad permission simplifies queries but increases privacy blast radius, denial rate, and policy cost; picker or SAF adds URI lifetime and provider failure.</li>
+<li>A pre-prompt can give context but another modal before the system dialog creates friction. Never disguise denial as mandatory when degraded mode exists.</li>
+<li>A cached “granted=true” becomes stale; permission, channel, and URI access can change outside the app. Checking only in onboarding is a production defect.</li>
+<li>One channel for everything couples transactional and marketing opt-out; too many channels overload settings. Semantics and stable IDs are a product contract.</li>
+<li>A persisted URI without metadata and validation fails after provider removal, user move, expiry, or reinstall; copied files without retention create privacy debt.</li>
+<li>A target SDK bump can activate several changes together. Inventory manifests and APIs, stage rollout, test compatibility, and keep data migrations rollback-safe.</li>
+</ul>
+
+<h2 id="en-stage6-production-scenario">Production scenario: chat attachment, nearby device, and alerts<a aria-label="Link to section: Production scenario" class="heading-anchor" href="#en-stage6-production-scenario">#</a></h2>
+<p><strong>Hypothetically:</strong> a chat attachment uses Photo Picker, stores URI plus MIME and size, and copies only when offline resend or retention requires it. Upload reads through <code>ContentResolver</code>, catches a lost grant, and asks for reselection rather than crashing. Camera permission is requested only after a camera tap, while text and file flows still work. Nearby pairing evaluates CDM first; otherwise it uses versioned Bluetooth permissions and legacy <code>maxSdkVersion</code>.</p>
+<p>Delivery alerts use a transactional channel separate from marketing. The app asks for <code>POST_NOTIFICATIONS</code> after alert opt-in, exposes an in-app inbox after denial, and never recreates a channel to raise importance. A call-style full-screen path exists only for a real incoming call, checks special access, and falls back to heads-up or in-app UI. Analytics records transition category and feature outcome, never URI, location, or content.</p>
+
+<h2 id="en-stage6-review-trap">Code-review/debugging trap<a aria-label="Link to section: Code review debugging trap" class="heading-anchor" href="#en-stage6-review-trap">#</a></h2>
+<pre><code class="language-kotlin">if (!shouldShowRequestPermissionRationale(READ_MEDIA_IMAGES)) {
+    openSettings() // BUG: also false before first request
+}
+val path = selectedUri.path!!
+File(path).copyTo(uploadFile) // BUG: a document URI is not a filesystem path
+
+notificationManager.createNotificationChannel(
+    NotificationChannel("orders", "Orders", IMPORTANCE_HIGH)
+) // does not override the user's lower importance</code></pre>
+<p>Review should find three independent defects: an incomplete denial oracle, URI/path confusion, and a channel assumption. Then inspect request history, current <code>checkSelfPermission</code>, partial-media scope, persistable grant and stream closure, size/MIME bounds, process recreation, app/channel state, and target-specific manifest. Fix with explicit UI state plus current capability check; <code>ContentResolver.openInputStream/openFileDescriptor</code>; and respect for channel settings, linking to Settings only after user action.</p>
+
+<h2 id="en-stage6-testing">Test matrix and adb/debug techniques<a aria-label="Link to section: Test matrix and adb debugging" class="heading-anchor" href="#en-stage6-testing">#</a></h2>
+<table><thead><tr><th>Axis</th><th>Minimum cases</th></tr></thead><tbody>
+<tr><td>OS / target</td><td>API 23, 29/30, 31/32, 33, 34, and current 35/36; legacy target only for migration, current target for release.</td></tr>
+<tr><td>Install path</td><td>Fresh install, app update with target bump, OS upgrade, backup/restore, reinstall.</td></tr>
+<tr><td>Permission</td><td>Never asked, allow, deny once/twice, Settings revoke, one-time expiry, auto-reset, coarse-only, foreground-only, selected photos and reselection.</td></tr>
+<tr><td>Notification</td><td>App denial, channel NONE/LOW/HIGH, user-lowered importance, DND, eligible/ineligible upgrade, trampoline tap, full-screen fallback.</td></tr>
+<tr><td>Storage/URI</td><td>Local/cloud provider, persistable/temporary grant, provider removed, low storage, large or spoofed MIME, process kill during copy, migration replay.</td></tr>
+</tbody></table>
+<pre><code class="language-bash">adb shell pm list permissions -d -g
+adb shell pm grant com.example.app android.permission.CAMERA
+adb shell pm revoke com.example.app android.permission.CAMERA
+adb shell pm clear-permission-flags com.example.app android.permission.CAMERA user-set user-fixed
+adb shell pm revoke com.example.app android.permission.POST_NOTIFICATIONS
+adb shell pm clear-permission-flags com.example.app android.permission.POST_NOTIFICATIONS user-set user-fixed
+adb shell dumpsys package com.example.app
+adb shell cmd appops get com.example.app
+adb shell dumpsys notification --noredact
+adb shell am kill com.example.app
+adb shell am force-stop com.example.app</code></pre>
+<p>Commands and flags vary by API and build, so record the emulator image or device. Use documented page-specific commands for auto-reset, hibernation, and compatibility changes on that version, then restore state. UI tests cannot safely replace system dialogs with brittle app selectors; establish preconditions through shell/test APIs and assert app state after the system result.</p>
+
+<h2 id="en-stage6-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice Q and A" class="heading-anchor" href="#en-stage6-likely-qa">#</a></h2>
+<p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
+<ol>
+<li><strong>Why is permission a state machine?</strong> There is app-owned never-requested state, denied with rationale, blocked-like denial, temporary or partial scope, and granted. State changes outside the app, so every use re-checks.</li>
+<li><strong>Does rationale=false mean “don't ask again”?</strong> No. It is not a complete permanent-denial oracle: it is also false before the first request and under other platform or policy states. Combine request history with current grant without claiming certainty.</li>
+<li><strong>How does Activity Result API survive recreation?</strong> The registry stores pending results. Register launchers unconditionally in stable order and reconstruct business intent from saved or durable state.</li>
+<li><strong>How do you request background location?</strong> Foreground coarse/fine first; background is a separate education and Settings flow on Android 11+, only for a core case and separately from Play approval.</li>
+<li><strong>What changed for Bluetooth and media?</strong> Android 12 introduced granular Nearby Bluetooth; Android 13 added Nearby Wi‑Fi and split media; Android 14 added selected visual media. Use a versioned manifest and per-permission checks.</li>
+<li><strong>What does notification permission mean?</strong> It is an app-level gate from API 33; channel and user state are additional gates. The FGS notification obligation remains after denial.</li>
+<li><strong>Why not raise channel importance?</strong> Channel settings persist and belong to the user. The app cannot override user-lowered importance and must not use a new ID to evade that choice.</li>
+<li><strong>MediaStore, SAF, or Photo Picker?</strong> MediaStore for media collections and own writes; SAF for user-chosen arbitrary documents and trees; Photo Picker for scoped visual selection without broad library access.</li>
+<li><strong>Why is <code>uri.path</code> not a file?</strong> A <code>content://</code> URI is a provider capability and may be remote or virtual. Read through ContentResolver; file paths and document URIs are not interchangeable.</li>
+<li><strong>How do you separate platform from OEM and Play?</strong> Name the official Android contract and target gate, then identify store eligibility and named OEM observations separately without universal claims.</li>
+</ol>
+
+<h2 id="en-stage6-followups">4 senior follow-ups with answers<a aria-label="Link to section: 4 senior follow ups" class="heading-anchor" href="#en-stage6-followups">#</a></h2>
+<ol>
+<li><strong>A result callback arrives after process recreation, but its upload target is gone.</strong> Do not execute an old lambda assumption. Read operation ID from SavedStateHandle or DB, revalidate URI and grant, then continue or ask the user to reselect.</li>
+<li><strong>The user grants approximate location, but routing needs precision.</strong> Show a coarse result or degraded UX first. Request precision upgrade only after an explicit action and concrete value; denial must not block the whole app.</li>
+<li><strong>After target 34, users see only some photos.</strong> Inventory manifest and grants, implement selected-media reselection or move to Photo Picker, remove cached full-library assumptions, and test app update paths.</li>
+<li><strong>A critical notification does not appear heads-up.</strong> Inspect POST_NOTIFICATIONS, app and channel blocks, user-lowered importance, DND, and payload. Do not raise importance; offer user-driven Settings and an in-app fallback. Full-screen is only for a lawful call or alarm.</li>
+</ol>
+
+<h2 id="en-stage6-self-check">5 self-check questions without answers<a aria-label="Link to section: 5 self check questions without answers" class="heading-anchor" href="#en-stage6-self-check">#</a></h2>
+<ol>
+<li>Which states does your permission reducer distinguish, and what evidence proves each state?</li>
+<li>Which permissionless API can replace the broadest grant in your app?</li>
+<li>What happens to the pending request, URI, and UI after process death and Settings revocation?</li>
+<li>Which OS × target × install-path combinations are critical for your next target SDK upgrade?</li>
+<li>Where does your documentation separate Android guarantees from Google Play policy and named OEM observations?</li>
+</ol>
+
+<h2 id="en-stage6-english-skeletons">Interview-ready English answer skeletons<a aria-label="Link to section: Interview ready English answer skeletons" class="heading-anchor" href="#en-stage6-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you design permissions, storage, and notifications across Android versions?</em></p>
+<h3 id="en-stage6-answer-30">~30-second answer<a aria-label="Link to section: 30 second answer" class="heading-anchor" href="#en-stage6-answer-30">#</a></h3>
+<blockquote><p>I model permission as a revocable capability, not a dialog or cached Boolean. I first choose a permissionless API such as Photo Picker, SAF, or app-specific storage. Otherwise I request contextually through Activity Result APIs, handle denial, one-time and partial scope, and re-check immediately before use. I version behavior by both OS and target SDK. For notifications I respect the app grant and persistent user-owned channel importance. For storage I keep content URIs distinct from file paths. I test fresh installs, upgrades, recreation, Settings changes, URI loss, and named OEM devices without claiming universal OEM behavior.</p></blockquote>
+<h3 id="en-stage6-answer-2min">~2-minute answer<a aria-label="Link to section: 2 minute answer" class="heading-anchor" href="#en-stage6-answer-2min">#</a></h3>
+<blockquote><p>I begin with data minimization: the exact user value, resource, sensitivity, retention, and deletion semantics. Then I look for a system-mediated, permissionless API—Photo Picker for selected visual media, SAF for documents, MediaStore for app-owned shared media, or app-specific storage for private data.</p><p>When a dangerous permission is required, I model observable states rather than treating the result as a Boolean. A rationale false value is not a complete permanent-denial oracle. I combine the current grant with app-owned request history, support denial and Settings recovery without loops, and represent one-time, while-in-use, approximate, background, and selected-media scopes explicitly. Permissions can change outside the app, so every sensitive operation re-checks and handles failure. Activity Result launchers register unconditionally in stable order so pending results survive recreation; business intent lives in saved or durable state.</p><p>I maintain an OS-and-target matrix: Android 11 changed one-time grants, auto-reset, package visibility, and background-location flow; Android 12 added approximate location, Nearby Bluetooth, and notification-trampoline restrictions; Android 13 added notification permission, granular media, Nearby Wi-Fi, and Photo Picker; Android 14 added selected-photo access and tighter full-screen intent rules. Store policy is a separate gate.</p><p>Notification channels are persistent user-owned settings, so the app cannot raise importance the user lowered. Storage code treats content URIs as provider capabilities, never guessed paths, and validates persisted grants. Finally I test fresh install, app and OS upgrades, restore, partial and denied states, process death, channel overrides, provider loss, and current target SDK images, with OEM findings reported only for the tested device and firmware.</p></blockquote>
+
+<h2 id="en-stage6-sources">Official sources<a aria-label="Link to section: Official sources" class="heading-anchor" href="#en-stage6-sources">#</a></h2>
+<ul>
+<li><a href="https://developer.android.com/training/permissions/requesting">Request runtime permissions</a>, <a href="https://developer.android.com/training/permissions/usage-notes">Permission best practices</a>, and <a href="https://developer.android.com/guide/topics/permissions/overview">Permissions overview</a></li>
+<li><a href="https://developer.android.com/training/basics/intents/result">Activity Result APIs</a>, <a href="https://developer.android.com/develop/sensors-and-location/location/permissions/runtime">Runtime location</a>, and <a href="https://developer.android.com/develop/sensors-and-location/location/permissions/background">Background location</a></li>
+<li><a href="https://developer.android.com/develop/connectivity/bluetooth/bt-permissions">Bluetooth permissions</a>, <a href="https://developer.android.com/develop/connectivity/wifi/wifi-permissions">Nearby Wi‑Fi</a>, and <a href="https://developer.android.com/about/versions/14/changes/partial-photo-video-access">Selected Photos Access</a></li>
+<li><a href="https://developer.android.com/develop/ui/views/notifications/notification-permission">Notification runtime permission</a>, <a href="https://developer.android.com/develop/ui/views/notifications/channels">Notification channels</a>, <a href="https://developer.android.com/about/versions/12/behavior-changes-12#notification-trampolines">Notification trampolines</a>, and <a href="https://developer.android.com/about/versions/14/behavior-changes-14#secure-fsi">Full-screen intent limits</a></li>
+<li><a href="https://developer.android.com/training/data-storage/">Storage overview</a>, <a href="https://developer.android.com/training/data-storage/shared/media">MediaStore</a>, <a href="https://developer.android.com/guide/topics/providers/document-provider">Storage Access Framework</a>, <a href="https://developer.android.com/training/data-storage/shared/photo-picker">Photo Picker</a>, and <a href="https://developer.android.com/about/versions/11/privacy/storage">Android 11 storage changes</a></li>
+<li><a href="https://developer.android.com/training/package-visibility">Package visibility</a>, <a href="https://developer.android.com/training/secure-file-sharing/share-file">Secure file sharing</a>, and <a href="https://developer.android.com/reference/androidx/core/content/FileProvider">FileProvider</a></li>
+<li><a href="https://developer.android.com/about/versions/16/behavior-changes-16">Android 16 target behavior changes</a> and <a href="https://developer.android.com/google/play/requirements/target-sdk">Google Play target API requirements</a></li>
 </ul>
 </div></details>
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="en-kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">

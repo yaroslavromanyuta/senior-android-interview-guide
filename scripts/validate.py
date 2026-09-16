@@ -16,6 +16,7 @@ STAGE2_KEY = "kotlin-type-system-state-modeling"
 STAGE3_KEY = "advanced-kotlin-jvm"
 STAGE4_KEY = "android-tasks-back-stack-deep-links-intents-pending-intent"
 STAGE5_KEY = "android-background-execution"
+STAGE6_KEY = "android-permissions-storage-notifications"
 
 
 def validate_html(path: Path) -> list[str]:
@@ -69,7 +70,8 @@ def validate_index_structure() -> list[str]:
         errors.append(f"index.html: unresolved internal hashes: {', '.join(unresolved)}")
 
     for stage_number, stage_key in (
-        (2, STAGE2_KEY), (3, STAGE3_KEY), (4, STAGE4_KEY), (5, STAGE5_KEY)
+        (2, STAGE2_KEY), (3, STAGE3_KEY), (4, STAGE4_KEY), (5, STAGE5_KEY),
+        (6, STAGE6_KEY),
     ):
         expected_stage_ids = (stage_key, f"en-{stage_key}")
         if content.count(f'data-key="{stage_key}"') != 2:
@@ -94,12 +96,40 @@ def validate_index_structure() -> list[str]:
             f'{prefix}{STAGE3_KEY}',
             f'{prefix}{STAGE4_KEY}',
             f'{prefix}{STAGE5_KEY}',
+            f'{prefix}{STAGE6_KEY}',
             f'{prefix}kotlin-for-android',
         )
         positions = [content.find(f'id="{value}"') for value in ordered_ids]
         if -1 in positions or positions != sorted(positions):
             errors.append(
-                f"index.html: {prefix or 'uk-'}Stages 2–5 must follow Stage 1 and precede Kotlin for Android"
+                f"index.html: {prefix or 'uk-'}Stages 2–6 must follow Stage 1 and precede Kotlin for Android"
+            )
+
+        stage5_id = f"{prefix}{STAGE5_KEY}"
+        stage6_id = f"{prefix}{STAGE6_KEY}"
+        major_ids = re.findall(
+            r'<details\s+class="major-section"[^>]*\bid="([^"]+)"',
+            content,
+            re.I,
+        )
+        if (
+            stage5_id not in major_ids
+            or stage6_id not in major_ids
+            or major_ids.index(stage6_id) != major_ids.index(stage5_id) + 1
+        ):
+            errors.append(
+                f"index.html: {stage6_id!r} must be the major section immediately after {stage5_id!r}"
+            )
+
+        toc_adjacency = re.search(
+            rf'<li class="toc-major">\s*<a data-target="{re.escape(stage5_id)}"[^>]*>.*?</a>\s*'
+            rf'</li>\s*<li class="toc-major">\s*<a data-target="{re.escape(stage6_id)}"[^>]*>',
+            content,
+            re.S,
+        )
+        if not toc_adjacency:
+            errors.append(
+                f"index.html: TOC link {stage6_id!r} must be immediately after {stage5_id!r}"
             )
 
     stage4_contracts = (
@@ -174,6 +204,81 @@ def validate_index_structure() -> list[str]:
                 errors.append(
                     f"index.html: {prefix + suffix!r} must contain exactly {expected} list items; found {count}"
                 )
+
+    stage6_contracts = (
+        "objective", "mental-model", "internals", "permissions-state",
+        "activity-results", "location", "capability-evolution", "notifications",
+        "storage", "visibility-sharing", "guarantees", "version-matrix",
+        "decision-framework", "tradeoffs", "production-scenario", "review-trap",
+        "testing", "likely-qa", "followups", "self-check", "english-skeletons",
+        "answer-30", "answer-2min", "sources",
+    )
+    for prefix in ("stage6-uk-", "en-stage6-"):
+        for suffix in stage6_contracts:
+            stage_id = f"{prefix}{suffix}"
+            if ids.count(stage_id) != 1:
+                errors.append(f"index.html: expected exactly one Stage 6 contract id {stage_id!r}")
+
+    stage6_sections: dict[str, str] = {}
+    for stage_id in (STAGE6_KEY, f"en-{STAGE6_KEY}"):
+        match = re.search(
+            rf'<details\s+class="major-section"[^>]*\bid="{re.escape(stage_id)}"[^>]*>(.*?)</div></details>',
+            content,
+            re.I | re.S,
+        )
+        stage6_sections[stage_id] = match.group(1) if match else ""
+        if not match:
+            errors.append(f"index.html: unable to isolate Stage 6 section {stage_id!r}")
+
+    common_stage6_markers = (
+        "READ_MEDIA_VISUAL_USER_SELECTED", "POST_NOTIFICATIONS",
+        "QUERY_ALL_PACKAGES", "FLAG_GRANT_READ_URI_PERMISSION",
+        "adb shell cmd appops get", "ActivityResultContracts.RequestMultiplePermissions",
+        "ACCESS_BACKGROUND_LOCATION", "NEARBY_WIFI_DEVICES", "MANAGE_EXTERNAL_STORAGE",
+    )
+    language_markers = {
+        STAGE6_KEY: (
+            "Це likely practice questions, не підтверджений і не гарантований список співбесіди.",
+            "shouldShowRequestPermissionRationale()</code> не є повним oracle постійної відмови",
+            "permission/channel/URI можуть змінитися поза app",
+            "channels persist, і app не може підняти importance, яку user знизив",
+            "File paths і document URIs не взаємозамінні",
+            "Не приписуйте універсальну OEM-поведінку Android platform",
+        ),
+        f"en-{STAGE6_KEY}": (
+            "These are likely practice questions, not a confirmed or guaranteed interview list.",
+            "shouldShowRequestPermissionRationale()</code> is not a complete permanent-denial oracle",
+            "Permissions can change outside the app",
+            "channels persist, and an app cannot raise importance that the user lowered",
+            "File paths and document URIs are not interchangeable",
+            "Do not present any OEM behavior as universal Android behavior",
+        ),
+    }
+    for stage_id, section in stage6_sections.items():
+        for marker in (*common_stage6_markers, *language_markers[stage_id]):
+            if marker not in section:
+                errors.append(
+                    f"index.html: Stage 6 section {stage_id!r} is missing focused marker {marker!r}"
+                )
+
+    for prefix in ("stage6-uk-", "en-stage6-"):
+        for suffix, expected in (("likely-qa", 10), ("followups", 4), ("self-check", 5)):
+            match = re.search(
+                rf'id="{re.escape(prefix + suffix)}".*?</h2>.*?<ol>(.*?)</ol>',
+                content,
+                re.S,
+            )
+            count = len(re.findall(r"<li>", match.group(1))) if match else 0
+            if count != expected:
+                errors.append(
+                    f"index.html: {prefix + suffix!r} must contain exactly {expected} list items; found {count}"
+                )
+            if suffix == "likely-qa" and match:
+                labelled = len(re.findall(r"<li>\s*<strong>.*?</strong>", match.group(1), re.S))
+                if labelled != expected:
+                    errors.append(
+                        f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}"
+                    )
     return errors
 
 
@@ -191,7 +296,7 @@ def main() -> int:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
-    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–5 navigation/contracts, and baseline checksum are valid.")
+    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–6 navigation/contracts, and baseline checksum are valid.")
     return 0
 
 
