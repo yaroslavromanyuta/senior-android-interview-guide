@@ -18,6 +18,7 @@ STAGE4_KEY = "android-tasks-back-stack-deep-links-intents-pending-intent"
 STAGE5_KEY = "android-background-execution"
 STAGE6_KEY = "android-permissions-storage-notifications"
 STAGE7_KEY = "kotlin-coroutines-foundations-internals"
+STAGE8_KEY = "kotlin-coroutines-failures-supervision-testing"
 
 
 def validate_html(path: Path) -> list[str]:
@@ -72,7 +73,7 @@ def validate_index_structure() -> list[str]:
 
     for stage_number, stage_key in (
         (2, STAGE2_KEY), (3, STAGE3_KEY), (4, STAGE4_KEY), (5, STAGE5_KEY),
-        (6, STAGE6_KEY), (7, STAGE7_KEY),
+        (6, STAGE6_KEY), (7, STAGE7_KEY), (8, STAGE8_KEY),
     ):
         expected_stage_ids = (stage_key, f"en-{stage_key}")
         if content.count(f'data-key="{stage_key}"') != 2:
@@ -99,17 +100,19 @@ def validate_index_structure() -> list[str]:
             f'{prefix}{STAGE5_KEY}',
             f'{prefix}{STAGE6_KEY}',
             f'{prefix}{STAGE7_KEY}',
+            f'{prefix}{STAGE8_KEY}',
             f'{prefix}kotlin-for-android',
         )
         positions = [content.find(f'id="{value}"') for value in ordered_ids]
         if -1 in positions or positions != sorted(positions):
             errors.append(
-                f"index.html: {prefix or 'uk-'}Stages 2–7 must follow Stage 1 and precede Kotlin for Android"
+                f"index.html: {prefix or 'uk-'}Stages 2–8 must follow Stage 1 and precede Kotlin for Android"
             )
 
         stage5_id = f"{prefix}{STAGE5_KEY}"
         stage6_id = f"{prefix}{STAGE6_KEY}"
         stage7_id = f"{prefix}{STAGE7_KEY}"
+        stage8_id = f"{prefix}{STAGE8_KEY}"
         major_ids = re.findall(
             r'<details\s+class="major-section"[^>]*\bid="([^"]+)"',
             content,
@@ -119,12 +122,15 @@ def validate_index_structure() -> list[str]:
             stage5_id not in major_ids
             or stage6_id not in major_ids
             or stage7_id not in major_ids
+            or stage8_id not in major_ids
             or major_ids.index(stage6_id) != major_ids.index(stage5_id) + 1
             or major_ids.index(stage7_id) != major_ids.index(stage6_id) + 1
+            or major_ids.index(stage8_id) != major_ids.index(stage7_id) + 1
         ):
             errors.append(
                 f"index.html: {stage6_id!r} must immediately follow {stage5_id!r}, "
-                f"and {stage7_id!r} must immediately follow {stage6_id!r}"
+                f"{stage7_id!r} must immediately follow {stage6_id!r}, and "
+                f"{stage8_id!r} must immediately follow {stage7_id!r}"
             )
 
         toc_adjacency = re.search(
@@ -147,6 +153,17 @@ def validate_index_structure() -> list[str]:
         if not stage7_toc_adjacency:
             errors.append(
                 f"index.html: TOC link {stage7_id!r} must be immediately after {stage6_id!r}"
+            )
+
+        stage8_toc_adjacency = re.search(
+            rf'<li class="toc-major">\s*<a data-target="{re.escape(stage7_id)}"[^>]*>.*?</a>\s*'
+            rf'</li>\s*<li class="toc-major">\s*<a data-target="{re.escape(stage8_id)}"[^>]*>',
+            content,
+            re.S,
+        )
+        if not stage8_toc_adjacency:
+            errors.append(
+                f"index.html: TOC link {stage8_id!r} must be immediately after {stage7_id!r}"
             )
 
     stage4_contracts = (
@@ -366,6 +383,80 @@ def validate_index_structure() -> list[str]:
                     errors.append(
                         f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}"
                     )
+
+    stage8_contracts = (
+        "objective", "mental-model", "internals", "builder-propagation", "supervision",
+        "cancellation-cleanup", "timeouts-callback-flow", "flow-boundaries", "guarantees",
+        "version-sensitive", "decision-test-framework", "deterministic-testing",
+        "android-testing", "debugging", "tradeoffs", "production-scenario", "review-trap",
+        "likely-qa", "followups", "self-check", "english-skeletons", "answer-30",
+        "answer-2min", "sources",
+    )
+    for prefix in ("stage8-uk-", "en-stage8-"):
+        for suffix in stage8_contracts:
+            stage_id = f"{prefix}{suffix}"
+            if ids.count(stage_id) != 1:
+                errors.append(f"index.html: expected exactly one Stage 8 contract id {stage_id!r}")
+
+    stage8_sections: dict[str, str] = {}
+    for stage_id in (STAGE8_KEY, f"en-{STAGE8_KEY}"):
+        match = re.search(
+            rf'<details\s+class="major-section"[^>]*\bid="{re.escape(stage_id)}"[^>]*>(.*?)</div></details>',
+            content,
+            re.I | re.S,
+        )
+        stage8_sections[stage_id] = match.group(1) if match else ""
+        if not match:
+            errors.append(f"index.html: unable to isolate Stage 8 section {stage_id!r}")
+
+    common_stage8_markers = (
+        "CoroutineExceptionHandler", "SupervisorJob", "supervisorScope", "CancellationException",
+        "NonCancellable", "withTimeoutOrNull", "callbackFlow", "awaitClose", "runTest",
+        "TestScope", "StandardTestDispatcher", "UnconfinedTestDispatcher", "TestCoroutineScheduler",
+        "Dispatchers.setMain", "Dispatchers.resetMain", "backgroundScope", "advanceTimeBy",
+        "runCurrent", "advanceUntilIdle", "CoroutineName", "DebugProbes", "Turbine",
+    )
+    language_stage8_markers = {
+        STAGE8_KEY: (
+            "Це likely practice questions, не підтверджений і не гарантований список співбесіди.",
+            "supervisor ізолює propagation failure дитини, але не report-ить і не handle-ить її автоматично",
+            "Virtual time пропускає сумісні delays, а не реальний blocking/I/O",
+            "runTest</code> не робить production races неможливими",
+            "Flow content навмисно вузький; повна модель Flow належить Stages 9–11",
+        ),
+        f"en-{STAGE8_KEY}": (
+            "These are likely practice questions, not a confirmed or guaranteed interview list.",
+            "A supervisor isolates child-failure propagation; it does not report or handle the failure automatically",
+            "Virtual time skips compatible delays, not real blocking or I/O",
+            "runTest</code> does not make production races impossible",
+            "Flow coverage is deliberately narrow; the broader Flow model belongs to Stages 9–11",
+        ),
+    }
+    for stage_id, section in stage8_sections.items():
+        for marker in (*common_stage8_markers, *language_stage8_markers[stage_id]):
+            if marker not in section:
+                errors.append(
+                    f"index.html: Stage 8 section {stage_id!r} is missing focused marker {marker!r}"
+                )
+
+    for prefix in ("stage8-uk-", "en-stage8-"):
+        for suffix, expected in (("likely-qa", 10), ("followups", 4), ("self-check", 5)):
+            match = re.search(
+                rf'id="{re.escape(prefix + suffix)}".*?</h2>.*?<ol>(.*?)</ol>',
+                content,
+                re.S,
+            )
+            count = len(re.findall(r"<li>", match.group(1))) if match else 0
+            if count != expected:
+                errors.append(
+                    f"index.html: {prefix + suffix!r} must contain exactly {expected} list items; found {count}"
+                )
+            if suffix == "likely-qa" and match:
+                labelled = len(re.findall(r"<li>\s*<strong>.*?</strong>", match.group(1), re.S))
+                if labelled != expected:
+                    errors.append(
+                        f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}"
+                    )
     return errors
 
 
@@ -383,7 +474,7 @@ def main() -> int:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
-    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–7 navigation/contracts, and baseline checksum are valid.")
+    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–8 navigation/contracts, and baseline checksum are valid.")
     return 0
 
 

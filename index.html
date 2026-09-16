@@ -486,6 +486,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="kotlin-coroutines-foundations-internals" href="#kotlin-coroutines-foundations-internals">Kotlin Coroutines: foundations та internals</a>
 </li>
 <li class="toc-major">
+<a data-target="kotlin-coroutines-failures-supervision-testing" href="#kotlin-coroutines-failures-supervision-testing">Kotlin Coroutines: failures, supervision, cleanup, testing та debugging</a>
+</li>
+<li class="toc-major">
 <a data-target="kotlin-for-android" href="#kotlin-for-android">Kotlin for Android</a>
 <ol class="toc-children">
 <li><a data-target="val-vs-var-immutability" href="#val-vs-var-immutability">val vs var, immutability</a></li>
@@ -783,6 +786,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-coroutines-foundations-internals" href="#en-kotlin-coroutines-foundations-internals">Kotlin Coroutines: foundations and internals</a>
+</li>
+<li class="toc-major">
+<a data-target="en-kotlin-coroutines-failures-supervision-testing" href="#en-kotlin-coroutines-failures-supervision-testing">Kotlin Coroutines: failures, supervision, cleanup, testing, and debugging</a>
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-for-android" href="#en-kotlin-for-android">Kotlin for Android</a>
@@ -2731,6 +2737,218 @@ suspend fun awaitSdk() = suspendCancellableCoroutine&lt;Result&gt; { c -&gt;
 <li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-main-coroutine-dispatcher/immediate.html">Main.immediate</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-coroutine-dispatcher/limited-parallelism.html">limitedParallelism</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-context.html">withContext</a></li>
 <li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/suspend-cancellable-coroutine.html">suspendCancellableCoroutine</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/run-blocking.html">runBlocking</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/as-context-element.html">ThreadLocal.asContextElement</a></li>
 <li><a href="https://developer.android.com/kotlin/coroutines/coroutines-best-practices">Android coroutine best practices</a> та <a href="https://developer.android.com/topic/libraries/architecture/coroutines">Lifecycle-aware coroutines</a></li>
+<li><a href="https://kotlinlang.org/docs/coroutines-debugging.html">Debug coroutines</a> та <a href="https://kotlinlang.org/docs/debug-coroutines-with-idea.html">Debug coroutines with IntelliJ IDEA</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="kotlin-coroutines-failures-supervision-testing" data-title="Kotlin Coroutines: failures, supervision, cleanup, testing та debugging" id="kotlin-coroutines-failures-supervision-testing" open=""><summary class="major-summary"><span class="major-title">Kotlin Coroutines: failures, supervision, cleanup, testing та debugging</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<h2 id="stage8-uk-objective">Learning objective<a aria-label="Посилання на розділ: Learning objective" class="heading-anchor" href="#stage8-uk-objective">#</a></h2>
+<p>Після цього етапу ви маєте вміти передбачити, де coroutine failure буде rethrow, де скасує siblings, а де стане uncaught; обрати звичайний або supervisory boundary; зберегти cancellation під час cleanup; спроєктувати timeout і callback cleanup; та написати deterministic Android tests без перебільшення гарантій virtual time.</p>
+
+<h2 id="stage8-uk-mental-model">Senior mental model<a aria-label="Посилання на розділ: Senior mental model" class="heading-anchor" href="#stage8-uk-mental-model">#</a></h2>
+<blockquote><p><strong>Failure policy є частиною ownership tree.</strong> Спочатку намалюйте Job tree, позначте root/child, builder і observation point; потім вирішіть, чи один failure має скасувати весь unit of work, чи siblings можуть завершитися незалежно. Exception handling не замінює ownership, а supervision не замінює reporting.</p></blockquote>
+<ul>
+<li><code>launch</code> повідомляє uncaught root failure; <code>async</code> зберігає outcome у <code>Deferred</code>, який спостерігають через <code>await</code>.</li>
+<li>Звичайна child failure (крім cancellation) скасовує parent і його інших children; parent cancellation іде вниз із cancellation cause.</li>
+<li><code>CancellationException</code> — control signal. Broad catch, <code>runCatching</code> або mapping, що його ковтає, може зробити cancelled coroutine логічно живою.</li>
+<li><strong>Ключове обмеження:</strong> supervisor ізолює propagation failure дитини, але не report-ить і не handle-ить її автоматично.</li>
+</ul>
+
+<h2 id="stage8-uk-internals">Internals / failure tree<a aria-label="Посилання на розділ: Internals failure tree" class="heading-anchor" href="#stage8-uk-internals">#</a></h2>
+<pre><code class="language-text">screen Job (viewModelScope / SupervisorJob)
+├─ launch refresh       -- launch failure needs an explicit policy
+│  ├─ async profile     -- ordinary child failure cancels refresh
+│  └─ async offers      -- sibling is cancelled
+└─ launch analytics     -- supervisor isolates it from refresh
+
+coroutineScope: child failure → scope fails → siblings cancel → caller gets failure
+supervisorScope: child failure ↛ supervisor/siblings; each child outcome still must be observed</code></pre>
+<p><code>Job</code> переходить до cancelling/completing і чекає children. Перша non-cancellation exception зазвичай стає primary cause, пізніші можуть бути suppressed на підтримуваних platforms; точний порядок racing failures не є business contract. <code>cancel(CancellationException(...))</code> означає normal cancellation для parent, тоді як non-cancellation child failure propagates upward. Root означає coroutine без parent Job, а не «будь-який launch у ViewModel».</p>
+
+<h3 id="stage8-uk-builder-propagation">Builders, root/child та await timing<a aria-label="Посилання на розділ: Builders root child and await timing" class="heading-anchor" href="#stage8-uk-builder-propagation">#</a></h3>
+<table><thead><tr><th>Case</th><th>Failure path</th><th>Де handle</th></tr></thead><tbody>
+<tr><td>Root <code>launch</code></td><td>Failure uncaught after children/cleanup finish.</td><td><code>CoroutineExceptionHandler</code> for last-resort logging/reporting; or catch inside body when recovery is possible.</td></tr>
+<tr><td>Root <code>async</code></td><td>Failure stored in <code>Deferred</code>; handler does not consume it.</td><td><code>await()</code> rethrows; owner must await/inspect.</td></tr>
+<tr><td>Child <code>launch</code></td><td>Delegates failure to parent; ordinary parent cancels siblings.</td><td>Catch around failing operation or at structured scope call site—not a child-local handler.</td></tr>
+<tr><td>Child <code>async</code></td><td>Its Job fails immediately and ordinary parent is cancelled even before <code>await</code>.</td><td><code>await</code> determines when caller observes the deferred exception; it does not postpone structural propagation.</td></tr>
+</tbody></table>
+<p><code>try/catch</code> must surround the suspending call or <code>await()</code> that rethrows. A <code>try</code> around <code>launch { ... }</code> only surrounds coroutine creation and will not catch a later asynchronous failure. <code>CoroutineExceptionHandler</code> sees uncaught exceptions only at applicable root-like boundaries after failure; coroutine already completed, so it is not a general <code>try/catch</code> and cannot recover that coroutine.</p>
+
+<h3 id="stage8-uk-supervision">supervisorScope, SupervisorJob та ownership traps<a aria-label="Посилання на розділ: Supervision and ownership traps" class="heading-anchor" href="#stage8-uk-supervision">#</a></h3>
+<ul>
+<li><code>supervisorScope</code> створює lexical <code>SupervisorJob</code>, чекає всіх children і скасовує їх, якщо його block/caller fails або scope cancelled. Failure одного child не скасовує siblings.</li>
+<li><code>SupervisorJob(parent)</code> дає довгоживучому owner-у незалежні children; parent cancellation усе ще скасовує supervisor і всіх children.</li>
+<li>Кожен supervised <code>launch</code> потребує own catch або applicable <code>CoroutineExceptionHandler</code>; кожен <code>async</code> — <code>await</code>/inspection. Ізоляція без observation втрачає failures.</li>
+<li><strong>Ownership trap:</strong> <code>withContext(SupervisorJob())</code> підміняє caller Job і може від’єднати cancellation. Не вставляйте standalone Job у child context; створюйте named owned scope або lexical <code>supervisorScope</code>.</li>
+<li>Не supervisor-те steps, якщо результат має бути all-or-nothing. Якщо profile і entitlement утворюють один invariant, sibling cancellation є бажаною fail-fast поведінкою.</li>
+</ul>
+
+<h3 id="stage8-uk-cancellation-cleanup">Cancellation preservation та cleanup<a aria-label="Посилання на розділ: Cancellation preservation and cleanup" class="heading-anchor" href="#stage8-uk-cancellation-cleanup">#</a></h3>
+<pre><code class="language-kotlin">suspend fun refresh(): Data = try {
+    api.load()
+} catch (ce: CancellationException) {
+    throw ce
+} catch (t: IOException) {
+    cache.fallback(t)
+}
+
+suspend fun consume(session: Session) {
+    try {
+        session.read()
+    } finally {
+        session.close() // non-suspending cleanup; prefer use when AutoCloseable
+        withContext(NonCancellable) {
+            withTimeout(1_000) { audit.closeSession() } // narrow and bounded
+        }
+    }
+}</code></pre>
+<p>Cancellation is cooperative: cancellable suspensions check it, але blocking/native call або CPU loop без checks не зупиняться магічно. Catch only exceptions you can classify. Якщо потрібен broad <code>catch (Throwable)</code>, rethrow <code>CancellationException</code> before mapping/logging. Kotlin <code>runCatching</code> catches <code>Throwable</code>; тому без explicit rethrow cancellation може бути перетворена на ordinary failure. <code>finally</code> і <code>use</code> мають бути idempotent де possible. <code>NonCancellable</code> використовуйте вузько лише для suspending cleanup: він відкладає cancellation, але не робить external effect atomic, retryable чи exactly once.</p>
+
+<h3 id="stage8-uk-timeouts-callback-flow">Timeouts, callbackFlow/channelFlow та awaitClose<a aria-label="Посилання на розділ: Timeouts callbackFlow channelFlow and awaitClose" class="heading-anchor" href="#stage8-uk-timeouts-callback-flow">#</a></h3>
+<ul>
+<li><code>withTimeout</code> cancels its child і throws <code>TimeoutCancellationException</code>; <code>withTimeoutOrNull</code> returns <code>null</code> on its own timeout. Не змішуйте timeout-null з legitimate null domain value.</li>
+<li>Timeout is asynchronous relative to block completion: cancellation може race після external side effect, але до delivery результату caller-у. Ресурс створюйте з <code>try/finally</code> або поверненням через documented cleanup hand-off; remote writes потребують idempotency key/status reconciliation.</li>
+<li><code>callbackFlow</code> bridges a multi-shot callback. <code>awaitClose { unregister() }</code> keeps it active and performs cleanup on close/cancel; register/unregister мають бути thread-safe, бо cancellation can race registration/callback.</li>
+<li><code>channelFlow</code> дозволяє concurrent child sends і завершується після block та children; якщо producer має жити до external close/cancel, останнім boundary лишається <code>awaitClose</code>.</li>
+</ul>
+
+<h3 id="stage8-uk-flow-boundaries">Narrow Flow exception boundaries<a aria-label="Посилання на розділ: Narrow Flow exception boundaries" class="heading-anchor" href="#stage8-uk-flow-boundaries">#</a></h3>
+<p><code>catch</code> є transparent до downstream exceptions і ловить лише upstream від його position; cancellation треба rethrow/не map-ити. <code>retry</code>/<code>retryWhen</code> повторюють upstream, не downstream collector failures і не cancellation; predicate має обмежувати transient classes, attempts, backoff і side-effect safety. Не retry-те non-idempotent write без operation key. Flow content навмисно вузький; повна модель Flow належить Stages 9–11.</p>
+
+<h2 id="stage8-uk-guarantees">Guarantees vs non-guarantees<a aria-label="Посилання на розділ: Guarantees versus non guarantees" class="heading-anchor" href="#stage8-uk-guarantees">#</a></h2>
+<table><thead><tr><th>Можна стверджувати</th><th>Не можна обіцяти</th></tr></thead><tbody>
+<tr><td>Ordinary child failure cancels its parent; <code>coroutineScope</code> cancels siblings.</td><td>Failure завжди з’явиться лише в <code>await</code> або handler на child його recover-ить.</td></tr>
+<tr><td>A supervisor isolates child-failure propagation.</td><td>Supervisor automatically reports, handles, retries, or makes failure successful.</td></tr>
+<tr><td>Cancellation is cooperative; <code>finally</code> executes as stack unwinds.</td><td>Blocking/I/O/CPU work stops immediately or cleanup can never fail.</td></tr>
+<tr><td>Virtual time пропускає сумісні delays, а не реальний blocking/I/O.</td><td><code>runTest</code> simulates device scheduling, networks, threads, or all production dispatchers.</td></tr>
+<tr><td><code>awaitClose</code> gives a cleanup hook when channel closes/cancels.</td><td>External callback API is thread-safe, single-shot, or free from registration races.</td></tr>
+<tr><td>Structured cleanup bounds coroutine resources.</td><td>External side effects are rolled back, idempotent, durable, or exactly once.</td></tr>
+</tbody></table>
+
+<h2 id="stage8-uk-version-sensitive">Version-sensitive behavior<a aria-label="Посилання на розділ: Version sensitive behavior" class="heading-anchor" href="#stage8-uk-version-sensitive">#</a></h2>
+<ul>
+<li>Pin Kotlin і однакову family version для <code>kotlinx-coroutines-core</code>/<code>-test</code>; test APIs changed materially around 1.6, а exact default timeout та experimental annotations перевіряйте у resolved API docs.</li>
+<li><code>Dispatchers.setMain</code> global на JVM; якщо Main встановлено <code>TestDispatcher</code>, scheduler може бути reused новими test dispatchers/scopes. Creation order therefore matters.</li>
+<li>AndroidX Lifecycle/ViewModel test behavior залежить від versions і Main dispatcher integration; local JVM test відрізняється від instrumented test з real main looper.</li>
+<li>IDE coroutine view, <code>-Dkotlinx.coroutines.debug</code>, <code>DebugProbes</code> та recovered stack traces мають version/platform/optimization limitations і overhead. Перевіряйте docs для toolchain, не робіть їх production contract.</li>
+</ul>
+
+<h2 id="stage8-uk-decision-test-framework">Decision / test framework<a aria-label="Посилання на розділ: Decision and test framework" class="heading-anchor" href="#stage8-uk-decision-test-framework">#</a></h2>
+<ol>
+<li><strong>Намалюйте tree:</strong> owner, parent, root/child, launch/async, result observer та shutdown.</li>
+<li><strong>Визначте invariant:</strong> fail-fast unit чи незалежні results? Оберіть <code>coroutineScope</code> або supervision свідомо.</li>
+<li><strong>Класифікуйте outcome:</strong> cancellation, transient domain failure, programmer bug, fatal/platform error; не перетворюйте все на один Result.</li>
+<li><strong>Спроєктуйте cleanup:</strong> close/unregister once, race-safe; suspending cleanup — bounded <code>NonCancellable</code>; external writes — idempotency/reconciliation.</li>
+<li><strong>Inject controllable boundaries:</strong> dispatchers, owner scopes, clock/time source, retry/timeout policy та fakes.</li>
+<li><strong>Тестуйте observable contract:</strong> state/result, sibling cancellation/continuation, cause preservation, callback unregister, timeout boundaries й uncaught failures—not internal launch count.</li>
+<li><strong>Зробіть race pass окремо:</strong> real dispatchers/integration/stress tests; <code>runTest</code> не робить production races неможливими.</li>
+</ol>
+
+<h3 id="stage8-uk-deterministic-testing">Deterministic tests with kotlinx-coroutines-test<a aria-label="Посилання на розділ: Deterministic coroutine testing" class="heading-anchor" href="#stage8-uk-deterministic-testing">#</a></h3>
+<pre><code class="language-kotlin">@Test fun refresh_retries_then_succeeds() = runTest {
+    val dispatcher = StandardTestDispatcher(testScheduler)
+    val repo = OrdersRepository(api, dispatcher, clock = TestClock(testScheduler))
+
+    val result = backgroundScope.async { repo.refresh() }
+    advanceTimeBy(1_000)
+    runCurrent()                 // run tasks scheduled exactly at the new time
+    advanceUntilIdle()           // drain finite foreground work
+    assertEquals(Orders.Ready, result.await())
+}</code></pre>
+<ul>
+<li><code>runTest</code> provides a <code>TestScope</code>, skips compatible delays through a <code>TestCoroutineScheduler</code>, waits for structured children, and reports uncaught child failures at test completion. Do not hide expected failures in forgotten children.</li>
+<li><code>StandardTestDispatcher</code> queues work until the scheduler runs it—good for explicit ordering. <code>UnconfinedTestDispatcher</code> eagerly enters top-level launches and is convenient for simple tests, but resumption ordering is not a production guarantee.</li>
+<li>All injected <code>TestDispatcher</code>s in one test must share the same <code>TestCoroutineScheduler</code>. Multiple schedulers create split virtual clocks and misleading drains.</li>
+<li><code>advanceTimeBy(n)</code> moves virtual time; call <code>runCurrent()</code> for work at the boundary. <code>advanceUntilIdle()</code> drains scheduled work but intentionally does not wait forever for <code>backgroundScope</code>; that scope is cancelled when test ends.</li>
+<li><code>Dispatchers.setMain(testDispatcher)</code> belongs in setup and <code>Dispatchers.resetMain()</code> in guaranteed teardown. Create dependent dispatchers after Main replacement or pass <code>testScheduler</code> explicitly.</li>
+</ul>
+
+<h3 id="stage8-uk-android-testing">Android ViewModel/repository tests<a aria-label="Посилання на розділ: Android ViewModel and repository tests" class="heading-anchor" href="#stage8-uk-android-testing">#</a></h3>
+<p>Для local ViewModel test replace Main через reusable rule, construct ViewModel після rule setup, trigger intent, run scheduler, assert public UI state і failure/cancellation transitions. Repository test injects dispatcher, scope only when repository truly owns longer work, clock/time policy and fake data sources; verify main-safety, cleanup and result—not private coroutine structure. Instrumented/UI tests keep real Main and cover lifecycle/Looper integration separately. Для Flow assertions можна використати manual collector у <code>backgroundScope</code>. <strong>Turbine</strong> — popular third-party helper from Cash App, not Kotlin/AndroidX official guarantee; pin its version і не приписуйте йому production ordering semantics.</p>
+
+<h3 id="stage8-uk-debugging">Debugging failures and lost cancellation<a aria-label="Посилання на розділ: Debugging coroutine failures" class="heading-anchor" href="#stage8-uk-debugging">#</a></h3>
+<ol>
+<li>Дайте boundary <code>CoroutineName("checkout-refresh")</code> і correlation/operation ID; log owner, Job state, cancellation/failure class and cause without sensitive payload.</li>
+<li>У IntelliJ IDEA/Android Studio debugger inspect Coroutines view: RUNNING/SUSPENDED, creation/suspension stack і dispatcher. Це snapshot, not complete history.</li>
+<li>Для diagnostic run використайте <code>-Dkotlinx.coroutines.debug</code> або, якщо supported, <code>DebugProbes</code>; врахуйте overhead, experimental/version limits та вимкніть у production unless deliberately approved.</li>
+<li>Stacktrace recovery/probes не відтворюють кожен optimized/inlined/native frame і не доводять race order. Додайте scheduler timestamps, structured logs, traces і minimal deterministic reproduction.</li>
+</ol>
+
+<h2 id="stage8-uk-tradeoffs">Trade-offs і failure modes<a aria-label="Посилання на розділ: Trade offs and failure modes" class="heading-anchor" href="#stage8-uk-tradeoffs">#</a></h2>
+<ul>
+<li>Fail-fast ordinary scope preserves a unit invariant but discards useful independent partial results; supervision preserves siblings but increases per-child observation/reporting work.</li>
+<li>Broad catch simplifies a signature but hides cancellation/programmer defects; ultra-narrow catches leak transport types. Translate only at a documented layer and preserve causes.</li>
+<li>Timeout improves latency bounds but adds an ambiguous completion race around external effects. Treat it as caller patience, not remote rollback.</li>
+<li>Large <code>NonCancellable</code> cleanup delays shutdown; too-small cleanup may leak. Make close idempotent, bounded and observable.</li>
+<li>Virtual-time tests are fast and deterministic but can miss thread confinement, blocking and races; supplement them rather than claiming scheduler equivalence.</li>
+<li>Cleanup/idempotency and external side effects need separate design: Job completion alone cannot prove either.</li>
+</ul>
+
+<h2 id="stage8-uk-production-scenario">Production scenario: supervised home refresh<a aria-label="Посилання на розділ: Production scenario" class="heading-anchor" href="#stage8-uk-production-scenario">#</a></h2>
+<p><strong>Гіпотетично:</strong> Home ViewModel starts one owned refresh. Account + entitlement form a required unit inside <code>coroutineScope</code>: either child failure cancels its sibling and maps at the use-case boundary. Recommendations and badges are optional inside <code>supervisorScope</code>; every <code>async</code> is awaited into an explicit section result, while a fire-and-forget diagnostic <code>launch</code> has a handler/reporting policy. User cancellation is rethrown, not shown as an error.</p>
+<p>A location stream uses <code>callbackFlow</code> and race-safe <code>awaitClose</code> unregister. Refresh timeout bounds caller waiting but server writes carry an idempotency key and are reconciled after ambiguous timeout. Local tests share one scheduler, replace Main for ViewModel, test sibling cancellation and optional isolation, then integration/stress tests cover real dispatcher and callback races.</p>
+
+<h2 id="stage8-uk-review-trap">Code-review/debugging trap<a aria-label="Посилання на розділ: Code review debugging trap" class="heading-anchor" href="#stage8-uk-review-trap">#</a></h2>
+<pre><code class="language-kotlin">suspend fun load() = supervisorScope {
+    launch(CoroutineExceptionHandler { _, e -&gt; logger.log(e) }) { requiredWrite() }
+    val optional = async { optionalRead() } // never awaited: deferred failure lost
+    runCatching { withTimeout(500) { api.commit() } }
+        .getOrNull()                        // swallows cancellation; null is ambiguous
+}
+
+@Test fun test() = runTest {
+    val repo = Repo(Dispatchers.IO)         // real delay/blocking escapes virtual time
+    repo.load()
+    advanceUntilIdle()
+}</code></pre>
+<p>Review: required work should not be supervised merely to “keep going”; handler logs but does not recover; <code>async</code> needs observation; <code>runCatching</code> must preserve <code>CancellationException</code>; timeout cannot prove commit absence; production dispatcher/time must be injected; all test dispatchers share scheduler. Debug by naming the refresh, locating the first failed Job/cause, checking whether cancellation was remapped, and correlating server operation ID before retry.</p>
+
+<h2 id="stage8-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice Q and A" class="heading-anchor" href="#stage8-uk-likely-qa">#</a></h2>
+<p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
+<ol>
+<li><strong>Як відрізняється failure <code>launch</code> і <code>async</code>?</strong> Root launch reports uncaught failure; async stores outcome and <code>await</code> rethrows. As ordinary children, both Jobs fail structurally and can cancel parent before await.</li>
+<li><strong>Чому <code>try { launch {} }</code> не ловить failure?</strong> Try wraps only immediate builder call; asynchronous body fails later. Catch inside body or around structured suspend/await boundary.</li>
+<li><strong>Для чого <code>CoroutineExceptionHandler</code>?</strong> Last-resort handling of applicable uncaught root-like failures, mainly logging/reporting. It cannot recover a completed coroutine and does not consume async outcome.</li>
+<li><strong><code>coroutineScope</code> чи <code>supervisorScope</code>?</strong> Use ordinary scope for one fail-fast invariant; supervisor for independently meaningful children, each with explicit observation and error policy.</li>
+<li><strong>Що робить <code>SupervisorJob</code>?</strong> Child failure does not fail supervisor or siblings; parent cancellation still goes down. It does not report failures automatically.</li>
+<li><strong>Як не проковтнути cancellation?</strong> Avoid broad catches; if unavoidable, rethrow <code>CancellationException</code> before mapping. Be cautious with <code>runCatching</code>.</li>
+<li><strong>Коли потрібен <code>NonCancellable</code>?</strong> Only for short bounded suspending cleanup in finally; ordinary close/use needs none. It does not make business effects safe.</li>
+<li><strong>Чим небезпечний timeout?</strong> It races completion/delivery and may follow an external side effect. Design idempotency and reconciliation; distinguish timeout null from domain null.</li>
+<li><strong>Standard чи Unconfined test dispatcher?</strong> Standard queues for explicit scheduler control; Unconfined eagerly enters top-level launches but does not guarantee production ordering. Share one scheduler.</li>
+<li><strong>Що <code>runTest</code> не доводить?</strong> It skips compatible delays and surfaces child failures, but does not model real blocking/I/O, device scheduling or eliminate production races.</li>
+</ol>
+
+<h2 id="stage8-uk-followups">4 senior follow-ups з відповідями<a aria-label="Посилання на розділ: 4 senior follow ups" class="heading-anchor" href="#stage8-uk-followups">#</a></h2>
+<ol>
+<li><strong>Перший async failed до того, як код awaits другий.</strong> In ordinary scope its failure cancels parent/sibling immediately; await order changes observation, not structural propagation. In supervisor, explicitly await both and define partial-result semantics.</li>
+<li><strong>Supervised launch crashes despite handler on supervisorScope?</strong> A supervisor does not install reporting automatically. Put an applicable handler in the launching context/child or catch in child, and test the policy.</li>
+<li><strong>Timeout happened after payment endpoint received request.</strong> Treat status as unknown, persist operation ID, query/reconcile and retry only with the same idempotency key; coroutine timeout is not rollback.</li>
+<li><strong><code>advanceUntilIdle</code> hangs or misses collector work.</strong> Move intentional infinite work to <code>backgroundScope</code>, share scheduler, use <code>runCurrent</code> at exact time boundaries, and assert finite observable events.</li>
+</ol>
+
+<h2 id="stage8-uk-self-check">5 self-check без відповідей<a aria-label="Посилання на розділ: 5 self check without answers" class="heading-anchor" href="#stage8-uk-self-check">#</a></h2>
+<ol>
+<li>Намалюйте failure tree для одного ViewModel intent і позначте кожен observation point.</li>
+<li>Які broad catches/runCatching у codebase можуть ковтати <code>CancellationException</code>?</li>
+<li>Який cleanup має бути idempotent, race-safe і bounded?</li>
+<li>Чи всі TestDispatchers ділять один scheduler, і яка робота escapes virtual time?</li>
+<li>Який timeout залишає external side effect у невідомому стані та як його reconcile?</li>
+</ol>
+
+<h2 id="stage8-uk-english-skeletons">Interview-ready English answer skeletons<a aria-label="Посилання на розділ: Interview ready English answer skeletons" class="heading-anchor" href="#stage8-uk-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you design coroutine failure handling, supervision, cleanup, and tests?</em></p>
+<h3 id="stage8-uk-answer-30">~30-second answer<a aria-label="Посилання на розділ: 30 second answer" class="heading-anchor" href="#stage8-uk-answer-30">#</a></h3>
+<blockquote><p>I start from the Job tree and the invariant. In an ordinary scope, a child failure cancels its parent and siblings; I use supervision only for independently meaningful children, and I still observe every launch or deferred failure. CoroutineExceptionHandler is last-resort reporting, not recovery. I preserve CancellationException, clean up in finally or use, and use bounded NonCancellable only for suspending cleanup. Tests inject dispatchers, scopes, and time, share one TestCoroutineScheduler under runTest, and assert outcomes and cleanup. Virtual time does not simulate blocking I/O or remove production races.</p></blockquote>
+<h3 id="stage8-uk-answer-2min">~2-minute answer<a aria-label="Посилання на розділ: 2 minute answer" class="heading-anchor" href="#stage8-uk-answer-2min">#</a></h3>
+<blockquote><p>I first draw ownership: root versus child, launch versus async, and where each result is observed. A root launch can produce an uncaught exception; async exposes its outcome through Deferred and await. A normal child failure immediately participates in Job propagation, so await timing does not postpone cancellation of an ordinary parent. CoroutineExceptionHandler is only for applicable uncaught failures after the coroutine has failed; it is not a general catch or recovery mechanism.</p><p>I choose coroutineScope for one fail-fast unit and supervisorScope or an owned SupervisorJob only when children are independently useful. Supervision isolates propagation but never reports or handles failures automatically, so launches need catch or reporting and deferred values need await. I preserve CancellationException, avoid broad runCatching mappings, and put resource release in use or finally. NonCancellable is narrow, bounded, and only for suspending cleanup.</p><p>Timeout limits waiting, not external side effects. Cancellation can race result delivery, so writes use idempotency keys and reconciliation. callbackFlow and channelFlow use race-safe awaitClose cleanup. Flow catch and retry are positioned only around upstream transient work; broader Flow semantics are separate.</p><p>For tests, I inject dispatchers, scopes, clocks, and timeout policies. runTest provides TestScope and virtual time; StandardTestDispatcher gives explicit queued execution, while UnconfinedTestDispatcher eagerly enters top-level launches. Every test dispatcher shares one TestCoroutineScheduler. I use advanceTimeBy plus runCurrent at boundaries, backgroundScope for intentional long-lived work, and setMain/resetMain for local ViewModel tests. Then I add real-dispatcher integration or stress tests because virtual time skips compatible delays, not blocking I/O, and cannot prove production races absent. I debug with CoroutineName, IDE coroutine views, diagnostic debug mode or probes, correlation IDs, and traces while treating recovered stacks as incomplete evidence.</p></blockquote>
+
+<h2 id="stage8-uk-sources">Офіційні джерела<a aria-label="Посилання на розділ: Офіційні джерела" class="heading-anchor" href="#stage8-uk-sources">#</a></h2>
+<ul>
+<li><a href="https://kotlinlang.org/docs/exception-handling.html">Kotlin coroutine exception handling</a>, <a href="https://kotlinlang.org/docs/cancellation-and-timeouts.html">Cancellation and timeouts</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-coroutine-exception-handler/">CoroutineExceptionHandler API</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/supervisor-scope.html">supervisorScope</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-supervisor-job.html">SupervisorJob</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout-or-null.html">withTimeoutOrNull</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/callback-flow.html">callbackFlow</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/channel-flow.html">channelFlow</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.channels/await-close.html">awaitClose</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/catch.html">Flow catch</a> та <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/retry-when.html">retryWhen</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/">kotlinx-coroutines-test</a>, <a href="https://developer.android.com/kotlin/coroutines/test">Testing Kotlin coroutines on Android</a>, <a href="https://developer.android.com/kotlin/coroutines/coroutines-best-practices">Android coroutine best practices</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/viewmodel#implement">ViewModel guidance</a>, <a href="https://developer.android.com/training/testing/local-tests">Android local tests</a>, <a href="https://developer.android.com/training/testing/instrumented-tests">Android instrumented tests</a>, <a href="https://developer.android.com/training/testing/instrumented-tests/androidx-test-libraries/test-setup">AndroidX Test setup</a></li>
 <li><a href="https://kotlinlang.org/docs/coroutines-debugging.html">Debug coroutines</a> та <a href="https://kotlinlang.org/docs/debug-coroutines-with-idea.html">Debug coroutines with IntelliJ IDEA</a></li>
 </ul>
 </div></details>
@@ -8568,6 +8786,218 @@ suspend fun awaitSdk() = suspendCancellableCoroutine&lt;Result&gt; { c -&gt;
 <li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-main-coroutine-dispatcher/immediate.html">Main.immediate</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-coroutine-dispatcher/limited-parallelism.html">limitedParallelism</a>, and <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-context.html">withContext</a></li>
 <li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/suspend-cancellable-coroutine.html">suspendCancellableCoroutine</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/run-blocking.html">runBlocking</a>, and <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/as-context-element.html">ThreadLocal.asContextElement</a></li>
 <li><a href="https://developer.android.com/kotlin/coroutines/coroutines-best-practices">Android coroutine best practices</a> and <a href="https://developer.android.com/topic/libraries/architecture/coroutines">Lifecycle-aware coroutines</a></li>
+<li><a href="https://kotlinlang.org/docs/coroutines-debugging.html">Debug coroutines</a> and <a href="https://kotlinlang.org/docs/debug-coroutines-with-idea.html">Debug coroutines with IntelliJ IDEA</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="kotlin-coroutines-failures-supervision-testing" data-title="Kotlin Coroutines: failures, supervision, cleanup, testing, and debugging" id="en-kotlin-coroutines-failures-supervision-testing" open=""><summary class="major-summary"><span class="major-title">Kotlin Coroutines: failures, supervision, cleanup, testing, and debugging</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<h2 id="en-stage8-objective">Learning objective<a aria-label="Link to section: Learning objective" class="heading-anchor" href="#en-stage8-objective">#</a></h2>
+<p>After this stage, you should be able to predict where a coroutine failure is rethrown, cancels siblings, or becomes uncaught; choose an ordinary or supervisory boundary; preserve cancellation through cleanup; design timeout and callback cleanup; and write deterministic Android tests without overstating virtual-time guarantees.</p>
+
+<h2 id="en-stage8-mental-model">Senior mental model<a aria-label="Link to section: Senior mental model" class="heading-anchor" href="#en-stage8-mental-model">#</a></h2>
+<blockquote><p><strong>Failure policy is part of the ownership tree.</strong> First draw the Job tree and mark root versus child, builder, and observation point. Then decide whether one failure invalidates the whole unit or siblings remain independently useful. Exception handling does not replace ownership, and supervision does not replace reporting.</p></blockquote>
+<ul>
+<li><code>launch</code> reports an uncaught root failure; <code>async</code> stores an outcome in a <code>Deferred</code> observed through <code>await</code>.</li>
+<li>An ordinary child failure other than cancellation cancels its parent and siblings; parent cancellation propagates downward with a cancellation cause.</li>
+<li><code>CancellationException</code> is a control signal. A broad catch, <code>runCatching</code>, or mapper that consumes it can leave a cancelled coroutine logically running.</li>
+<li><strong>Critical boundary:</strong> A supervisor isolates child-failure propagation; it does not report or handle the failure automatically.</li>
+</ul>
+
+<h2 id="en-stage8-internals">Internals / failure tree<a aria-label="Link to section: Internals failure tree" class="heading-anchor" href="#en-stage8-internals">#</a></h2>
+<pre><code class="language-text">screen Job (viewModelScope / SupervisorJob)
+├─ launch refresh       -- launch failure needs an explicit policy
+│  ├─ async profile     -- ordinary child failure cancels refresh
+│  └─ async offers      -- sibling is cancelled
+└─ launch analytics     -- supervisor isolates it from refresh
+
+coroutineScope: child failure → scope fails → siblings cancel → caller gets failure
+supervisorScope: child failure ↛ supervisor/siblings; each outcome still needs observation</code></pre>
+<p>A <code>Job</code> moves through cancelling and completing while waiting for children. The first non-cancellation exception generally becomes the primary cause and later failures may be suppressed on supported platforms; ordering among racing failures is not a business contract. <code>cancel(CancellationException(...))</code> is normal cancellation to a parent, while a non-cancellation child failure propagates upward. A root is a coroutine without a parent Job, not “any launch in a ViewModel.”</p>
+
+<h3 id="en-stage8-builder-propagation">Builders, root/child, and await timing<a aria-label="Link to section: Builders root child and await timing" class="heading-anchor" href="#en-stage8-builder-propagation">#</a></h3>
+<table><thead><tr><th>Case</th><th>Failure path</th><th>Handling point</th></tr></thead><tbody>
+<tr><td>Root <code>launch</code></td><td>Failure is uncaught after children and cleanup finish.</td><td><code>CoroutineExceptionHandler</code> for last-resort reporting, or catch in the body when recovery is possible.</td></tr>
+<tr><td>Root <code>async</code></td><td>Failure is stored in <code>Deferred</code>; a handler does not consume it.</td><td><code>await()</code> rethrows; the owner must await or inspect it.</td></tr>
+<tr><td>Child <code>launch</code></td><td>Delegates failure to its parent; an ordinary parent cancels siblings.</td><td>Catch around the failing operation or structured scope call site, not in a child-local handler.</td></tr>
+<tr><td>Child <code>async</code></td><td>Its Job fails immediately and an ordinary parent is cancelled before <code>await</code>.</td><td><code>await</code> controls when the caller observes the deferred exception, not when structural propagation begins.</td></tr>
+</tbody></table>
+<p><code>try/catch</code> must surround the suspending call or <code>await()</code> that rethrows. A <code>try</code> around <code>launch { ... }</code> wraps only coroutine creation and cannot catch a later asynchronous failure. <code>CoroutineExceptionHandler</code> sees uncaught exceptions only at applicable root-like boundaries after failure. The coroutine is already complete, so the handler is not a general <code>try/catch</code> and cannot recover it.</p>
+
+<h3 id="en-stage8-supervision">supervisorScope, SupervisorJob, and ownership traps<a aria-label="Link to section: Supervision and ownership traps" class="heading-anchor" href="#en-stage8-supervision">#</a></h3>
+<ul>
+<li><code>supervisorScope</code> creates a lexical <code>SupervisorJob</code>, waits for all children, and cancels them when its block or caller fails or the scope is cancelled. One child failure does not cancel siblings.</li>
+<li><code>SupervisorJob(parent)</code> gives a longer-lived owner independent children; cancellation of the parent still cancels the supervisor and every child.</li>
+<li>Every supervised <code>launch</code> needs its own catch or applicable <code>CoroutineExceptionHandler</code>; every <code>async</code> needs await or inspection. Isolation without observation loses failures.</li>
+<li><strong>Ownership trap:</strong> <code>withContext(SupervisorJob())</code> replaces the caller Job and can detach cancellation. Do not insert a standalone Job into a child context; create a named owned scope or lexical <code>supervisorScope</code>.</li>
+<li>Do not supervise steps whose combined result is all-or-nothing. If profile and entitlement form one invariant, sibling cancellation is desirable fail-fast behavior.</li>
+</ul>
+
+<h3 id="en-stage8-cancellation-cleanup">Cancellation preservation and cleanup<a aria-label="Link to section: Cancellation preservation and cleanup" class="heading-anchor" href="#en-stage8-cancellation-cleanup">#</a></h3>
+<pre><code class="language-kotlin">suspend fun refresh(): Data = try {
+    api.load()
+} catch (ce: CancellationException) {
+    throw ce
+} catch (t: IOException) {
+    cache.fallback(t)
+}
+
+suspend fun consume(session: Session) {
+    try {
+        session.read()
+    } finally {
+        session.close() // non-suspending cleanup; prefer use for AutoCloseable
+        withContext(NonCancellable) {
+            withTimeout(1_000) { audit.closeSession() } // narrow and bounded
+        }
+    }
+}</code></pre>
+<p>Cancellation is cooperative: cancellable suspensions check it, but blocking or native calls and CPU loops without checks do not stop magically. Catch only exceptions you can classify. If a broad <code>catch (Throwable)</code> is unavoidable, rethrow <code>CancellationException</code> before mapping or logging. Kotlin <code>runCatching</code> catches <code>Throwable</code>, so without an explicit rethrow it can convert cancellation into ordinary failure. Make <code>finally</code> and <code>use</code> cleanup idempotent where possible. Use <code>NonCancellable</code> narrowly for suspending cleanup only: it delays cancellation but does not make an external effect atomic, retryable, or exactly once.</p>
+
+<h3 id="en-stage8-timeouts-callback-flow">Timeouts, callbackFlow/channelFlow, and awaitClose<a aria-label="Link to section: Timeouts callbackFlow channelFlow and awaitClose" class="heading-anchor" href="#en-stage8-timeouts-callback-flow">#</a></h3>
+<ul>
+<li><code>withTimeout</code> cancels its child and throws <code>TimeoutCancellationException</code>; <code>withTimeoutOrNull</code> returns <code>null</code> for its own timeout. Do not conflate timeout-null with a legitimate nullable domain value.</li>
+<li>A timeout is asynchronous relative to block completion: cancellation can race after an external side effect but before the caller receives the result. Use <code>try/finally</code> or a documented cleanup hand-off for resources; remote writes need an idempotency key and status reconciliation.</li>
+<li><code>callbackFlow</code> bridges a multi-shot callback. <code>awaitClose { unregister() }</code> keeps it active and cleans up on close or cancellation; register and unregister must be thread-safe because cancellation can race registration and callbacks.</li>
+<li><code>channelFlow</code> permits concurrent child sends and completes after its block and children. If a producer must remain active until external close or cancellation, keep <code>awaitClose</code> as the terminal boundary.</li>
+</ul>
+
+<h3 id="en-stage8-flow-boundaries">Narrow Flow exception boundaries<a aria-label="Link to section: Narrow Flow exception boundaries" class="heading-anchor" href="#en-stage8-flow-boundaries">#</a></h3>
+<p><code>catch</code> is transparent to downstream exceptions and catches only upstream of its position; do not map cancellation. <code>retry</code> and <code>retryWhen</code> repeat upstream, not downstream collector failures or cancellation. Their predicate should restrict transient classes, attempts, backoff, and side-effect safety. Never retry a non-idempotent write without an operation key. Flow coverage is deliberately narrow; the broader Flow model belongs to Stages 9–11.</p>
+
+<h2 id="en-stage8-guarantees">Guarantees versus non-guarantees<a aria-label="Link to section: Guarantees versus non guarantees" class="heading-anchor" href="#en-stage8-guarantees">#</a></h2>
+<table><thead><tr><th>Safe claim</th><th>Do not promise</th></tr></thead><tbody>
+<tr><td>An ordinary child failure cancels its parent; <code>coroutineScope</code> cancels siblings.</td><td>A failure appears only at <code>await</code>, or a handler on any child can recover it.</td></tr>
+<tr><td>A supervisor isolates child-failure propagation.</td><td>A supervisor automatically reports, handles, retries, or makes the failure successful.</td></tr>
+<tr><td>Cancellation is cooperative and <code>finally</code> runs while unwinding.</td><td>Blocking, I/O, or CPU work stops immediately, or cleanup cannot fail.</td></tr>
+<tr><td>Virtual time skips compatible delays, not real blocking or I/O.</td><td><code>runTest</code> simulates device scheduling, networks, threads, or every production dispatcher.</td></tr>
+<tr><td><code>awaitClose</code> provides a cleanup hook on channel close or cancellation.</td><td>The external callback API is thread-safe, single-shot, or free of registration races.</td></tr>
+<tr><td>Structured cleanup bounds coroutine-owned resources.</td><td>External effects are rolled back, idempotent, durable, or exactly once.</td></tr>
+</tbody></table>
+
+<h2 id="en-stage8-version-sensitive">Version-sensitive behavior<a aria-label="Link to section: Version sensitive behavior" class="heading-anchor" href="#en-stage8-version-sensitive">#</a></h2>
+<ul>
+<li>Pin Kotlin and a matching family version for <code>kotlinx-coroutines-core</code> and <code>-test</code>. Test APIs changed materially around 1.6; check the resolved API docs for exact default timeout and experimental annotations.</li>
+<li><code>Dispatchers.setMain</code> is global on the JVM. If Main is set to a <code>TestDispatcher</code>, its scheduler may be reused by subsequently created test dispatchers and scopes, so creation order matters.</li>
+<li>AndroidX Lifecycle and ViewModel tests depend on library versions and Main-dispatcher integration. A local JVM test differs from an instrumented test with a real main looper.</li>
+<li>The IDE coroutine view, <code>-Dkotlinx.coroutines.debug</code>, <code>DebugProbes</code>, and recovered stack traces have version, platform, optimization, and overhead limits. Check the current toolchain documentation rather than treating them as a production contract.</li>
+</ul>
+
+<h2 id="en-stage8-decision-test-framework">Decision / test framework<a aria-label="Link to section: Decision and test framework" class="heading-anchor" href="#en-stage8-decision-test-framework">#</a></h2>
+<ol>
+<li><strong>Draw the tree:</strong> owner, parent, root or child, launch or async, result observer, and shutdown.</li>
+<li><strong>Define the invariant:</strong> one fail-fast unit or independent results? Choose <code>coroutineScope</code> or supervision deliberately.</li>
+<li><strong>Classify outcomes:</strong> cancellation, transient domain failure, programmer defect, fatal or platform error. Do not flatten everything into one Result.</li>
+<li><strong>Design cleanup:</strong> close or unregister once and race-safely; bounded <code>NonCancellable</code> for suspending cleanup; idempotency and reconciliation for external writes.</li>
+<li><strong>Inject controllable boundaries:</strong> dispatchers, owner scopes, a clock or time source, retry and timeout policy, and fakes.</li>
+<li><strong>Test the observable contract:</strong> state or result, sibling cancellation or continuation, cause preservation, unregister, timeout boundaries, and uncaught failures—not private launch counts.</li>
+<li><strong>Run a separate race pass:</strong> real-dispatcher integration and stress tests; <code>runTest</code> does not make production races impossible.</li>
+</ol>
+
+<h3 id="en-stage8-deterministic-testing">Deterministic tests with kotlinx-coroutines-test<a aria-label="Link to section: Deterministic coroutine testing" class="heading-anchor" href="#en-stage8-deterministic-testing">#</a></h3>
+<pre><code class="language-kotlin">@Test fun refresh_retries_then_succeeds() = runTest {
+    val dispatcher = StandardTestDispatcher(testScheduler)
+    val repo = OrdersRepository(api, dispatcher, clock = TestClock(testScheduler))
+
+    val result = backgroundScope.async { repo.refresh() }
+    advanceTimeBy(1_000)
+    runCurrent()                 // run tasks scheduled exactly at the new time
+    advanceUntilIdle()           // drain finite foreground work
+    assertEquals(Orders.Ready, result.await())
+}</code></pre>
+<ul>
+<li><code>runTest</code> supplies a <code>TestScope</code>, skips compatible delays through a <code>TestCoroutineScheduler</code>, waits for structured children, and reports uncaught child failures at test completion. Do not hide expected failures in forgotten children.</li>
+<li><code>StandardTestDispatcher</code> queues work until the scheduler runs it, which is useful for explicit ordering. <code>UnconfinedTestDispatcher</code> eagerly enters top-level launches and is convenient for simple tests, but its resumption order is not a production guarantee.</li>
+<li>Every injected <code>TestDispatcher</code> in one test must share the same <code>TestCoroutineScheduler</code>. Multiple schedulers produce split virtual clocks and misleading drains.</li>
+<li><code>advanceTimeBy(n)</code> moves virtual time; call <code>runCurrent()</code> for work at the boundary. <code>advanceUntilIdle()</code> drains scheduled foreground work but deliberately does not wait forever for <code>backgroundScope</code>, which is cancelled when the test ends.</li>
+<li>Use <code>Dispatchers.setMain(testDispatcher)</code> in setup and <code>Dispatchers.resetMain()</code> in guaranteed teardown. Create dependent dispatchers after replacing Main or pass <code>testScheduler</code> explicitly.</li>
+</ul>
+
+<h3 id="en-stage8-android-testing">Android ViewModel and repository tests<a aria-label="Link to section: Android ViewModel and repository tests" class="heading-anchor" href="#en-stage8-android-testing">#</a></h3>
+<p>For a local ViewModel test, replace Main through a reusable rule, construct the ViewModel after rule setup, trigger an intent, run the scheduler, and assert public UI state plus failure and cancellation transitions. A repository test injects its dispatcher, a scope only when the repository truly owns longer work, a clock or time policy, and fake data sources; verify main-safety, cleanup, and result rather than private coroutine structure. Instrumented or UI tests keep the real Main dispatcher and cover Lifecycle and Looper integration separately. For Flow assertions, a manual collector can run in <code>backgroundScope</code>. <strong>Turbine</strong> is a popular third-party helper from Cash App, not an official Kotlin or AndroidX guarantee; pin its version and do not infer production ordering semantics from it.</p>
+
+<h3 id="en-stage8-debugging">Debugging failures and lost cancellation<a aria-label="Link to section: Debugging coroutine failures" class="heading-anchor" href="#en-stage8-debugging">#</a></h3>
+<ol>
+<li>Name the boundary with <code>CoroutineName("checkout-refresh")</code> and carry a correlation or operation ID. Log the owner, Job state, failure or cancellation class, and cause without sensitive payload.</li>
+<li>In the IntelliJ IDEA or Android Studio debugger, inspect the Coroutines view for RUNNING/SUSPENDED state, creation or suspension stack, and dispatcher. It is a snapshot, not complete history.</li>
+<li>For a diagnostic run, enable <code>-Dkotlinx.coroutines.debug</code> or, where supported, <code>DebugProbes</code>. Account for overhead and experimental or version limits; keep them out of production unless deliberately approved.</li>
+<li>Stacktrace recovery and probes do not reconstruct every optimized, inlined, or native frame and cannot prove race order. Add scheduler timestamps, structured logs, traces, and a minimal deterministic reproduction.</li>
+</ol>
+
+<h2 id="en-stage8-tradeoffs">Trade-offs and failure modes<a aria-label="Link to section: Trade offs and failure modes" class="heading-anchor" href="#en-stage8-tradeoffs">#</a></h2>
+<ul>
+<li>An ordinary fail-fast scope preserves a unit invariant but discards useful independent partial results; supervision preserves siblings but increases per-child observation and reporting work.</li>
+<li>A broad catch simplifies a signature but hides cancellation and programmer defects; ultra-narrow catches leak transport types. Translate only at a documented layer and preserve causes.</li>
+<li>A timeout improves latency bounds but adds an ambiguous completion race around external effects. Treat it as caller patience, not remote rollback.</li>
+<li>Large <code>NonCancellable</code> cleanup delays shutdown; insufficient cleanup leaks. Make close idempotent, bounded, and observable.</li>
+<li>Virtual-time tests are fast and deterministic but can miss thread confinement, blocking, and races; supplement them rather than claiming scheduler equivalence.</li>
+<li>Cleanup, idempotency, and external side effects need separate design: Job completion alone proves none of them.</li>
+</ul>
+
+<h2 id="en-stage8-production-scenario">Production scenario: supervised home refresh<a aria-label="Link to section: Production scenario" class="heading-anchor" href="#en-stage8-production-scenario">#</a></h2>
+<p><strong>Hypothetically:</strong> a Home ViewModel starts one owned refresh. Account and entitlement form a required unit inside <code>coroutineScope</code>: either child failure cancels its sibling and maps at the use-case boundary. Recommendations and badges are optional inside <code>supervisorScope</code>; every <code>async</code> is awaited into an explicit section result, while a fire-and-forget diagnostic <code>launch</code> has a handler and reporting policy. User cancellation is rethrown rather than shown as an error.</p>
+<p>A location stream uses <code>callbackFlow</code> with race-safe unregister in <code>awaitClose</code>. A refresh timeout bounds caller waiting, but server writes carry an idempotency key and are reconciled after an ambiguous timeout. Local tests share one scheduler, replace Main for ViewModel tests, and cover sibling cancellation plus optional isolation; integration and stress tests then exercise real dispatchers and callback races.</p>
+
+<h2 id="en-stage8-review-trap">Code-review/debugging trap<a aria-label="Link to section: Code review debugging trap" class="heading-anchor" href="#en-stage8-review-trap">#</a></h2>
+<pre><code class="language-kotlin">suspend fun load() = supervisorScope {
+    launch(CoroutineExceptionHandler { _, e -&gt; logger.log(e) }) { requiredWrite() }
+    val optional = async { optionalRead() } // never awaited: deferred failure lost
+    runCatching { withTimeout(500) { api.commit() } }
+        .getOrNull()                        // swallows cancellation; null is ambiguous
+}
+
+@Test fun test() = runTest {
+    val repo = Repo(Dispatchers.IO)         // real delay/blocking escapes virtual time
+    repo.load()
+    advanceUntilIdle()
+}</code></pre>
+<p>Review should reject supervision of required work merely to “keep going”; a handler logs but does not recover; <code>async</code> needs observation; <code>runCatching</code> must preserve <code>CancellationException</code>; timeout cannot prove that commit did not happen; production dispatchers and time must be injected; and all test dispatchers must share a scheduler. Debug by naming the refresh, locating the first failed Job and cause, checking whether cancellation was remapped, and correlating the server operation ID before retrying.</p>
+
+<h2 id="en-stage8-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice Q and A" class="heading-anchor" href="#en-stage8-likely-qa">#</a></h2>
+<p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
+<ol>
+<li><strong>How do <code>launch</code> and <code>async</code> failures differ?</strong> A root launch reports an uncaught failure; async stores its outcome and <code>await</code> rethrows. As ordinary children, both Jobs fail structurally and can cancel the parent before await.</li>
+<li><strong>Why does <code>try { launch {} }</code> not catch the failure?</strong> The try wraps only the immediate builder call; the asynchronous body fails later. Catch in the body or around a structured suspend or await boundary.</li>
+<li><strong>What is <code>CoroutineExceptionHandler</code> for?</strong> Last-resort handling of applicable uncaught root-like failures, mainly reporting. It cannot recover a completed coroutine and does not consume async outcomes.</li>
+<li><strong><code>coroutineScope</code> or <code>supervisorScope</code>?</strong> Use an ordinary scope for one fail-fast invariant and a supervisor for independently meaningful children, each with explicit observation and error policy.</li>
+<li><strong>What does <code>SupervisorJob</code> do?</strong> A child failure does not fail the supervisor or siblings; parent cancellation still goes down. It does not report failures automatically.</li>
+<li><strong>How do you avoid swallowing cancellation?</strong> Avoid broad catches; when unavoidable, rethrow <code>CancellationException</code> before mapping. Treat <code>runCatching</code> with the same care.</li>
+<li><strong>When is <code>NonCancellable</code> appropriate?</strong> Only for short, bounded suspending cleanup in finally; ordinary close or use needs none. It does not make business effects safe.</li>
+<li><strong>Why is timeout tricky?</strong> It races completion and delivery and may occur after an external side effect. Design idempotency and reconciliation, and distinguish timeout null from domain null.</li>
+<li><strong>Standard or Unconfined test dispatcher?</strong> Standard queues work for explicit scheduler control. Unconfined eagerly enters top-level launches but does not guarantee production ordering. Share one scheduler.</li>
+<li><strong>What does <code>runTest</code> not prove?</strong> It skips compatible delays and surfaces child failures, but does not model real blocking or I/O, device scheduling, or eliminate production races.</li>
+</ol>
+
+<h2 id="en-stage8-followups">4 senior follow-ups with answers<a aria-label="Link to section: 4 senior follow ups" class="heading-anchor" href="#en-stage8-followups">#</a></h2>
+<ol>
+<li><strong>The first async fails before code awaits the second.</strong> In an ordinary scope, failure cancels the parent and sibling immediately; await order changes observation, not structural propagation. In a supervisor, await both explicitly and define partial-result semantics.</li>
+<li><strong>A supervised launch crashes despite a handler near supervisorScope.</strong> A supervisor installs no reporting automatically. Put an applicable handler in the launching context or child, or catch in the child, and test that policy.</li>
+<li><strong>Timeout occurs after the payment endpoint receives the request.</strong> Treat status as unknown, persist the operation ID, query and reconcile, and retry only with the same idempotency key. Coroutine timeout is not rollback.</li>
+<li><strong><code>advanceUntilIdle</code> hangs or misses collector work.</strong> Move intentionally infinite work to <code>backgroundScope</code>, share the scheduler, use <code>runCurrent</code> at exact time boundaries, and assert finite observable events.</li>
+</ol>
+
+<h2 id="en-stage8-self-check">5 self-check questions without answers<a aria-label="Link to section: 5 self check questions without answers" class="heading-anchor" href="#en-stage8-self-check">#</a></h2>
+<ol>
+<li>Draw the failure tree for one ViewModel intent and mark every observation point.</li>
+<li>Which broad catches or runCatching calls can consume <code>CancellationException</code>?</li>
+<li>Which cleanup must be idempotent, race-safe, and bounded?</li>
+<li>Do all TestDispatchers share one scheduler, and which work escapes virtual time?</li>
+<li>Which timeout leaves an external effect in an unknown state, and how is it reconciled?</li>
+</ol>
+
+<h2 id="en-stage8-english-skeletons">Interview-ready English answer skeletons<a aria-label="Link to section: Interview ready English answer skeletons" class="heading-anchor" href="#en-stage8-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you design coroutine failure handling, supervision, cleanup, and tests?</em></p>
+<h3 id="en-stage8-answer-30">~30-second answer<a aria-label="Link to section: 30 second answer" class="heading-anchor" href="#en-stage8-answer-30">#</a></h3>
+<blockquote><p>I start from the Job tree and the invariant. In an ordinary scope, a child failure cancels its parent and siblings; I use supervision only for independently meaningful children, and I still observe every launch or deferred failure. CoroutineExceptionHandler is last-resort reporting, not recovery. I preserve CancellationException, clean up in finally or use, and use bounded NonCancellable only for suspending cleanup. Tests inject dispatchers, scopes, and time, share one TestCoroutineScheduler under runTest, and assert outcomes and cleanup. Virtual time does not simulate blocking I/O or remove production races.</p></blockquote>
+<h3 id="en-stage8-answer-2min">~2-minute answer<a aria-label="Link to section: 2 minute answer" class="heading-anchor" href="#en-stage8-answer-2min">#</a></h3>
+<blockquote><p>I first draw ownership: root versus child, launch versus async, and where each result is observed. A root launch can produce an uncaught exception; async exposes its outcome through Deferred and await. A normal child failure immediately participates in Job propagation, so await timing does not postpone cancellation of an ordinary parent. CoroutineExceptionHandler is only for applicable uncaught failures after the coroutine has failed; it is not a general catch or recovery mechanism.</p><p>I choose coroutineScope for one fail-fast unit and supervisorScope or an owned SupervisorJob only when children are independently useful. Supervision isolates propagation but never reports or handles failures automatically, so launches need catch or reporting and deferred values need await. I preserve CancellationException, avoid broad runCatching mappings, and put resource release in use or finally. NonCancellable is narrow, bounded, and only for suspending cleanup.</p><p>Timeout limits waiting, not external side effects. Cancellation can race result delivery, so writes use idempotency keys and reconciliation. callbackFlow and channelFlow use race-safe awaitClose cleanup. Flow catch and retry are positioned only around upstream transient work; broader Flow semantics are separate.</p><p>For tests, I inject dispatchers, scopes, clocks, and timeout policies. runTest provides TestScope and virtual time; StandardTestDispatcher gives explicit queued execution, while UnconfinedTestDispatcher eagerly enters top-level launches. Every test dispatcher shares one TestCoroutineScheduler. I use advanceTimeBy plus runCurrent at boundaries, backgroundScope for intentional long-lived work, and setMain/resetMain for local ViewModel tests. Then I add real-dispatcher integration or stress tests because virtual time skips compatible delays, not blocking I/O, and cannot prove production races absent. I debug with CoroutineName, IDE coroutine views, diagnostic debug mode or probes, correlation IDs, and traces while treating recovered stacks as incomplete evidence.</p></blockquote>
+
+<h2 id="en-stage8-sources">Official sources<a aria-label="Link to section: Official sources" class="heading-anchor" href="#en-stage8-sources">#</a></h2>
+<ul>
+<li><a href="https://kotlinlang.org/docs/exception-handling.html">Kotlin coroutine exception handling</a>, <a href="https://kotlinlang.org/docs/cancellation-and-timeouts.html">Cancellation and timeouts</a>, and <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-coroutine-exception-handler/">CoroutineExceptionHandler API</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/supervisor-scope.html">supervisorScope</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-supervisor-job.html">SupervisorJob</a>, and <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout-or-null.html">withTimeoutOrNull</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/callback-flow.html">callbackFlow</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/channel-flow.html">channelFlow</a>, and <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.channels/await-close.html">awaitClose</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/catch.html">Flow catch</a> and <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/retry-when.html">retryWhen</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/">kotlinx-coroutines-test</a>, <a href="https://developer.android.com/kotlin/coroutines/test">Testing Kotlin coroutines on Android</a>, and <a href="https://developer.android.com/kotlin/coroutines/coroutines-best-practices">Android coroutine best practices</a></li>
+<li><a href="https://developer.android.com/topic/libraries/architecture/viewmodel#implement">ViewModel guidance</a>, <a href="https://developer.android.com/training/testing/local-tests">Android local tests</a>, <a href="https://developer.android.com/training/testing/instrumented-tests">Android instrumented tests</a>, and <a href="https://developer.android.com/training/testing/instrumented-tests/androidx-test-libraries/test-setup">AndroidX Test setup</a></li>
 <li><a href="https://kotlinlang.org/docs/coroutines-debugging.html">Debug coroutines</a> and <a href="https://kotlinlang.org/docs/debug-coroutines-with-idea.html">Debug coroutines with IntelliJ IDEA</a></li>
 </ul>
 </div></details>
