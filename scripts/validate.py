@@ -34,6 +34,7 @@ STAGE20_KEY = "local-persistence-sqlite-room-datastore"
 STAGE21_KEY = "offline-first-architecture-paging-3"
 STAGE22_KEY = "senior-android-testing-strategy"
 STAGE23_KEY = "senior-android-reliability-observability"
+STAGE24_KEY = "android-memory-threading"
 
 
 def validate_html(path: Path) -> list[str]:
@@ -92,7 +93,7 @@ def validate_index_structure() -> list[str]:
         (10, STAGE10_KEY), (11, STAGE11_KEY), (12, STAGE12_KEY), (13, STAGE13_KEY),
         (14, STAGE14_KEY), (15, STAGE15_KEY), (16, STAGE16_KEY), (17, STAGE17_KEY),
         (18, STAGE18_KEY), (19, STAGE19_KEY), (20, STAGE20_KEY), (21, STAGE21_KEY),
-        (22, STAGE22_KEY), (23, STAGE23_KEY),
+        (22, STAGE22_KEY), (23, STAGE23_KEY), (24, STAGE24_KEY),
     ):
         expected_stage_ids = (stage_key, f"en-{stage_key}")
         if content.count(f'data-key="{stage_key}"') != 2:
@@ -135,12 +136,13 @@ def validate_index_structure() -> list[str]:
             f'{prefix}{STAGE21_KEY}',
             f'{prefix}{STAGE22_KEY}',
             f'{prefix}{STAGE23_KEY}',
+            f'{prefix}{STAGE24_KEY}',
             f'{prefix}kotlin-for-android',
         )
         positions = [content.find(f'id="{value}"') for value in ordered_ids]
         if -1 in positions or positions != sorted(positions):
             errors.append(
-                f"index.html: {prefix or 'uk-'}Stages 2–23 must follow Stage 1 and precede Kotlin for Android"
+                f"index.html: {prefix or 'uk-'}Stages 2–24 must follow Stage 1 and precede Kotlin for Android"
             )
 
         stage5_id = f"{prefix}{STAGE5_KEY}"
@@ -162,6 +164,7 @@ def validate_index_structure() -> list[str]:
         stage21_id = f"{prefix}{STAGE21_KEY}"
         stage22_id = f"{prefix}{STAGE22_KEY}"
         stage23_id = f"{prefix}{STAGE23_KEY}"
+        stage24_id = f"{prefix}{STAGE24_KEY}"
         major_ids = re.findall(
             r'<details\s+class="major-section"[^>]*\bid="([^"]+)"',
             content,
@@ -187,6 +190,7 @@ def validate_index_structure() -> list[str]:
             or stage21_id not in major_ids
             or stage22_id not in major_ids
             or stage23_id not in major_ids
+            or stage24_id not in major_ids
             or major_ids.index(stage6_id) != major_ids.index(stage5_id) + 1
             or major_ids.index(stage7_id) != major_ids.index(stage6_id) + 1
             or major_ids.index(stage8_id) != major_ids.index(stage7_id) + 1
@@ -205,6 +209,7 @@ def validate_index_structure() -> list[str]:
             or major_ids.index(stage21_id) != major_ids.index(stage20_id) + 1
             or major_ids.index(stage22_id) != major_ids.index(stage21_id) + 1
             or major_ids.index(stage23_id) != major_ids.index(stage22_id) + 1
+            or major_ids.index(stage24_id) != major_ids.index(stage23_id) + 1
         ):
             errors.append(
                 f"index.html: {stage6_id!r} must immediately follow {stage5_id!r}, "
@@ -224,7 +229,8 @@ def validate_index_structure() -> list[str]:
                 f"{stage20_id!r} must immediately follow {stage19_id!r}, and "
                 f"{stage21_id!r} must immediately follow {stage20_id!r}, and "
                 f"{stage22_id!r} must immediately follow {stage21_id!r}, and "
-                f"{stage23_id!r} must immediately follow {stage22_id!r}"
+                f"{stage23_id!r} must immediately follow {stage22_id!r}, and "
+                f"{stage24_id!r} must immediately follow {stage23_id!r}"
             )
 
         toc_adjacency = re.search(
@@ -423,6 +429,17 @@ def validate_index_structure() -> list[str]:
         if not stage23_toc_adjacency:
             errors.append(
                 f"index.html: TOC link {stage23_id!r} must be immediately after {stage22_id!r}"
+            )
+
+        stage24_toc_adjacency = re.search(
+            rf'<li class="toc-major">\s*<a data-target="{re.escape(stage23_id)}"[^>]*>.*?</a>\s*'
+            rf'</li>\s*<li class="toc-major">\s*<a data-target="{re.escape(stage24_id)}"[^>]*>',
+            content,
+            re.S,
+        )
+        if not stage24_toc_adjacency:
+            errors.append(
+                f"index.html: TOC link {stage24_id!r} must be immediately after {stage23_id!r}"
             )
 
     stage4_contracts = (
@@ -1890,6 +1907,89 @@ def validate_index_structure() -> list[str]:
                     errors.append(
                         f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}"
                     )
+
+    stage24_contracts = (
+        "objective", "mental-model", "process-memory", "art-gc", "references",
+        "leak-topology", "lifecycle-resources", "caches-bitmaps", "allocation-pressure",
+        "memory-pressure", "profiling", "threading-topology", "jmm", "concurrency-failures",
+        "coroutines", "cancellation-sync", "strictmode", "guarantees", "version-sensitive",
+        "decision-framework", "tradeoffs", "production-scenario", "review-trap", "likely-qa",
+        "followups", "self-check", "english-skeletons", "answer-30", "answer-2min", "sources",
+    )
+    for prefix in ("stage24-uk-", "en-stage24-"):
+        for suffix in stage24_contracts:
+            stage_id = f"{prefix}{suffix}"
+            if ids.count(stage_id) != 1:
+                errors.append(f"index.html: expected exactly one Stage 24 contract id {stage_id!r}")
+
+    stage24_sections: dict[str, str] = {}
+    for stage_id in (STAGE24_KEY, f"en-{STAGE24_KEY}"):
+        match = re.search(
+            rf'<details\s+class="major-section"[^>]*\bid="{re.escape(stage_id)}"[^>]*>(.*?)</div></details>',
+            content,
+            re.I | re.S,
+        )
+        stage24_sections[stage_id] = match.group(1) if match else ""
+        if not match:
+            errors.append(f"index.html: unable to isolate Stage 24 section {stage_id!r}")
+
+    common_stage24_markers = (
+        "managed ART heap", "native heap", "graphics", "ashmem", "GC roots", "WeakReference",
+        "SoftReference", "PhantomReference", "ViewBinding", "onDestroyView", "LruCache", "sizeOf()",
+        "hardware bitmap", "recycle()", "boxing", "onTrimMemory", "low-memory killer", "Memory Profiler",
+        "heap dump", "dominator tree", "retained size", "allocation tracking", "LeakCanary", "Looper",
+        "MessageQueue", "Handler", "Choreographer", "Binder thread-pool", "happens-before", "volatile",
+        "synchronized", "Atomic", "check-then-act", "Deadlock", "Livelock", "Starvation",
+        "Priority inversion", "confinement", "limitedParallelism", "caller-owned scope", "CancellationException",
+        "Mutex", "Channels/actors", "runBlocking", "StrictMode", "Closeable", "Cleaner", "Stage 25",
+    )
+    language_stage24_markers = {
+        STAGE24_KEY: (
+            "Це likely practice questions, не підтверджений і не гарантований список співбесіди.",
+            "Weak reference doesn't guarantee availability", "onTrimMemory may not arrive before kill",
+            "atomics don't make a multi-variable invariant atomic",
+            "synchronized establishes happens-before for the same monitor",
+            "Cancellation не зупиняє non-cooperative blocking code",
+            "StrictMode is detection, not proof", "Retained size needs context",
+            "LeakCanary detects retained objects heuristically, not all leaks",
+            "OOM stack allocation site may not be root cause",
+        ),
+        f"en-{STAGE24_KEY}": (
+            "These are likely practice questions, not a confirmed or guaranteed interview list.",
+            "A weak reference does not guarantee availability", "onTrimMemory may not arrive before kill",
+            "atomics do not make a multi-variable invariant atomic",
+            "synchronized establishes happens-before for the same monitor",
+            "Cancellation does not stop non-cooperative blocking code",
+            "StrictMode is detection, not proof", "Retained size needs context",
+            "LeakCanary detects retained objects heuristically, not all leaks",
+            "The OOM allocation site may not be the root cause",
+        ),
+    }
+    for stage_id, section in stage24_sections.items():
+        for marker in (*common_stage24_markers, *language_stage24_markers[stage_id]):
+            if marker not in section:
+                errors.append(
+                    f"index.html: Stage 24 section {stage_id!r} is missing focused marker {marker!r}"
+                )
+
+    for prefix in ("stage24-uk-", "en-stage24-"):
+        for suffix, expected in (("likely-qa", 10), ("followups", 4), ("self-check", 4)):
+            match = re.search(
+                rf'id="{re.escape(prefix + suffix)}".*?</h2>.*?<ol>(.*?)</ol>',
+                content,
+                re.S,
+            )
+            count = len(re.findall(r"<li>", match.group(1))) if match else 0
+            if count != expected:
+                errors.append(
+                    f"index.html: {prefix + suffix!r} must contain exactly {expected} list items; found {count}"
+                )
+            if suffix == "likely-qa" and match:
+                labelled = len(re.findall(r"<li>\s*<strong>Q:", match.group(1), re.S))
+                if labelled != expected:
+                    errors.append(
+                        f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}"
+                    )
     return errors
 
 
@@ -1907,7 +2007,7 @@ def main() -> int:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
-    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–23 navigation/contracts, and baseline checksum are valid.")
+    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–24 navigation/contracts, and baseline checksum are valid.")
     return 0
 
 
