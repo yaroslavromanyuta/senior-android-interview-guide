@@ -37,6 +37,7 @@ STAGE23_KEY = "senior-android-reliability-observability"
 STAGE24_KEY = "android-memory-threading"
 STAGE25_KEY = "startup-rendering-performance"
 STAGE26_KEY = "build-release-delivery-engineering"
+STAGE27_KEY = "system-design-offline-first-commerce-news-feed"
 
 
 def validate_html(path: Path) -> list[str]:
@@ -96,7 +97,7 @@ def validate_index_structure() -> list[str]:
         (14, STAGE14_KEY), (15, STAGE15_KEY), (16, STAGE16_KEY), (17, STAGE17_KEY),
         (18, STAGE18_KEY), (19, STAGE19_KEY), (20, STAGE20_KEY), (21, STAGE21_KEY),
         (22, STAGE22_KEY), (23, STAGE23_KEY), (24, STAGE24_KEY), (25, STAGE25_KEY),
-        (26, STAGE26_KEY),
+        (26, STAGE26_KEY), (27, STAGE27_KEY),
     ):
         expected_stage_ids = (stage_key, f"en-{stage_key}")
         if content.count(f'data-key="{stage_key}"') != 2:
@@ -142,12 +143,13 @@ def validate_index_structure() -> list[str]:
             f'{prefix}{STAGE24_KEY}',
             f'{prefix}{STAGE25_KEY}',
             f'{prefix}{STAGE26_KEY}',
+            f'{prefix}{STAGE27_KEY}',
             f'{prefix}kotlin-for-android',
         )
         positions = [content.find(f'id="{value}"') for value in ordered_ids]
         if -1 in positions or positions != sorted(positions):
             errors.append(
-                f"index.html: {prefix or 'uk-'}Stages 2–26 must follow Stage 1 and precede Kotlin for Android"
+                f"index.html: {prefix or 'uk-'}Stages 2–27 must follow Stage 1 and precede Kotlin for Android"
             )
 
         stage5_id = f"{prefix}{STAGE5_KEY}"
@@ -172,6 +174,7 @@ def validate_index_structure() -> list[str]:
         stage24_id = f"{prefix}{STAGE24_KEY}"
         stage25_id = f"{prefix}{STAGE25_KEY}"
         stage26_id = f"{prefix}{STAGE26_KEY}"
+        stage27_id = f"{prefix}{STAGE27_KEY}"
         major_ids = re.findall(
             r'<details\s+class="major-section"[^>]*\bid="([^"]+)"',
             content,
@@ -200,6 +203,7 @@ def validate_index_structure() -> list[str]:
             or stage24_id not in major_ids
             or stage25_id not in major_ids
             or stage26_id not in major_ids
+            or stage27_id not in major_ids
             or major_ids.index(stage6_id) != major_ids.index(stage5_id) + 1
             or major_ids.index(stage7_id) != major_ids.index(stage6_id) + 1
             or major_ids.index(stage8_id) != major_ids.index(stage7_id) + 1
@@ -221,6 +225,7 @@ def validate_index_structure() -> list[str]:
             or major_ids.index(stage24_id) != major_ids.index(stage23_id) + 1
             or major_ids.index(stage25_id) != major_ids.index(stage24_id) + 1
             or major_ids.index(stage26_id) != major_ids.index(stage25_id) + 1
+            or major_ids.index(stage27_id) != major_ids.index(stage26_id) + 1
         ):
             errors.append(
                 f"index.html: {stage6_id!r} must immediately follow {stage5_id!r}, "
@@ -243,7 +248,8 @@ def validate_index_structure() -> list[str]:
                 f"{stage23_id!r} must immediately follow {stage22_id!r}, and "
                 f"{stage24_id!r} must immediately follow {stage23_id!r}, and "
                 f"{stage25_id!r} must immediately follow {stage24_id!r}, and "
-                f"{stage26_id!r} must immediately follow {stage25_id!r}"
+                f"{stage26_id!r} must immediately follow {stage25_id!r}, and "
+                f"{stage27_id!r} must immediately follow {stage26_id!r}"
             )
 
         toc_adjacency = re.search(
@@ -475,6 +481,16 @@ def validate_index_structure() -> list[str]:
         if not stage26_toc_adjacency:
             errors.append(
                 f"index.html: TOC link {stage26_id!r} must be immediately after {stage25_id!r}"
+            )
+
+        stage27_toc_adjacency = re.search(
+            rf'<li class="toc-major">\s*<a data-target="{re.escape(stage26_id)}"[^>]*>.*?</a>\s*'
+            rf'</li>\s*<li class="toc-major">\s*<a data-target="{re.escape(stage27_id)}"[^>]*>',
+            content, re.S,
+        )
+        if not stage27_toc_adjacency:
+            errors.append(
+                f"index.html: TOC link {stage27_id!r} must be immediately after {stage26_id!r}"
             )
 
     stage4_contracts = (
@@ -2189,6 +2205,63 @@ def validate_index_structure() -> list[str]:
                     errors.append(
                         f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}"
                     )
+
+    stage27_contracts = (
+        "objective", "mental-model", "requirements", "comparison", "architecture", "data-flow",
+        "data-model", "pagination", "freshness", "sync-state", "workmanager", "commerce",
+        "failure-matrix", "observability", "guarantees", "decision-framework", "tradeoffs",
+        "incident", "review-trap", "likely-qa", "followups", "self-check", "english-skeletons",
+        "answer-30", "answer-2min", "sources",
+    )
+    for prefix in ("stage27-uk-", "en-stage27-"):
+        for suffix in stage27_contracts:
+            stage_id = f"{prefix}{suffix}"
+            if ids.count(stage_id) != 1:
+                errors.append(f"index.html: expected exactly one Stage 27 contract id {stage_id!r}")
+
+    stage27_sections: dict[str, str] = {}
+    for stage_id in (STAGE27_KEY, f"en-{STAGE27_KEY}"):
+        match = re.search(
+            rf'<details\s+class="major-section"[^>]*\bid="{re.escape(stage_id)}"[^>]*>(.*?)</div></details>',
+            content, re.I | re.S,
+        )
+        section = match.group(1) if match else ""
+        stage27_sections[stage_id] = section
+        if not match:
+            errors.append(f"index.html: unable to isolate Stage 27 section {stage_id!r}")
+
+    stage27_markers = (
+        "news", "commerce", "U", "N", "R/W", "Room", "SSOT", "network", "authority",
+        "pending intent", "entity", "domain", "UI", "cross-reference", "ordering", "cursor",
+        "RemoteMediator", "transaction", "TTL", "stale-while-revalidate", "provenance", "ETag",
+        "Initial load", "Refresh", "Append", "dedup", "stable", "query key", "logout",
+        "optimistic", "pessimistic", "outbox", "inbox", "idempotency", "backoff", "jitter",
+        "dependencies", "conflict", "LWW", "merge", "manual", "tombstone", "reconcil",
+        "WorkManager", "expedited", "price", "inventory", "promotion", "tax", "payment",
+        "order confirmation", "ambiguous", "auth", "process death", "corruption", "migration",
+        "partial page", "out-of-order", "compatibility", "clock skew", "correlation", "redact",
+        "encrypted", "account", "fault injection", "contract",
+        "cache hit", "connectivity callback", "Stage 28", "Stage 29",
+    )
+    stage27_language_markers = {
+        STAGE27_KEY: ("не exact-time", "не universal authority", "не offline-only"),
+        f"en-{STAGE27_KEY}": ("not exact-time", "not universal authority", "not offline-only"),
+    }
+    for stage_id, section in stage27_sections.items():
+        for marker in (*stage27_markers, *stage27_language_markers[stage_id]):
+            if marker.lower() not in section.lower():
+                errors.append(f"index.html: Stage 27 section {stage_id!r} is missing focused marker {marker!r}")
+
+    for prefix in ("stage27-uk-", "en-stage27-"):
+        for suffix, expected in (("likely-qa", 10), ("followups", 4), ("self-check", 4)):
+            match = re.search(rf'id="{re.escape(prefix + suffix)}".*?</h2>.*?<ol>(.*?)</ol>', content, re.S)
+            count = len(re.findall(r"<li>", match.group(1))) if match else 0
+            if count != expected:
+                errors.append(f"index.html: {prefix + suffix!r} must contain exactly {expected} list items; found {count}")
+            if suffix == "likely-qa" and match:
+                labelled = len(re.findall(r"<li>\s*<strong>Q:", match.group(1), re.S))
+                if labelled != expected:
+                    errors.append(f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}")
     return errors
 
 
@@ -2206,7 +2279,7 @@ def main() -> int:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
-    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–26 navigation/contracts, and baseline checksum are valid.")
+    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–27 navigation/contracts, and baseline checksum are valid.")
     return 0
 
 
