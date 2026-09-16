@@ -17,6 +17,7 @@ STAGE3_KEY = "advanced-kotlin-jvm"
 STAGE4_KEY = "android-tasks-back-stack-deep-links-intents-pending-intent"
 STAGE5_KEY = "android-background-execution"
 STAGE6_KEY = "android-permissions-storage-notifications"
+STAGE7_KEY = "kotlin-coroutines-foundations-internals"
 
 
 def validate_html(path: Path) -> list[str]:
@@ -71,7 +72,7 @@ def validate_index_structure() -> list[str]:
 
     for stage_number, stage_key in (
         (2, STAGE2_KEY), (3, STAGE3_KEY), (4, STAGE4_KEY), (5, STAGE5_KEY),
-        (6, STAGE6_KEY),
+        (6, STAGE6_KEY), (7, STAGE7_KEY),
     ):
         expected_stage_ids = (stage_key, f"en-{stage_key}")
         if content.count(f'data-key="{stage_key}"') != 2:
@@ -97,16 +98,18 @@ def validate_index_structure() -> list[str]:
             f'{prefix}{STAGE4_KEY}',
             f'{prefix}{STAGE5_KEY}',
             f'{prefix}{STAGE6_KEY}',
+            f'{prefix}{STAGE7_KEY}',
             f'{prefix}kotlin-for-android',
         )
         positions = [content.find(f'id="{value}"') for value in ordered_ids]
         if -1 in positions or positions != sorted(positions):
             errors.append(
-                f"index.html: {prefix or 'uk-'}Stages 2–6 must follow Stage 1 and precede Kotlin for Android"
+                f"index.html: {prefix or 'uk-'}Stages 2–7 must follow Stage 1 and precede Kotlin for Android"
             )
 
         stage5_id = f"{prefix}{STAGE5_KEY}"
         stage6_id = f"{prefix}{STAGE6_KEY}"
+        stage7_id = f"{prefix}{STAGE7_KEY}"
         major_ids = re.findall(
             r'<details\s+class="major-section"[^>]*\bid="([^"]+)"',
             content,
@@ -115,10 +118,13 @@ def validate_index_structure() -> list[str]:
         if (
             stage5_id not in major_ids
             or stage6_id not in major_ids
+            or stage7_id not in major_ids
             or major_ids.index(stage6_id) != major_ids.index(stage5_id) + 1
+            or major_ids.index(stage7_id) != major_ids.index(stage6_id) + 1
         ):
             errors.append(
-                f"index.html: {stage6_id!r} must be the major section immediately after {stage5_id!r}"
+                f"index.html: {stage6_id!r} must immediately follow {stage5_id!r}, "
+                f"and {stage7_id!r} must immediately follow {stage6_id!r}"
             )
 
         toc_adjacency = re.search(
@@ -130,6 +136,17 @@ def validate_index_structure() -> list[str]:
         if not toc_adjacency:
             errors.append(
                 f"index.html: TOC link {stage6_id!r} must be immediately after {stage5_id!r}"
+            )
+
+        stage7_toc_adjacency = re.search(
+            rf'<li class="toc-major">\s*<a data-target="{re.escape(stage6_id)}"[^>]*>.*?</a>\s*'
+            rf'</li>\s*<li class="toc-major">\s*<a data-target="{re.escape(stage7_id)}"[^>]*>',
+            content,
+            re.S,
+        )
+        if not stage7_toc_adjacency:
+            errors.append(
+                f"index.html: TOC link {stage7_id!r} must be immediately after {stage6_id!r}"
             )
 
     stage4_contracts = (
@@ -279,6 +296,76 @@ def validate_index_structure() -> list[str]:
                     errors.append(
                         f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}"
                     )
+
+    stage7_contracts = (
+        "objective", "mental-model", "internals", "continuation", "job-builders",
+        "dispatchers", "cancellation", "android-ownership", "bridging", "guarantees",
+        "version-sensitive", "decision-framework", "tradeoffs", "production-scenario",
+        "review-trap", "likely-qa", "followups", "self-check", "english-skeletons",
+        "answer-30", "answer-2min", "sources",
+    )
+    for prefix in ("stage7-uk-", "en-stage7-"):
+        for suffix in stage7_contracts:
+            stage_id = f"{prefix}{suffix}"
+            if ids.count(stage_id) != 1:
+                errors.append(f"index.html: expected exactly one Stage 7 contract id {stage_id!r}")
+
+    stage7_sections: dict[str, str] = {}
+    for stage_id in (STAGE7_KEY, f"en-{STAGE7_KEY}"):
+        match = re.search(
+            rf'<details\s+class="major-section"[^>]*\bid="{re.escape(stage_id)}"[^>]*>(.*?)</div></details>',
+            content,
+            re.I | re.S,
+        )
+        stage7_sections[stage_id] = match.group(1) if match else ""
+        if not match:
+            errors.append(f"index.html: unable to isolate Stage 7 section {stage_id!r}")
+
+    common_stage7_markers = (
+        "Continuation&lt;T&gt;", "CoroutineContext", "Main.immediate",
+        "limitedParallelism", "suspendCancellableCoroutine", "NonCancellable",
+        "repeatOnLifecycle", "ThreadLocal.asContextElement", "runBlocking",
+        "-Dkotlinx.coroutines.debug", "GlobalScope",
+    )
+    language_stage7_markers = {
+        STAGE7_KEY: (
+            "Це likely practice questions, не підтверджений і не гарантований список співбесіди.",
+            "Coroutine — не thread", "suspend</code> саме по собі не переносить роботу з main",
+            "Cancellation is <strong>cooperative</strong>",
+            "не гарантія DB transaction, exactly-once network effect чи business atomicity",
+        ),
+        f"en-{STAGE7_KEY}": (
+            "These are likely practice questions, not a confirmed or guaranteed interview list.",
+            "A coroutine is not a thread", "suspend</code> does not automatically move work off main",
+            "Cancellation is <strong>cooperative</strong>",
+            "does not guarantee database transactions, exactly-once network effects, or business atomicity",
+        ),
+    }
+    for stage_id, section in stage7_sections.items():
+        for marker in (*common_stage7_markers, *language_stage7_markers[stage_id]):
+            if marker not in section:
+                errors.append(
+                    f"index.html: Stage 7 section {stage_id!r} is missing focused marker {marker!r}"
+                )
+
+    for prefix in ("stage7-uk-", "en-stage7-"):
+        for suffix, expected in (("likely-qa", 10), ("followups", 4), ("self-check", 5)):
+            match = re.search(
+                rf'id="{re.escape(prefix + suffix)}".*?</h2>.*?<ol>(.*?)</ol>',
+                content,
+                re.S,
+            )
+            count = len(re.findall(r"<li>", match.group(1))) if match else 0
+            if count != expected:
+                errors.append(
+                    f"index.html: {prefix + suffix!r} must contain exactly {expected} list items; found {count}"
+                )
+            if suffix == "likely-qa" and match:
+                labelled = len(re.findall(r"<li>\s*<strong>.*?</strong>", match.group(1), re.S))
+                if labelled != expected:
+                    errors.append(
+                        f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}"
+                    )
     return errors
 
 
@@ -296,7 +383,7 @@ def main() -> int:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
-    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–6 navigation/contracts, and baseline checksum are valid.")
+    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–7 navigation/contracts, and baseline checksum are valid.")
     return 0
 
 

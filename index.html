@@ -483,6 +483,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="android-permissions-storage-notifications" href="#android-permissions-storage-notifications">Android permissions, storage і notifications крізь версії</a>
 </li>
 <li class="toc-major">
+<a data-target="kotlin-coroutines-foundations-internals" href="#kotlin-coroutines-foundations-internals">Kotlin Coroutines: foundations та internals</a>
+</li>
+<li class="toc-major">
 <a data-target="kotlin-for-android" href="#kotlin-for-android">Kotlin for Android</a>
 <ol class="toc-children">
 <li><a data-target="val-vs-var-immutability" href="#val-vs-var-immutability">val vs var, immutability</a></li>
@@ -777,6 +780,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </li>
 <li class="toc-major">
 <a data-target="en-android-permissions-storage-notifications" href="#en-android-permissions-storage-notifications">Android permissions, storage, and notifications across versions</a>
+</li>
+<li class="toc-major">
+<a data-target="en-kotlin-coroutines-foundations-internals" href="#en-kotlin-coroutines-foundations-internals">Kotlin Coroutines: foundations and internals</a>
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-for-android" href="#en-kotlin-for-android">Kotlin for Android</a>
@@ -2532,6 +2538,200 @@ adb shell am force-stop com.example.app</code></pre>
 <li><a href="https://developer.android.com/training/data-storage/">Storage overview</a>, <a href="https://developer.android.com/training/data-storage/shared/media">MediaStore</a>, <a href="https://developer.android.com/guide/topics/providers/document-provider">Storage Access Framework</a>, <a href="https://developer.android.com/training/data-storage/shared/photo-picker">Photo Picker</a> та <a href="https://developer.android.com/about/versions/11/privacy/storage">Android 11 storage changes</a></li>
 <li><a href="https://developer.android.com/training/package-visibility">Package visibility</a>, <a href="https://developer.android.com/training/secure-file-sharing/share-file">Secure file sharing</a> та <a href="https://developer.android.com/reference/androidx/core/content/FileProvider">FileProvider</a></li>
 <li><a href="https://developer.android.com/about/versions/16/behavior-changes-16">Android 16 target behavior changes</a> та <a href="https://developer.android.com/google/play/requirements/target-sdk">Google Play target API requirements</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="kotlin-coroutines-foundations-internals" data-title="Kotlin Coroutines: foundations та internals" id="kotlin-coroutines-foundations-internals" open=""><summary class="major-summary"><span class="major-title">Kotlin Coroutines: foundations та internals</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<h2 id="stage7-uk-objective">Learning objective<a aria-label="Посилання на розділ: Learning objective" class="heading-anchor" href="#stage7-uk-objective">#</a></h2>
+<p>Після цього етапу ви маєте вміти пояснити coroutine без метафори «легкий thread», прочитати її context і Job tree, обрати scope/dispatcher/builder, зробити blocking або callback API main-safe та cancellable, а також діагностувати ownership, confinement і cancellation defects. Детальна failure propagation, exception handling і coroutine testing належать Stage 8.</p>
+
+<h2 id="stage7-uk-mental-model">Senior mental model<a aria-label="Посилання на розділ: Senior mental model" class="heading-anchor" href="#stage7-uk-mental-model">#</a></h2>
+<blockquote><p><strong>Coroutine — не thread, а кероване обчислення з lifecycle та context.</strong> Воно виконується на thread лише поки має роботу; може suspend без блокування цього thread, а потім продовжитися inline або бути dispatched. Scope задає ownership, Job — lifetime tree, dispatcher — де runnable continuation може виконуватися. <code>suspend</code> саме по собі не переносить роботу з main.</p></blockquote>
+<ul>
+<li><strong>Suspension:</strong> функція зберігає logical continuation і повертає control caller-у; underlying thread може виконувати іншу роботу.</li>
+<li><strong>Blocking:</strong> thread не може виконувати іншу роботу до повернення API; wrapping у coroutine не робить blocking call неблокуючим.</li>
+<li><strong>Thread switching:</strong> окреме рішення dispatcher/API. Suspension може завершитися без switch, а resumption може бути inline або queued.</li>
+<li><strong>Structured ownership:</strong> робота має parent і bounded lifetime; це не гарантія DB transaction, exactly-once network effect чи business atomicity.</li>
+</ul>
+
+<h2 id="stage7-uk-internals">Internals: Continuation, state machine і context<a aria-label="Посилання на розділ: Internals" class="heading-anchor" href="#stage7-uk-internals">#</a></h2>
+<h3 id="stage7-uk-continuation">Suspend transformation mental model<a aria-label="Посилання на розділ: Suspend transformation mental model" class="heading-anchor" href="#stage7-uk-continuation">#</a></h3>
+<p>Корисна модель: compiler перетворює suspend-функцію на continuation-passing форму з додатковим <code>Continuation&lt;T&gt;</code>; generated state зберігає program counter і лише потрібні locals навколо можливих suspension points. Виклик або повертає результат одразу, або спеціальний suspended marker, а пізніше continuation отримує result/failure через <code>resumeWith</code>. Це <strong>mental model</strong>, а не обіцянка конкретної назви generated class, кількості allocations чи bytecode shape: backend/compiler можуть оптимізувати.</p>
+<pre><code class="language-kotlin">// Source
+suspend fun profile(id: UserId): Profile {
+    val local = cache.read(id)       // may complete inline
+    return local ?: api.fetch(id)    // may suspend
+}
+
+// Conceptual only, not source/API-compatible generated code:
+fun profile(id: UserId, completion: Continuation&lt;Profile&gt;): Any? =
+    stateMachine(id, completion)</code></pre>
+<p><code>Continuation.context</code> carries <code>CoroutineContext</code>. Context is an indexed set of elements such as <code>Job</code>, dispatcher, <code>CoroutineName</code>, and thread-context elements. <code>left + right</code> combines it; an element on the right replaces an element with the same key. It is not an ordered interceptor pipeline.</p>
+
+<h3 id="stage7-uk-job-builders">Scope, Job tree, launch/async і boundaries<a aria-label="Посилання на розділ: Scope Job tree and builders" class="heading-anchor" href="#stage7-uk-job-builders">#</a></h3>
+<ul>
+<li><code>CoroutineScope</code> is an owner plus <code>coroutineContext</code>, not just a launch utility. A custom long-lived scope needs an explicit owner, <code>Job</code>, dispatcher, shutdown point, and observability.</li>
+<li>A child <code>Job</code> belongs to its parent; parent completion waits for children and parent cancellation propagates downward. Exact failure/supervision rules are Stage 8.</li>
+<li><code>launch</code> returns <code>Job</code>: use for concurrent work whose value is not returned. <code>async</code> returns <code>Deferred&lt;T&gt;</code>: use when a concurrent result will be <code>await</code>ed. <code>async { x() }.await()</code> immediately adds overhead without concurrency.</li>
+<li><code>coroutineScope</code> creates a structured boundary and returns after its children finish. <code>supervisorScope</code> creates a supervisory boundary so sibling ownership differs; reserve detailed failure behavior and handler rules for Stage 8.</li>
+</ul>
+
+<h3 id="stage7-uk-dispatchers">Dispatchers, withContext і confinement<a aria-label="Посилання на розділ: Dispatchers withContext and confinement" class="heading-anchor" href="#stage7-uk-dispatchers">#</a></h3>
+<table><thead><tr><th>Tool</th><th>Use</th><th>Boundary / caveat</th></tr></thead><tbody>
+<tr><td><code>Dispatchers.Main</code></td><td>Android UI access and short UI state work.</td><td>Requires the platform Main dispatcher; no blocking I/O or long CPU loop.</td></tr>
+<tr><td><code>Main.immediate</code></td><td>Avoid an extra dispatch when already on the matching main context.</td><td>Can resume inline and change reentrancy/order assumptions; otherwise dispatches. Not supported identically on every platform.</td></tr>
+<tr><td><code>Default</code></td><td>CPU-bound work with bounded shared parallelism.</td><td>Parallel work is not automatically faster; chunking, cancellation checks, contention and measurement matter.</td></tr>
+<tr><td><code>IO</code></td><td>Blocking I/O that cannot be made suspending.</td><td>Shared elastic resources; not “one new thread per coroutine” and not a licence for unbounded downstream load.</td></tr>
+<tr><td><code>limitedParallelism(n)</code></td><td>A dispatcher view limiting concurrent execution for a subsystem.</td><td>Not a dedicated thread, queue durability, fairness SLA, or external resource pool. Use <code>n=1</code> for sequential execution, not thread identity.</td></tr>
+</tbody></table>
+<p><code>withContext(context)</code> merges the supplied context, runs the block, and returns its result while preserving structured ownership. A changed dispatcher normally dispatches to it and back, but no universal thread switch is guaranteed: equivalent/immediate contexts may execute inline. Inject dispatchers at boundaries so blocking/CPU implementation details are main-safe and testable.</p>
+
+<h3 id="stage7-uk-cancellation">Cooperative cancellation і cleanup<a aria-label="Посилання на розділ: Cooperative cancellation and cleanup" class="heading-anchor" href="#stage7-uk-cancellation">#</a></h3>
+<p>Cancellation is <strong>cooperative</strong>. Cancellable suspending functions check it; a CPU loop or blocking API that never suspends must poll <code>ensureActive()</code>, use <code>yield()</code> where fair yielding is actually desired, or call an interruptible/cancellable adapter. <code>yield()</code> is not a scheduler fairness guarantee or performance fix.</p>
+<pre><code class="language-kotlin">suspend fun index(rows: List&lt;Row&gt;): Index = withContext(cpuDispatcher) {
+    buildIndex {
+        rows.forEachIndexed { i, row -&gt;
+            if (i % 256 == 0) ensureActive()
+            add(row)
+        }
+    }
+}
+
+try {
+    sync()
+} finally {
+    withContext(NonCancellable) { closeSession() } // short suspending cleanup only
+}</code></pre>
+<p><code>finally</code> виконує звичайний non-suspending cleanup. <code>NonCancellable</code> потрібен лише для bounded suspending cleanup, який мусить завершитися після cancellation; він не створює незалежну background lifetime. Timeout, retry і compensating business effects тут не підміняються.</p>
+
+<h3 id="stage7-uk-android-ownership">Android ownership: ViewModel, Lifecycle і collection<a aria-label="Посилання на розділ: Android coroutine ownership" class="heading-anchor" href="#stage7-uk-android-ownership">#</a></h3>
+<ul>
+<li><code>viewModelScope</code> owns screen/business work that should survive configuration changes and is cancelled when ViewModel is cleared. The repository exposes main-safe suspend APIs; it should not smuggle UI lifetime into <code>GlobalScope</code>.</li>
+<li><code>lifecycleScope</code> is cancelled when its <code>Lifecycle</code> is destroyed. For Fragment View UI, use <code>viewLifecycleOwner.lifecycleScope</code>, not the Fragment lifetime for stale bindings.</li>
+<li><code>repeatOnLifecycle(STARTED)</code> suspends its caller, launches the block while at least STARTED, cancels that block below STARTED, and restarts it on re-entry. Launch independent collectors as children inside the block; sequential <code>collect</code> calls do not run concurrently.</li>
+<li>A true application scope can be injected for app-lifetime work, but must have documented owner/shutdown/error policy. Avoid <code>GlobalScope</code> and per-call <code>CoroutineScope(...)</code> because they hide cancellation and leak work beyond the caller.</li>
+</ul>
+
+<h3 id="stage7-uk-bridging">Callback bridging, runBlocking і context propagation<a aria-label="Посилання на розділ: Callback bridging runBlocking and context propagation" class="heading-anchor" href="#stage7-uk-bridging">#</a></h3>
+<pre><code class="language-kotlin">suspend fun LocationClient.awaitFix(): Fix = suspendCancellableCoroutine { cont -&gt;
+    val callback = object : Callback {
+        override fun onFix(value: Fix) {
+            stop(this)
+            if (cont.isActive) cont.resume(value) // API must have one terminal path
+        }
+        override fun onError(t: Throwable) {
+            stop(this)
+            if (cont.isActive) cont.resumeWithException(t)
+        }
+    }
+    cont.invokeOnCancellation { stop(callback) }
+    start(callback)
+}</code></pre>
+<p>Adapter має atomic/single terminal protocol: callback resumes continuation at most once, cancellation unregisters callback and releases resources, synchronous callback during registration is safe, and late callback is ignored or disposed. <code>suspendCancellableCoroutine</code> має prompt cancellation guarantee: якщо Job скасовано до dispatched resumption, coroutine не продовжить успішно, тому transferred resource потребує cancellation disposer. <code>isActive</code> alone is not atomic protection against two racing callbacks; prefer upstream unregister/atomic guard and the overloads that define resource cleanup.</p>
+<p><code>runBlocking</code> bridges blocking callers by blocking the current thread while running an event loop. Use at process entry points, narrow legacy/test boundaries—not inside suspend code, Android main callbacks, repositories, or servers where it can starve/deadlock constrained executors.</p>
+<p>A coroutine may resume on another thread; raw <code>ThreadLocal</code> values do not automatically follow it. Prefer explicit context parameters. Where legacy libraries require it, use <code>ThreadLocal.asContextElement(value)</code> and understand it propagates a context value, not arbitrary in-coroutine mutations; MDC and copyable context behavior are library/version-specific.</p>
+
+<h2 id="stage7-uk-guarantees">Guarantees vs non-guarantees<a aria-label="Посилання на розділ: Guarantees versus non guarantees" class="heading-anchor" href="#stage7-uk-guarantees">#</a></h2>
+<table><thead><tr><th>Можна стверджувати</th><th>Не можна обіцяти</th></tr></thead><tbody>
+<tr><td>Suspension може звільнити thread для іншої роботи; coroutine має context і Job.</td><td>Coroutine є thread, або кожна suspension змінює thread.</td></tr>
+<tr><td><code>suspend</code> дозволяє suspension points.</td><td><code>suspend</code> автоматично робить blocking API неблокуючим або переносить роботу з main.</td></tr>
+<tr><td>Structured scope чекає owned children і поширює cancellation за Job tree.</td><td>Business operation стала atomic, durable або exactly once.</td></tr>
+<tr><td>Cancellation signal і cancellable suspension підтримують cooperative stop.</td><td>Arbitrary CPU/native/blocking code припиниться негайно.</td></tr>
+<tr><td>Dispatcher визначає execution policy для continuations.</td><td>Конкретний thread, queue fairness, порядок усіх resumptions або inline/dispatch у кожному випадку.</td></tr>
+</tbody></table>
+
+<h2 id="stage7-uk-version-sensitive">Version-sensitive behavior<a aria-label="Посилання на розділ: Version sensitive behavior" class="heading-anchor" href="#stage7-uk-version-sensitive">#</a></h2>
+<ul>
+<li>Pin Kotlin, <code>kotlinx-coroutines-core</code>, <code>kotlinx-coroutines-android</code> і AndroidX Lifecycle versions; перевіряйте API docs саме для resolved version.</li>
+<li><code>Dispatchers.Main</code> на Android надає integration module; <code>Main.immediate</code> semantics та support залежать від platform dispatcher.</li>
+<li><code>limitedParallelism</code>, debugging APIs, test scheduler і thread-context facilities еволюціонують. Не переносіть snippets між major/minor versions без migration notes.</li>
+<li><code>DebugProbes</code> та debug-agent capabilities можуть бути experimental/version-sensitive й мати overhead; production enablement потребує окремого рішення.</li>
+</ul>
+
+<h2 id="stage7-uk-decision-framework">Decision framework<a aria-label="Посилання на розділ: Decision framework" class="heading-anchor" href="#stage7-uk-decision-framework">#</a></h2>
+<ol>
+<li><strong>Визначте owner/lifetime:</strong> caller, ViewModel, view Lifecycle, application чи durable scheduler?</li>
+<li><strong>Класифікуйте роботу:</strong> suspending I/O, blocking I/O, CPU, UI mutation чи callback bridge.</li>
+<li><strong>Оберіть API:</strong> sequential suspend by default; <code>launch</code> for owned no-result work; <code>async</code> only for a concurrent value.</li>
+<li><strong>Поставте boundary:</strong> main-safe implementation with injected dispatcher; concurrency limit tied to the real bottleneck.</li>
+<li><strong>Спроєктуйте cancellation/cleanup:</strong> suspension checks, loop polling, unregister/close, bounded <code>NonCancellable</code>.</li>
+<li><strong>Перевірте semantics:</strong> ownership tree, resumption/reentrancy, thread-local assumptions, logs/traces, process death and business idempotency outside coroutine guarantees.</li>
+</ol>
+
+<h2 id="stage7-uk-tradeoffs">Trade-offs і failure modes<a aria-label="Посилання на розділ: Trade offs and failure modes" class="heading-anchor" href="#stage7-uk-tradeoffs">#</a></h2>
+<ul>
+<li>Extra <code>async</code>/dispatcher hops can increase allocations, queues and latency; sequential code is often clearer and faster.</li>
+<li><code>IO</code> prevents main blocking but unbounded requests can still exhaust sockets, DB connections or vendor quotas; limit by downstream capacity.</li>
+<li><code>Main.immediate</code> removes a hop but inline reentrancy can violate “callback happens later” assumptions.</li>
+<li><code>limitedParallelism(1)</code> serializes tasks on a dispatcher view but does not provide a durable queue, process safety, thread affinity or database transaction.</li>
+<li>Broad <code>NonCancellable</code> hides shutdown and hangs teardown; missing callback unregister leaks owners and permits late double resume.</li>
+<li>Coroutines reduce waiting cost, not CPU complexity, memory retention, lock contention or network latency. Measure traces and queueing before claiming performance.</li>
+</ul>
+
+<h2 id="stage7-uk-production-scenario">Production scenario: checkout orchestration<a aria-label="Посилання на розділ: Production scenario" class="heading-anchor" href="#stage7-uk-production-scenario">#</a></h2>
+<p><strong>Гіпотетично:</strong> <code>CheckoutViewModel</code> owns a <code>viewModelScope.launch</code>. Repository API is main-safe: remote suspending calls remain sequential until genuine parallelism is required; legacy receipt parsing uses injected <code>Default.limitedParallelism(2)</code>, and a blocking SDK call is isolated on injected IO capacity. Two independent quotes use sibling <code>async</code> values inside <code>coroutineScope</code> and are both awaited.</p>
+<p>Lifecycle UI collects state through <code>viewLifecycleOwner.lifecycleScope</code> + <code>repeatOnLifecycle</code>. A payment SDK callback is wrapped with <code>suspendCancellableCoroutine</code>, one atomic terminal decision, unregister-on-cancel, and late-token disposal. Cancellation stops UI ownership but does not claim the remote charge was rolled back: payment uses an idempotency key, durable operation record, server status query and reconciliation. That transaction protocol is outside structured-concurrency guarantees.</p>
+
+<h2 id="stage7-uk-review-trap">Code-review/debugging trap<a aria-label="Посилання на розділ: Code review debugging trap" class="heading-anchor" href="#stage7-uk-review-trap">#</a></h2>
+<pre><code class="language-kotlin">fun refresh() {
+    CoroutineScope(Dispatchers.IO).launch { // hidden owner; never cancelled
+        val dto = api.load()                // suspend does not prove blocking safety
+        withContext(Dispatchers.Main.immediate) { render(dto) }
+    }
+}
+
+suspend fun awaitSdk() = suspendCancellableCoroutine&lt;Result&gt; { c -&gt;
+    sdk.start { c.resume(it) }              // no unregister; callback may fire twice
+}</code></pre>
+<p>Review questions: хто owns Job і де shutdown; чи <code>api.load</code> справді main-safe; навіщо ручний Main hop замість state owner; чи inline <code>Main.immediate</code> створює reentrancy; що робить cancellation; чи callback має single terminal protocol. Debug з <code>CoroutineName</code>, IDE Coroutines view, <code>-Dkotlinx.coroutines.debug</code> у non-production diagnostic run, job-tree/log correlation та traces навколо blocking call. Debug probes допомагають побачити suspended stacks, але не доводять business ownership або exactly-once.</p>
+
+<h2 id="stage7-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice Q and A" class="heading-anchor" href="#stage7-uk-likely-qa">#</a></h2>
+<p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
+<ol>
+<li><strong>Coroutine — це lightweight thread?</strong> Ні. Це computation з continuation, context і Job, яке виконується на threads за dispatcher policy; багато coroutines можуть ділити threads.</li>
+<li><strong>Що реально означає <code>suspend</code>?</strong> Функція може suspend і пізніше resume continuation; modifier не гарантує background thread, non-blocking implementation чи thread switch.</li>
+<li><strong>Як уявляти compiler transformation?</strong> Як continuation-passing state machine з label і live locals біля suspension points, без обіцянки exact generated classes/allocations.</li>
+<li><strong>Як складається CoroutineContext?</strong> Це keyed elements; <code>left + right</code> replaces an element with the same key. Job defines lifetime, dispatcher execution policy.</li>
+<li><strong><code>launch</code> чи <code>async</code>?</strong> <code>launch</code> for owned no-result work; <code>async</code> when a concurrently produced value is awaited. Immediate await usually means sequential suspend was better.</li>
+<li><strong><code>coroutineScope</code> чи <code>supervisorScope</code>?</strong> Both bound children and await completion; supervisor boundary changes sibling failure ownership. Detailed failure propagation belongs to Stage 8.</li>
+<li><strong>Default, IO чи Main?</strong> Main for short UI access, Default for CPU work, IO for unavoidable blocking I/O; inject them and limit according to downstream capacity.</li>
+<li><strong>Як працює cancellation?</strong> Cooperatively: cancellable suspension observes it; CPU loops call <code>ensureActive</code>/<code>yield</code> deliberately; cleanup uses finally and narrowly bounded NonCancellable when it must suspend.</li>
+<li><strong>Як правильно bridge callback?</strong> <code>suspendCancellableCoroutine</code>, at-most-one terminal resume, unregister on cancellation, safe synchronous registration, and late resource cleanup.</li>
+<li><strong>Що structured concurrency не гарантує?</strong> Воно bounds lifetime and joins children, але не дає transaction atomicity, durability, remote rollback чи exactly-once effects.</li>
+</ol>
+
+<h2 id="stage7-uk-followups">4 senior follow-ups з відповідями<a aria-label="Посилання на розділ: 4 senior follow ups" class="heading-anchor" href="#stage7-uk-followups">#</a></h2>
+<ol>
+<li><strong><code>withContext(IO)</code> викликано з IO.</strong> Не обіцяйте switch: implementation may continue without a meaningful hop. Correctness comes from execution policy, not a thread-name assertion.</li>
+<li><strong>Потрібен single-threaded mutable engine.</strong> <code>limitedParallelism(1)</code> gives sequential execution but not one stable thread; if the library requires thread identity, use/document an appropriate owned dispatcher/executor and close it.</li>
+<li><strong>Callback повернув resource одночасно з cancellation.</strong> Design an atomic terminal hand-off and cancellation disposer; <code>isActive</code> check alone has a race.</li>
+<li><strong>User leaves during payment.</strong> Cancel UI ownership, but reconcile remote status using durable operation ID/idempotency key; coroutine cancellation is not payment rollback.</li>
+</ol>
+
+<h2 id="stage7-uk-self-check">5 self-check без відповідей<a aria-label="Посилання на розділ: 5 self check without answers" class="heading-anchor" href="#stage7-uk-self-check">#</a></h2>
+<ol>
+<li>Намалюйте Job tree свого screen flow: хто owner і де кожна child завершується?</li>
+<li>Які suspend APIs у вашому codebase можуть усе ще блокувати main?</li>
+<li>Де <code>Main.immediate</code> або synchronous callback можуть створити reentrancy?</li>
+<li>Як ваш callback bridge доводить at-most-once resume та cleanup після cancellation?</li>
+<li>Який business effect потребує idempotency/transaction поза structured concurrency?</li>
+</ol>
+
+<h2 id="stage7-uk-english-skeletons">Interview-ready English answer skeletons<a aria-label="Посилання на розділ: Interview ready English answer skeletons" class="heading-anchor" href="#stage7-uk-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do Kotlin coroutines work, and how do you choose their ownership and execution context?</em></p>
+<h3 id="stage7-uk-answer-30">~30-second answer<a aria-label="Посилання на розділ: 30 second answer" class="heading-anchor" href="#stage7-uk-answer-30">#</a></h3>
+<blockquote><p>A coroutine is not a thread. It is an owned computation represented through continuations and a context containing elements such as a Job and dispatcher. Suspension releases control but does not automatically move work off main; resumption may be inline or dispatched. I choose the owner first, keep APIs main-safe, use Main for UI, Default for CPU work and IO for unavoidable blocking calls, and make cancellation and callback cleanup cooperative. Structured concurrency bounds child lifetimes, but it does not make business effects atomic or exactly once.</p></blockquote>
+<h3 id="stage7-uk-answer-2min">~2-minute answer<a aria-label="Посилання на розділ: 2 minute answer" class="heading-anchor" href="#stage7-uk-answer-2min">#</a></h3>
+<blockquote><p>My mental model starts with the compiler converting a suspend function into continuation-passing code, typically a state machine around suspension points. That is a useful model, not a bytecode-shape guarantee. A coroutine runs on a thread only while executing; suspension is different from blocking, and suspend does not imply an IO dispatcher or any thread switch.</p><p>I choose ownership before concurrency. A scope carries a context, its Job forms a parent-child tree, and a structured boundary waits for owned children. I use launch for no-result owned work and async only when I need a concurrently produced value. CoroutineScope and supervisorScope both define boundaries; detailed failure propagation is a separate policy discussion.</p><p>Dispatchers are execution policies: Main for short UI work, Default for CPU work, IO for unavoidable blocking I/O. Main.immediate may run inline and limitedParallelism is a view limiting concurrency, not a dedicated thread or durable queue. withContext merges context and returns a result; it does not universally guarantee a switch.</p><p>Cancellation is cooperative, so CPU loops check ensureActive and callback adapters unregister on cancellation with a single terminal resume protocol. Android work is owned by viewModelScope or the appropriate Lifecycle, and repeatOnLifecycle restarts collection with visibility. I avoid GlobalScope and ad-hoc scopes. Finally, I separate coroutine guarantees from business guarantees: remote writes still need idempotency, persistence, and reconciliation, and I use coroutine names, IDE tooling and traces to debug ownership and blocking.</p></blockquote>
+
+<h2 id="stage7-uk-sources">Офіційні джерела<a aria-label="Посилання на розділ: Офіційні джерела" class="heading-anchor" href="#stage7-uk-sources">#</a></h2>
+<ul>
+<li><a href="https://kotlinlang.org/docs/coroutines-basics.html">Kotlin coroutines basics</a>, <a href="https://kotlinlang.org/docs/coroutine-context-and-dispatchers.html">Coroutine context and dispatchers</a>, <a href="https://kotlinlang.org/docs/cancellation-and-timeouts.html">Cancellation and timeouts</a></li>
+<li><a href="https://kotlinlang.org/spec/asynchronous-programming-with-coroutines.html">Kotlin specification: asynchronous programming with coroutines</a> та <a href="https://kotlinlang.org/api/core/kotlin-stdlib/kotlin.coroutines/-continuation/">Continuation API</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-coroutine-scope/">CoroutineScope</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-job/">Job</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/coroutine-scope.html">coroutineScope</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/supervisor-scope.html">supervisorScope</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-main-coroutine-dispatcher/immediate.html">Main.immediate</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-coroutine-dispatcher/limited-parallelism.html">limitedParallelism</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-context.html">withContext</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/suspend-cancellable-coroutine.html">suspendCancellableCoroutine</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/run-blocking.html">runBlocking</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/as-context-element.html">ThreadLocal.asContextElement</a></li>
+<li><a href="https://developer.android.com/kotlin/coroutines/coroutines-best-practices">Android coroutine best practices</a> та <a href="https://developer.android.com/topic/libraries/architecture/coroutines">Lifecycle-aware coroutines</a></li>
+<li><a href="https://kotlinlang.org/docs/coroutines-debugging.html">Debug coroutines</a> та <a href="https://kotlinlang.org/docs/debug-coroutines-with-idea.html">Debug coroutines with IntelliJ IDEA</a></li>
 </ul>
 </div></details>
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
@@ -8175,6 +8375,200 @@ adb shell am force-stop com.example.app</code></pre>
 <li><a href="https://developer.android.com/training/data-storage/">Storage overview</a>, <a href="https://developer.android.com/training/data-storage/shared/media">MediaStore</a>, <a href="https://developer.android.com/guide/topics/providers/document-provider">Storage Access Framework</a>, <a href="https://developer.android.com/training/data-storage/shared/photo-picker">Photo Picker</a>, and <a href="https://developer.android.com/about/versions/11/privacy/storage">Android 11 storage changes</a></li>
 <li><a href="https://developer.android.com/training/package-visibility">Package visibility</a>, <a href="https://developer.android.com/training/secure-file-sharing/share-file">Secure file sharing</a>, and <a href="https://developer.android.com/reference/androidx/core/content/FileProvider">FileProvider</a></li>
 <li><a href="https://developer.android.com/about/versions/16/behavior-changes-16">Android 16 target behavior changes</a> and <a href="https://developer.android.com/google/play/requirements/target-sdk">Google Play target API requirements</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="kotlin-coroutines-foundations-internals" data-title="Kotlin Coroutines: foundations and internals" id="en-kotlin-coroutines-foundations-internals" open=""><summary class="major-summary"><span class="major-title">Kotlin Coroutines: foundations and internals</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<h2 id="en-stage7-objective">Learning objective<a aria-label="Link to section: Learning objective" class="heading-anchor" href="#en-stage7-objective">#</a></h2>
+<p>After this stage, you should be able to explain a coroutine without calling it a “lightweight thread,” read its context and Job tree, choose a scope, dispatcher, and builder, make blocking or callback APIs main-safe and cancellable, and diagnose ownership, confinement, and cancellation defects. Detailed failure propagation, exception handling, and coroutine testing belong to Stage 8.</p>
+
+<h2 id="en-stage7-mental-model">Senior mental model<a aria-label="Link to section: Senior mental model" class="heading-anchor" href="#en-stage7-mental-model">#</a></h2>
+<blockquote><p><strong>A coroutine is not a thread; it is an owned computation with a lifecycle and context.</strong> It occupies a thread only while executing, may suspend without blocking that thread, then may continue inline or be dispatched. The scope expresses ownership, the Job forms the lifetime tree, and the dispatcher decides where a runnable continuation may execute. <code>suspend</code> does not automatically move work off main.</p></blockquote>
+<ul>
+<li><strong>Suspension:</strong> save the logical continuation and return control to the caller; the underlying thread can do other work.</li>
+<li><strong>Blocking:</strong> the thread cannot do other work until the API returns; wrapping a blocking call in a coroutine does not make it non-blocking.</li>
+<li><strong>Thread switching:</strong> a separate dispatcher or API decision. Suspension may complete without a switch, and resumption may be inline or queued.</li>
+<li><strong>Structured ownership:</strong> work has a parent and bounded lifetime; this does not guarantee database transactions, exactly-once network effects, or business atomicity.</li>
+</ul>
+
+<h2 id="en-stage7-internals">Internals: Continuation, state machine, and context<a aria-label="Link to section: Internals" class="heading-anchor" href="#en-stage7-internals">#</a></h2>
+<h3 id="en-stage7-continuation">Suspend transformation mental model<a aria-label="Link to section: Suspend transformation mental model" class="heading-anchor" href="#en-stage7-continuation">#</a></h3>
+<p>A useful model is that the compiler transforms a suspend function into continuation-passing form with an extra <code>Continuation&lt;T&gt;</code>; generated state retains a program counter and only the live locals needed around possible suspension points. A call either returns immediately or returns a suspended marker, and the continuation later receives a result or failure through <code>resumeWith</code>. This is a <strong>mental model</strong>, not a promise about generated class names, allocation counts, or bytecode shape: compiler backends may optimize it.</p>
+<pre><code class="language-kotlin">// Source
+suspend fun profile(id: UserId): Profile {
+    val local = cache.read(id)       // may complete inline
+    return local ?: api.fetch(id)    // may suspend
+}
+
+// Conceptual only, not source/API-compatible generated code:
+fun profile(id: UserId, completion: Continuation&lt;Profile&gt;): Any? =
+    stateMachine(id, completion)</code></pre>
+<p><code>Continuation.context</code> carries <code>CoroutineContext</code>. A context is an indexed set of elements such as a <code>Job</code>, dispatcher, <code>CoroutineName</code>, and thread-context elements. <code>left + right</code> combines it; an element on the right replaces an element with the same key. It is not an ordered interceptor pipeline.</p>
+
+<h3 id="en-stage7-job-builders">Scope, Job tree, launch/async, and boundaries<a aria-label="Link to section: Scope Job tree and builders" class="heading-anchor" href="#en-stage7-job-builders">#</a></h3>
+<ul>
+<li><code>CoroutineScope</code> is an owner plus a <code>coroutineContext</code>, not merely a launch utility. A custom long-lived scope needs an explicit owner, <code>Job</code>, dispatcher, shutdown point, and observability.</li>
+<li>A child <code>Job</code> belongs to its parent; parent completion waits for children, and parent cancellation propagates downward. Exact failure and supervision rules are Stage 8.</li>
+<li><code>launch</code> returns a <code>Job</code>: use it for concurrent work whose value is not returned. <code>async</code> returns <code>Deferred&lt;T&gt;</code>: use it when a concurrent result will be <code>await</code>ed. <code>async { x() }.await()</code> immediately adds overhead without concurrency.</li>
+<li><code>coroutineScope</code> creates a structured boundary and returns after its children finish. <code>supervisorScope</code> creates a supervisory boundary with different sibling ownership; detailed failure behavior and handler rules are reserved for Stage 8.</li>
+</ul>
+
+<h3 id="en-stage7-dispatchers">Dispatchers, withContext, and confinement<a aria-label="Link to section: Dispatchers withContext and confinement" class="heading-anchor" href="#en-stage7-dispatchers">#</a></h3>
+<table><thead><tr><th>Tool</th><th>Use</th><th>Boundary / caveat</th></tr></thead><tbody>
+<tr><td><code>Dispatchers.Main</code></td><td>Android UI access and short UI-state work.</td><td>Requires the platform Main dispatcher; no blocking I/O or long CPU loop.</td></tr>
+<tr><td><code>Main.immediate</code></td><td>Avoid an extra dispatch when already on the matching main context.</td><td>May resume inline and change reentrancy or ordering assumptions; otherwise dispatches. Support is platform-specific.</td></tr>
+<tr><td><code>Default</code></td><td>CPU-bound work on bounded shared parallelism.</td><td>Parallel work is not automatically faster; chunking, cancellation checks, contention, and measurement matter.</td></tr>
+<tr><td><code>IO</code></td><td>Blocking I/O that cannot be made suspending.</td><td>Uses shared elastic resources; it is not “one new thread per coroutine” or permission for unbounded downstream load.</td></tr>
+<tr><td><code>limitedParallelism(n)</code></td><td>A dispatcher view limiting concurrent execution for a subsystem.</td><td>Not a dedicated thread, durable queue, fairness SLA, or external resource pool. Use <code>n=1</code> for sequential execution, not thread identity.</td></tr>
+</tbody></table>
+<p><code>withContext(context)</code> merges the supplied context, runs the block, and returns its result while retaining structured ownership. A changed dispatcher normally dispatches to it and back, but there is no universal thread-switch guarantee: equivalent or immediate contexts may execute inline. Inject dispatchers at boundaries so blocking and CPU implementation details are main-safe and testable.</p>
+
+<h3 id="en-stage7-cancellation">Cooperative cancellation and cleanup<a aria-label="Link to section: Cooperative cancellation and cleanup" class="heading-anchor" href="#en-stage7-cancellation">#</a></h3>
+<p>Cancellation is <strong>cooperative</strong>. Cancellable suspending functions check it; a CPU loop or blocking API that never suspends must poll <code>ensureActive()</code>, use <code>yield()</code> where yielding is actually desired, or call an interruptible/cancellable adapter. <code>yield()</code> is not a scheduler fairness guarantee or a performance fix.</p>
+<pre><code class="language-kotlin">suspend fun index(rows: List&lt;Row&gt;): Index = withContext(cpuDispatcher) {
+    buildIndex {
+        rows.forEachIndexed { i, row -&gt;
+            if (i % 256 == 0) ensureActive()
+            add(row)
+        }
+    }
+}
+
+try {
+    sync()
+} finally {
+    withContext(NonCancellable) { closeSession() } // short suspending cleanup only
+}</code></pre>
+<p><code>finally</code> performs ordinary non-suspending cleanup. Use <code>NonCancellable</code> only for bounded suspending cleanup that must finish after cancellation; it does not create an independent background lifetime. It does not replace timeout, retry, or compensating business effects.</p>
+
+<h3 id="en-stage7-android-ownership">Android ownership: ViewModel, Lifecycle, and collection<a aria-label="Link to section: Android coroutine ownership" class="heading-anchor" href="#en-stage7-android-ownership">#</a></h3>
+<ul>
+<li><code>viewModelScope</code> owns screen or business work that should survive configuration changes and is cancelled when the ViewModel is cleared. A repository exposes main-safe suspend APIs; it must not smuggle UI work into <code>GlobalScope</code>.</li>
+<li><code>lifecycleScope</code> is cancelled when its <code>Lifecycle</code> is destroyed. For Fragment View UI, use <code>viewLifecycleOwner.lifecycleScope</code>, not the Fragment lifetime for stale bindings.</li>
+<li><code>repeatOnLifecycle(STARTED)</code> suspends its caller, launches the block while at least STARTED, cancels that block below STARTED, and restarts it on re-entry. Launch independent collectors as children in the block; sequential <code>collect</code> calls do not run concurrently.</li>
+<li>A real application scope can be injected for app-lifetime work, but it needs a documented owner, shutdown, and error policy. Avoid <code>GlobalScope</code> and per-call <code>CoroutineScope(...)</code>, which hide cancellation and outlive the caller.</li>
+</ul>
+
+<h3 id="en-stage7-bridging">Callback bridging, runBlocking, and context propagation<a aria-label="Link to section: Callback bridging runBlocking and context propagation" class="heading-anchor" href="#en-stage7-bridging">#</a></h3>
+<pre><code class="language-kotlin">suspend fun LocationClient.awaitFix(): Fix = suspendCancellableCoroutine { cont -&gt;
+    val callback = object : Callback {
+        override fun onFix(value: Fix) {
+            stop(this)
+            if (cont.isActive) cont.resume(value) // API must have one terminal path
+        }
+        override fun onError(t: Throwable) {
+            stop(this)
+            if (cont.isActive) cont.resumeWithException(t)
+        }
+    }
+    cont.invokeOnCancellation { stop(callback) }
+    start(callback)
+}</code></pre>
+<p>The adapter needs an atomic, single terminal protocol: callback code resumes the continuation at most once, cancellation unregisters and releases resources, a synchronous callback during registration is safe, and a late callback is ignored or disposed. <code>suspendCancellableCoroutine</code> has a prompt cancellation guarantee: if the Job is cancelled before a dispatched resumption runs, the coroutine does not continue successfully, so a transferred resource needs a cancellation disposer. <code>isActive</code> alone is not atomic protection against two racing callbacks; prefer upstream unregister or an atomic guard and overloads that define resource cleanup.</p>
+<p><code>runBlocking</code> bridges blocking callers by blocking the current thread while it runs an event loop. Use it at process entry points and narrow legacy or test boundaries—not inside suspend code, Android main callbacks, repositories, or servers where it can starve or deadlock constrained executors.</p>
+<p>A coroutine may resume on another thread; raw <code>ThreadLocal</code> values do not automatically follow it. Prefer explicit context parameters. Where a legacy library requires it, use <code>ThreadLocal.asContextElement(value)</code> and understand that it propagates a context value, not arbitrary in-coroutine mutations; MDC and copyable-context behavior are library- and version-specific.</p>
+
+<h2 id="en-stage7-guarantees">Guarantees versus non-guarantees<a aria-label="Link to section: Guarantees versus non guarantees" class="heading-anchor" href="#en-stage7-guarantees">#</a></h2>
+<table><thead><tr><th>Safe claim</th><th>Do not promise</th></tr></thead><tbody>
+<tr><td>Suspension can release a thread for other work; a coroutine has a context and Job.</td><td>A coroutine is a thread, or every suspension changes threads.</td></tr>
+<tr><td><code>suspend</code> permits suspension points.</td><td><code>suspend</code> automatically makes a blocking API non-blocking or moves work off main.</td></tr>
+<tr><td>A structured scope waits for owned children and propagates cancellation through its Job tree.</td><td>The business operation became atomic, durable, or exactly once.</td></tr>
+<tr><td>A cancellation signal and cancellable suspension support cooperative stopping.</td><td>Arbitrary CPU, native, or blocking code stops immediately.</td></tr>
+<tr><td>A dispatcher defines execution policy for continuations.</td><td>A specific thread, queue fairness, order of all resumptions, or inline/dispatch behavior in every case.</td></tr>
+</tbody></table>
+
+<h2 id="en-stage7-version-sensitive">Version-sensitive behavior<a aria-label="Link to section: Version sensitive behavior" class="heading-anchor" href="#en-stage7-version-sensitive">#</a></h2>
+<ul>
+<li>Pin Kotlin, <code>kotlinx-coroutines-core</code>, <code>kotlinx-coroutines-android</code>, and AndroidX Lifecycle versions; check API documentation for the resolved version.</li>
+<li><code>Dispatchers.Main</code> on Android comes from the integration module; <code>Main.immediate</code> semantics and support depend on the platform dispatcher.</li>
+<li><code>limitedParallelism</code>, debugging APIs, test schedulers, and thread-context facilities evolve. Do not carry snippets across major or minor versions without migration notes.</li>
+<li><code>DebugProbes</code> and debug-agent capabilities may be experimental or version-sensitive and have overhead; production enablement requires a separate decision.</li>
+</ul>
+
+<h2 id="en-stage7-decision-framework">Decision framework<a aria-label="Link to section: Decision framework" class="heading-anchor" href="#en-stage7-decision-framework">#</a></h2>
+<ol>
+<li><strong>Define owner and lifetime:</strong> caller, ViewModel, View lifecycle, application, or durable scheduler?</li>
+<li><strong>Classify the work:</strong> suspending I/O, blocking I/O, CPU, UI mutation, or callback bridge.</li>
+<li><strong>Choose the API:</strong> sequential suspend by default; <code>launch</code> for owned no-result work; <code>async</code> only for a concurrent value.</li>
+<li><strong>Place the boundary:</strong> main-safe implementation with an injected dispatcher; concurrency limit tied to the real bottleneck.</li>
+<li><strong>Design cancellation and cleanup:</strong> suspension checks, loop polling, unregister or close, and bounded <code>NonCancellable</code>.</li>
+<li><strong>Verify semantics:</strong> ownership tree, resumption and reentrancy, thread-local assumptions, logs and traces, process death, and business idempotency outside coroutine guarantees.</li>
+</ol>
+
+<h2 id="en-stage7-tradeoffs">Trade-offs and failure modes<a aria-label="Link to section: Trade offs and failure modes" class="heading-anchor" href="#en-stage7-tradeoffs">#</a></h2>
+<ul>
+<li>Extra <code>async</code> and dispatcher hops can increase allocations, queues, and latency; sequential code is often clearer and faster.</li>
+<li><code>IO</code> prevents main-thread blocking, but unbounded requests can still exhaust sockets, database connections, or vendor quotas; limit according to downstream capacity.</li>
+<li><code>Main.immediate</code> removes a hop, but inline reentrancy can violate “callback happens later” assumptions.</li>
+<li><code>limitedParallelism(1)</code> serializes tasks on a dispatcher view but does not provide a durable queue, process safety, thread affinity, or database transaction.</li>
+<li>Broad <code>NonCancellable</code> hides shutdown and hangs teardown; missing callback unregister leaks owners and permits late double resume.</li>
+<li>Coroutines reduce waiting cost, not CPU complexity, memory retention, lock contention, or network latency. Measure traces and queueing before claiming performance.</li>
+</ul>
+
+<h2 id="en-stage7-production-scenario">Production scenario: checkout orchestration<a aria-label="Link to section: Production scenario" class="heading-anchor" href="#en-stage7-production-scenario">#</a></h2>
+<p><strong>Hypothetically:</strong> <code>CheckoutViewModel</code> owns a <code>viewModelScope.launch</code>. Repository APIs are main-safe: remote suspending calls remain sequential until genuine parallelism is required; legacy receipt parsing uses an injected <code>Default.limitedParallelism(2)</code>, and a blocking SDK call is isolated with injected IO capacity. Two independent quotes use sibling <code>async</code> values inside <code>coroutineScope</code> and both are awaited.</p>
+<p>The UI collects state with <code>viewLifecycleOwner.lifecycleScope</code> and <code>repeatOnLifecycle</code>. A payment SDK callback is wrapped with <code>suspendCancellableCoroutine</code>, one atomic terminal decision, unregister-on-cancel, and late-token disposal. Cancellation stops UI ownership but does not claim that a remote charge was rolled back: payment uses an idempotency key, durable operation record, server status query, and reconciliation. That transaction protocol is outside structured-concurrency guarantees.</p>
+
+<h2 id="en-stage7-review-trap">Code-review/debugging trap<a aria-label="Link to section: Code review debugging trap" class="heading-anchor" href="#en-stage7-review-trap">#</a></h2>
+<pre><code class="language-kotlin">fun refresh() {
+    CoroutineScope(Dispatchers.IO).launch { // hidden owner; never cancelled
+        val dto = api.load()                // suspend does not prove blocking safety
+        withContext(Dispatchers.Main.immediate) { render(dto) }
+    }
+}
+
+suspend fun awaitSdk() = suspendCancellableCoroutine&lt;Result&gt; { c -&gt;
+    sdk.start { c.resume(it) }              // no unregister; callback may fire twice
+}</code></pre>
+<p>Review questions: who owns the Job and where is shutdown; is <code>api.load</code> actually main-safe; why manually hop to Main instead of updating owned state; can inline <code>Main.immediate</code> cause reentrancy; what does cancellation do; does the callback have a single terminal protocol? Debug with <code>CoroutineName</code>, the IDE Coroutines view, <code>-Dkotlinx.coroutines.debug</code> in a non-production diagnostic run, job-tree or log correlation, and traces around the blocking call. Debug probes can expose suspended stacks, but they do not prove business ownership or exactly-once behavior.</p>
+
+<h2 id="en-stage7-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice Q and A" class="heading-anchor" href="#en-stage7-likely-qa">#</a></h2>
+<p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
+<ol>
+<li><strong>Is a coroutine a lightweight thread?</strong> No. It is a computation with a continuation, context, and Job that executes on threads according to dispatcher policy; many coroutines can share threads.</li>
+<li><strong>What does <code>suspend</code> actually mean?</strong> The function may suspend and later resume its continuation; the modifier does not guarantee a background thread, non-blocking implementation, or thread switch.</li>
+<li><strong>How should you picture compiler transformation?</strong> As a continuation-passing state machine with a label and live locals near suspension points, without promising exact generated classes or allocations.</li>
+<li><strong>How is CoroutineContext composed?</strong> It contains keyed elements; <code>left + right</code> replaces an element with the same key. Job defines lifetime and a dispatcher defines execution policy.</li>
+<li><strong><code>launch</code> or <code>async</code>?</strong> Use <code>launch</code> for owned no-result work and <code>async</code> when a concurrently produced value is awaited. Immediate await usually means sequential suspension was better.</li>
+<li><strong><code>coroutineScope</code> or <code>supervisorScope</code>?</strong> Both bound children and await completion; the supervisor boundary changes sibling failure ownership. Detailed propagation belongs to Stage 8.</li>
+<li><strong>Default, IO, or Main?</strong> Main for short UI access, Default for CPU work, and IO for unavoidable blocking I/O; inject them and limit according to downstream capacity.</li>
+<li><strong>How does cancellation work?</strong> Cooperatively: cancellable suspension observes it; CPU loops call <code>ensureActive</code> or <code>yield</code> deliberately; cleanup uses finally and narrowly bounded NonCancellable when it must suspend.</li>
+<li><strong>How do you bridge a callback?</strong> Use <code>suspendCancellableCoroutine</code>, an at-most-one terminal resume, unregister on cancellation, safe synchronous registration, and late resource cleanup.</li>
+<li><strong>What does structured concurrency not guarantee?</strong> It bounds lifetime and joins children, but does not provide transaction atomicity, durability, remote rollback, or exactly-once effects.</li>
+</ol>
+
+<h2 id="en-stage7-followups">4 senior follow-ups with answers<a aria-label="Link to section: 4 senior follow ups" class="heading-anchor" href="#en-stage7-followups">#</a></h2>
+<ol>
+<li><strong><code>withContext(IO)</code> is called from IO.</strong> Do not promise a switch: the implementation may continue without a meaningful hop. Correctness comes from execution policy, not a thread-name assertion.</li>
+<li><strong>A mutable engine needs single-threaded access.</strong> <code>limitedParallelism(1)</code> gives sequential execution but not one stable thread. If the library requires thread identity, use and document an appropriate owned dispatcher or executor and close it.</li>
+<li><strong>A callback returns a resource concurrently with cancellation.</strong> Design an atomic terminal hand-off and cancellation disposer; an <code>isActive</code> check alone races.</li>
+<li><strong>The user leaves during payment.</strong> Cancel UI ownership, but reconcile remote status using a durable operation ID and idempotency key; coroutine cancellation is not payment rollback.</li>
+</ol>
+
+<h2 id="en-stage7-self-check">5 self-check questions without answers<a aria-label="Link to section: 5 self check questions without answers" class="heading-anchor" href="#en-stage7-self-check">#</a></h2>
+<ol>
+<li>Draw the Job tree for one screen flow: who owns it, and where does every child end?</li>
+<li>Which suspend APIs in your codebase may still block main?</li>
+<li>Where could <code>Main.immediate</code> or a synchronous callback cause reentrancy?</li>
+<li>How does your callback bridge prove at-most-once resume and cleanup after cancellation?</li>
+<li>Which business effect needs idempotency or a transaction beyond structured concurrency?</li>
+</ol>
+
+<h2 id="en-stage7-english-skeletons">Interview-ready English answer skeletons<a aria-label="Link to section: Interview ready English answer skeletons" class="heading-anchor" href="#en-stage7-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do Kotlin coroutines work, and how do you choose their ownership and execution context?</em></p>
+<h3 id="en-stage7-answer-30">~30-second answer<a aria-label="Link to section: 30 second answer" class="heading-anchor" href="#en-stage7-answer-30">#</a></h3>
+<blockquote><p>A coroutine is not a thread. It is an owned computation represented through continuations and a context containing elements such as a Job and dispatcher. Suspension releases control but does not automatically move work off main; resumption may be inline or dispatched. I choose the owner first, keep APIs main-safe, use Main for UI, Default for CPU work and IO for unavoidable blocking calls, and make cancellation and callback cleanup cooperative. Structured concurrency bounds child lifetimes, but it does not make business effects atomic or exactly once.</p></blockquote>
+<h3 id="en-stage7-answer-2min">~2-minute answer<a aria-label="Link to section: 2 minute answer" class="heading-anchor" href="#en-stage7-answer-2min">#</a></h3>
+<blockquote><p>My mental model starts with the compiler converting a suspend function into continuation-passing code, typically a state machine around suspension points. That is a useful model, not a bytecode-shape guarantee. A coroutine runs on a thread only while executing; suspension is different from blocking, and suspend does not imply an IO dispatcher or any thread switch.</p><p>I choose ownership before concurrency. A scope carries a context, its Job forms a parent-child tree, and a structured boundary waits for owned children. I use launch for no-result owned work and async only when I need a concurrently produced value. CoroutineScope and supervisorScope both define boundaries; detailed failure propagation is a separate policy discussion.</p><p>Dispatchers are execution policies: Main for short UI work, Default for CPU work, IO for unavoidable blocking I/O. Main.immediate may run inline and limitedParallelism is a view limiting concurrency, not a dedicated thread or durable queue. withContext merges context and returns a result; it does not universally guarantee a switch.</p><p>Cancellation is cooperative, so CPU loops check ensureActive and callback adapters unregister on cancellation with a single terminal resume protocol. Android work is owned by viewModelScope or the appropriate Lifecycle, and repeatOnLifecycle restarts collection with visibility. I avoid GlobalScope and ad-hoc scopes. Finally, I separate coroutine guarantees from business guarantees: remote writes still need idempotency, persistence, and reconciliation, and I use coroutine names, IDE tooling, and traces to debug ownership and blocking.</p></blockquote>
+
+<h2 id="en-stage7-sources">Official sources<a aria-label="Link to section: Official sources" class="heading-anchor" href="#en-stage7-sources">#</a></h2>
+<ul>
+<li><a href="https://kotlinlang.org/docs/coroutines-basics.html">Kotlin coroutines basics</a>, <a href="https://kotlinlang.org/docs/coroutine-context-and-dispatchers.html">Coroutine context and dispatchers</a>, and <a href="https://kotlinlang.org/docs/cancellation-and-timeouts.html">Cancellation and timeouts</a></li>
+<li><a href="https://kotlinlang.org/spec/asynchronous-programming-with-coroutines.html">Kotlin specification: asynchronous programming with coroutines</a> and <a href="https://kotlinlang.org/api/core/kotlin-stdlib/kotlin.coroutines/-continuation/">Continuation API</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-coroutine-scope/">CoroutineScope</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-job/">Job</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/coroutine-scope.html">coroutineScope</a>, and <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/supervisor-scope.html">supervisorScope</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-main-coroutine-dispatcher/immediate.html">Main.immediate</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-coroutine-dispatcher/limited-parallelism.html">limitedParallelism</a>, and <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-context.html">withContext</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/suspend-cancellable-coroutine.html">suspendCancellableCoroutine</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/run-blocking.html">runBlocking</a>, and <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/as-context-element.html">ThreadLocal.asContextElement</a></li>
+<li><a href="https://developer.android.com/kotlin/coroutines/coroutines-best-practices">Android coroutine best practices</a> and <a href="https://developer.android.com/topic/libraries/architecture/coroutines">Lifecycle-aware coroutines</a></li>
+<li><a href="https://kotlinlang.org/docs/coroutines-debugging.html">Debug coroutines</a> and <a href="https://kotlinlang.org/docs/debug-coroutines-with-idea.html">Debug coroutines with IntelliJ IDEA</a></li>
 </ul>
 </div></details>
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="en-kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
