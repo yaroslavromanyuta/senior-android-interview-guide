@@ -516,6 +516,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="dependency-injection-android" href="#dependency-injection-android">Dependency injection на Android</a>
 </li>
 <li class="toc-major">
+<a data-target="android-networking-fundamentals" href="#android-networking-fundamentals">Android networking fundamentals</a>
+</li>
+<li class="toc-major">
 <a data-target="kotlin-for-android" href="#kotlin-for-android">Kotlin for Android</a>
 <ol class="toc-children">
 <li><a data-target="val-vs-var-immutability" href="#val-vs-var-immutability">val vs var, immutability</a></li>
@@ -843,6 +846,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </li>
 <li class="toc-major">
 <a data-target="en-dependency-injection-android" href="#en-dependency-injection-android">Dependency injection on Android</a>
+</li>
+<li class="toc-major">
+<a data-target="en-android-networking-fundamentals" href="#en-android-networking-fundamentals">Android networking fundamentals</a>
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-for-android" href="#en-kotlin-for-android">Kotlin for Android</a>
@@ -4901,6 +4907,226 @@ class PaymentManager @Inject constructor(
 <li><a href="https://dagger.dev/dev-guide/">Dagger developer guide</a>, <a href="https://dagger.dev/dev-guide/subcomponents.html">Subcomponents</a>, <a href="https://dagger.dev/dev-guide/multibindings.html">Multibindings</a>, <a href="https://dagger.dev/dev-guide/assisted-injection.html">Assisted injection</a></li>
 <li><a href="https://developer.android.com/build/migrate-to-ksp">Migrate from kapt to KSP</a>, <a href="https://kotlinlang.org/docs/ksp-overview.html">Kotlin Symbol Processing overview</a>, <a href="https://kotlinlang.org/docs/kapt.html">kapt compiler plugin</a></li>
 <li><a href="https://docs.gradle.org/current/userguide/performance.html">Improving Gradle build performance</a> та <a href="https://docs.gradle.org/current/userguide/build_scans.html">Gradle Build Scans</a></li>
+</ul>
+</div></details>
+
+<details class="major-section" data-key="android-networking-fundamentals" data-title="Android networking fundamentals" id="android-networking-fundamentals" open=""><summary class="major-summary"><span class="major-title">Android networking fundamentals</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<h2 id="stage18-uk-objective">Learning objective<a aria-label="Посилання на розділ: Learning objective" class="heading-anchor" href="#stage18-uk-objective">#</a></h2>
+<p>Після етапу ви маєте простежити request від Retrofit declaration до bytes у socket і назад; розділити transport, HTTP, parsing та domain failures; правильно розмістити interceptors, cache, timeouts, retry, cancellation і observability; спроєктувати evolvable serialization та pagination contracts; і перевірити все через MockWebServer, fakes та contract tests. Token refresh, certificate pinning і secrets належать Stage 19; durable offline-first source of truth — Stage 21.</p>
+
+<h2 id="stage18-uk-mental-model">Senior mental model<a aria-label="Посилання на розділ: Senior mental model" class="heading-anchor" href="#stage18-uk-mental-model">#</a></h2>
+<blockquote><p><strong>Networking — це ланцюг незалежних контрактів, а не один “API call”.</strong> Retrofit описує та адаптує endpoint; OkHttp виконує HTTP exchange; DNS/TCP/TLS переносять bytes; converter перетворює representation; data layer інтерпретує application contract. Кожна межа має власні failure, lifetime, cancellation і observability semantics.</p></blockquote>
+<ul>
+<li>HTTP success, parse success і domain success — різні осі. <strong>2xx може містити domain failure</strong> у валідному envelope.</li>
+<li>Availability сигналу мережі, DNS resolution, socket connection і reachability конкретного backend — не те саме.</li>
+<li>Retry — нова спроба з невизначеним попереднім outcome; він не гарантує ні success, ні exactly-once.</li>
+<li>Cache, repository persistence і durable domain source of truth мають різні policies та owners.</li>
+</ul>
+
+<h2 id="stage18-uk-topology">Internals: topology request/response<a aria-label="Посилання на розділ: Networking topology" class="heading-anchor" href="#stage18-uk-topology">#</a></h2>
+<pre><code class="language-text">Retrofit interface + annotations
+  → ServiceMethod parses metadata
+  → request Converter (model → RequestBody)
+  → CallAdapter (Call / suspend / custom return type)
+  → OkHttpClient.newCall(Request) → RealCall
+  → execute() caller thread OR enqueue()/suspend async path
+  → Dispatcher admission (async global/per-host limits)
+  → application interceptors (once per logical call)
+  → retry/follow-up + bridge + HTTP cache + connect internals
+  → DNS → candidate routes/proxy → connection pool or new socket
+  → TCP socket → TLS handshake/hostname verification for HTTPS
+  → network interceptors (per network exchange)
+  → HTTP codec writes request / reads status, headers, body
+  → response Converter (ResponseBody → DTO)
+  → CallAdapter/coroutine resumes → repository maps DTO/domain result</code></pre>
+<p><code>RealCall</code> represents one prepared OkHttp call and can execute once. Connection reuse comes from the pool when address/route/protocol constraints permit; otherwise route selection tries viable proxy/address paths and opens a socket. HTTP/2 may multiplex exchanges. Internal class names/order are implementation details: explain responsibilities and verify against the pinned OkHttp source/version rather than coding against internals.</p>
+<p>Retrofit resolves annotations, parameter handlers, converter and call adapter for a service method. Converter order matters because the first capable factory wins. The call adapter shapes execution/return semantics; it does not redefine HTTP success. <strong>Retrofit does not move every adapter or arbitrary custom code off the main thread by magic.</strong> A synchronous <code>Call.execute()</code> runs on its caller thread; custom adapters/converters can also do work where invoked.</p>
+<pre><code class="language-kotlin">interface CatalogApi {
+    @GET("v1/items")
+    suspend fun page(
+        @Query("cursor") cursor: String?,
+        @Header("If-None-Match") etag: String? = null,
+    ): Response&lt;ItemPageDto&gt;
+}
+
+val client = OkHttpClient.Builder()
+    .callTimeout(20, TimeUnit.SECONDS)
+    .connectTimeout(5, TimeUnit.SECONDS)
+    .readTimeout(10, TimeUnit.SECONDS)
+    .writeTimeout(10, TimeUnit.SECONDS)
+    .addInterceptor(CorrelationIdInterceptor()) // application
+    .eventListenerFactory(TimingEventListener.factory())
+    .cache(Cache(cacheDir.resolve("http"), 20L * 1024 * 1024))
+    .build()</code></pre>
+
+<h2 id="stage18-uk-interceptors">Application vs network interceptors<a aria-label="Посилання на розділ: Interceptors" class="heading-anchor" href="#stage18-uk-interceptors">#</a></h2>
+<table><thead><tr><th>Тип</th><th>Що бачить</th><th>Коректні responsibilities</th></tr></thead><tbody>
+<tr><td>Application interceptor</td><td>Один logical call; може отримати cached response; не бачить кожен redirect/retry exchange.</td><td>Stable request headers, correlation ID, coarse logging/metrics, application-wide request policy. Викликати <code>proceed()</code> рівно за свідомим contract.</td></tr>
+<tr><td>Network interceptor</td><td>Кожен реальний network exchange; доступ до connection; не викликається для response, повністю задоволеного cache.</td><td>Wire-level headers/metrics та діагностика конкретного exchange; рідше потрібен application code.</td></tr>
+</tbody></table>
+<p><strong>Ordering matters:</strong> interceptor бачить request у напрямку registration order і response у зворотному. Не парсьте business envelope, не керуйте repository persistence і не запускайте довільний retry loop у interceptor. <code>Authenticator</code> — спеціальний механізм follow-up після authentication challenge; тут лише порівняння, а token refresh, concurrency та loop prevention розглядаються у Stage 19.</p>
+
+<h2 id="stage18-uk-execution">Synchronous, suspend, cancellation та Dispatcher<a aria-label="Посилання на розділ: Execution and cancellation" class="heading-anchor" href="#stage18-uk-execution">#</a></h2>
+<ul>
+<li><code>execute()</code> блокує caller thread до response/failure; response body треба закрити. <code>enqueue()</code> виконує asynchronous call через Dispatcher і повертає callback.</li>
+<li>Retrofit <code>suspend</code> integration асинхронно очікує OkHttp call і при cancellation coroutine скасовує underlying <code>Call</code>. Cancellation cooperative і може завершити socket/read, але <strong>не може відкрутити request, який server уже обробив</strong>.</li>
+<li>OkHttp Dispatcher контролює admission/running async calls, включно з global та per-host limits. Точні defaults, host accounting, WebSocket treatment, executor і API змінюються між версіями; синхронні calls мають іншу scheduling model. Не запам’ятовуйте число як architecture guarantee — перевірте pinned version.</li>
+<li>Черга захищає client resources, але не є product priority queue чи server rate limiter. Надмірні limits збільшують contention; занадто малі створюють head-of-line delay.</li>
+</ul>
+
+<h2 id="stage18-uk-http-semantics">HTTP semantics: methods, status, headers<a aria-label="Посилання на розділ: HTTP semantics" class="heading-anchor" href="#stage18-uk-http-semantics">#</a></h2>
+<ul>
+<li><strong>Safe</strong> method має read-only intended semantics; <strong>idempotent</strong> означає той самий intended effect після одного чи кількох однакових requests. GET/HEAD/OPTIONS/TRACE safe; safe methods idempotent; PUT і DELETE idempotent, але не safe; POST/PATCH не idempotent за загальним contract. <strong>GET safety/idempotency — protocol semantics, не доказ, що backend реалізований правильно.</strong></li>
+<li>2xx — HTTP-level success, 3xx — redirect/selection, 4xx — client-side contract/request outcome, 5xx — server-side failure class. Обробляйте конкретний API contract: наприклад, 404 може бути expected absence, 409 conflict, 429 rate limit. Не зводьте всі non-2xx до “no internet”.</li>
+<li>Application envelope на кшталт <code>{"ok":false,"error":...}</code> може прийти з 200. Repository має валідовувати status + media type + schema + domain invariants; Retrofit <code>Response.isSuccessful</code> перевіряє лише 2xx.</li>
+<li><code>Accept</code> описує бажані response representations; <code>Content-Type</code> — media type фактичного request/response body. Charset, encoding, locale, API version, authorization та correlation headers мають explicit ownership. Не логувати sensitive headers/body.</li>
+</ul>
+
+<h2 id="stage18-uk-cache">HTTP caching and validation<a aria-label="Посилання на розділ: HTTP caching" class="heading-anchor" href="#stage18-uk-cache">#</a></h2>
+<p>OkHttp Cache застосовує HTTP cache rules, а не “зберігає останній JSON”. Freshness визначають response directives/metadata: <code>Cache-Control: max-age</code>, <code>s-maxage</code> для shared caches, <code>Expires</code> і heuristic rules. <code>no-cache</code> означає revalidate before reuse, а не “не зберігати”; <code>no-store</code> забороняє storage. Request directives можуть вимагати validation або обмежити stale reuse.</p>
+<ul>
+<li>Після staleness cache може зробити conditional request: <code>If-None-Match</code> з <code>ETag</code> або <code>If-Modified-Since</code> з <code>Last-Modified</code>. <code>304 Not Modified</code> не несе нового representation body: cache комбінує metadata з stored response.</li>
+<li><code>Vary</code> додає named request headers до cache key matching. <code>Vary: *</code> не reusable. Неправильний <code>Vary</code> може змішати locale/encoding/tenant representations.</li>
+<li>Cacheability залежить від method, status і directives; authenticated responses мають додаткові правила. Перевіряйте <code>networkResponse</code>/<code>cacheResponse</code> у тестах замість припущень.</li>
+<li><strong>OkHttp cache obeys HTTP rules and is not repository persistence:</strong> entries можуть evict, key — URL+Vary, немає domain queries/transactions/migrations, freshness контролює origin. Це не durable domain SSOT і не Stage 21 offline-first design.</li>
+</ul>
+
+<h2 id="stage18-uk-timeouts-retries">Timeouts, deadlines і retry boundaries<a aria-label="Посилання на розділ: Timeouts and retries" class="heading-anchor" href="#stage18-uk-timeouts-retries">#</a></h2>
+<table><thead><tr><th>Control</th><th>Boundary</th></tr></thead><tbody>
+<tr><td>connect timeout</td><td>Встановлення окремого socket connection; DNS/TLS/fallback details залежать від implementation.</td></tr>
+<tr><td>read timeout</td><td>Відсутність progress під час socket read, не максимальна тривалість всього download.</td></tr>
+<tr><td>write timeout</td><td>Відсутність progress під час socket write.</td></tr>
+<tr><td>call timeout</td><td>Приблизна межа повного OkHttp call: queue, connect, write, server processing, read і follow-ups.</td></tr>
+<tr><td>coroutine timeout/deadline</td><td>Caller budget; має cancel child call, але не є distributed business deadline без propagation до всіх hops.</td></tr>
+</tbody></table>
+<p><strong>Timeouts are not end-to-end business deadlines automatically.</strong> Budget має врахувати UI/workflow SLA, queueing, retries і server deadline propagation. Значення “0 = infinite” та per-call overrides version/API-sensitive — перевіряйте документацію pinned client.</p>
+<p>Retry робіть лише для вибраних transient failures і idempotent операцій або non-idempotent operation з explicit idempotency key/dedup contract. Враховуйте request body replayability, чи були bytes передані, status contract (часто 408/429/selected 5xx), <code>Retry-After</code>, exponential backoff, jitter, max attempts, total time budget і cancellation. Не retry parsing/domain/TLS trust failures. Backoff не повинен переживати caller scope. <strong>Retry не гарантує success або exactly-once.</strong></p>
+
+<h2 id="stage18-uk-bodies-serialization">Bodies, streaming і schema evolution<a aria-label="Посилання на розділ: Bodies and serialization" class="heading-anchor" href="#stage18-uk-bodies-serialization">#</a></h2>
+<ul>
+<li>Request/response body — byte stream з media type і lifetime. Buffering всього payload простіше, але ризикує memory spikes; streaming дає backpressure-like incremental work, але утримує connection і потребує explicit ownership.</li>
+<li><code>ResponseBody</code> one-shot: прочитайте один раз і закрийте через <code>use</code>/<code>close</code>; інакше leak виснажує pool/sockets. Streaming response не передавайте крізь layers без owner, який гарантовано закриє resource.</li>
+<li>Streaming upload може бути one-shot/non-replayable. Retry/redirect/auth follow-up може бути неможливим після часткового write; позначайте/моделюйте replayability, не припускайте її.</li>
+<li>Unknown JSON fields зазвичай варто ігнорувати для additive evolution; missing field, explicit <code>null</code> і default value — три різні стани. Nullable Kotlin type не визначає wire contract сам. Required fields та invariants валідовувати на DTO→domain boundary.</li>
+<li>Schema evolution: additive optional fields безпечніші; enum unknown value потребує fallback/explicit failure; зміна type/meaning або requiredness breaking. Contract tests мають fixtures старої/нової schema, malformed JSON і unexpected media type.</li>
+</ul>
+
+<h2 id="stage18-uk-pagination-connectivity-security">Pagination, connectivity і TLS basics<a aria-label="Посилання на розділ: Pagination connectivity and TLS" class="heading-anchor" href="#stage18-uk-pagination-connectivity-security">#</a></h2>
+<ul>
+<li>Offset pagination проста, але concurrent inserts/deletes дають duplicates або missing items. Cursor/keyset contract краще фіксує position, але cursor opaque, може expire і залежить від stable ordering.</li>
+<li>Визначте deterministic sort + tie-breaker, page boundary, end signal, duplicate identity policy, refresh anchor, filter/version binding і поведінку при mutation. Client dedupe приховує duplicate rendering, але не відновлює пропущені items і не доводить snapshot consistency.</li>
+<li><code>ConnectivityManager.NetworkCallback</code>, capabilities та validated network корисні для UX/scheduling hints. <strong>DNS result або connectivity callback не гарантує internet чи backend reachability</strong>: captive portal, split DNS, firewall, stale validation або backend outage залишаються. Truth — outcome конкретного request; не блокуйте request лише через stale “offline” boolean.</li>
+<li>HTTPS: DNS знаходить address; TCP встановлює transport; TLS перевіряє certificate chain/hostname і домовляється про crypto/protocol before HTTP. Network Security Config декларативно керує trust anchors, cleartext policy та debug overrides. Cleartext вимикайте для production domains.</li>
+<li>TLS failure — не generic offline і зазвичай не retry-loop target. Certificate pinning, token lifecycle та secret storage свідомо зарезервовані для Stage 19.</li>
+</ul>
+
+<h2 id="stage18-uk-errors-observability">Error taxonomy and observability<a aria-label="Посилання на розділ: Errors and observability" class="heading-anchor" href="#stage18-uk-errors-observability">#</a></h2>
+<table><thead><tr><th>Категорія</th><th>Приклад / policy</th></tr></thead><tbody>
+<tr><td>Transport</td><td>DNS, refused/reset socket, unreachable route; може бути transient, але outcome write інколи unknown.</td></tr>
+<tr><td>TLS</td><td>Handshake, trust, hostname; окрема security/config category.</td></tr>
+<tr><td>Timeout</td><td>Call/connect/read/write/caller deadline; зберігайте boundary у telemetry.</td></tr>
+<tr><td>Protocol</td><td>Malformed HTTP, unexpected redirect, HTTP/2 stream/protocol issue.</td></tr>
+<tr><td>HTTP</td><td>Non-2xx status + bounded/redacted error body, headers і request ID.</td></tr>
+<tr><td>Parsing</td><td>Wrong media type, malformed/incompatible schema.</td></tr>
+<tr><td>Domain</td><td>2xx envelope failure або violated invariant.</td></tr>
+<tr><td>Cancellation</td><td>Expected control flow; не показувати як network error і не retry.</td></tr>
+</tbody></table>
+<p>Збирайте redacted method, route template (не raw PII URL), outcome taxonomy, status, byte counts, cache/network source, attempt, timings і correlation/request ID. <code>EventListener</code> дає awareness про DNS, connect, TLS, connection acquisition та call phases; він спостерігає, не визначає business success. Не логувати Authorization, Cookie, tokens, secrets або необмежені bodies. Correlation ID допомагає зв’язати client/server traces, але не є idempotency key.</p>
+
+<h2 id="stage18-uk-guarantees">Guarantees vs non-guarantees<a aria-label="Посилання на розділ: Guarantees versus non-guarantees" class="heading-anchor" href="#stage18-uk-guarantees">#</a></h2>
+<ul>
+<li><strong>Guarantee:</strong> закритий response body повертає resource client; <strong>не гарантія:</strong> cancellation повертає server state назад.</li>
+<li><strong>Guarantee:</strong> HTTP визначає safe/idempotent semantics; <strong>не гарантія:</strong> конкретний GET backend не мутує state.</li>
+<li><strong>Guarantee:</strong> 2xx позначає successful HTTP semantics; <strong>не гарантія:</strong> payload пройшов domain rules.</li>
+<li><strong>Guarantee:</strong> interceptor chain має визначений order; <strong>не гарантія:</strong> довільне переставлення logging/cache/header/retry behavior еквівалентне.</li>
+<li><strong>Guarantee:</strong> OkHttp cache дотримується HTTP cache contract; <strong>не гарантія:</strong> durable, queryable domain SSOT.</li>
+<li><strong>Не гарантії:</strong> retry success/exactly-once; connectivity/DNS — backend reachability; Retrofit — автоматичний off-main для кожного adapter/custom code; transport timeout — end-to-end business deadline.</li>
+</ul>
+
+<h2 id="stage18-uk-version-sensitive">Version-sensitive behavior<a aria-label="Посилання на розділ: Version-sensitive behavior" class="heading-anchor" href="#stage18-uk-version-sensitive">#</a></h2>
+<p>Pin Retrofit, OkHttp, converter і serialization versions. Перед рішенням перевірте release docs/source для: Dispatcher defaults і per-host accounting; built-in retry/follow-up policy; route/DNS/TLS/platform behavior; HTTP/2/HTTP/3 support; one-shot/duplex body APIs; timeout defaults/overrides; suspend and nullable-body behavior; MockWebServer package/API. Android API level, security provider, Network Security Config і manifest cleartext defaults теж впливають. Документуйте measured behavior, а не переносіть числа з іншої major version.</p>
+
+<h2 id="stage18-uk-decision-framework">Decision framework<a aria-label="Посилання на розділ: Decision framework" class="heading-anchor" href="#stage18-uk-decision-framework">#</a></h2>
+<ol>
+<li>Зафіксувати endpoint contract: method semantics, media types, statuses/envelope, pagination, cache validators, idempotency і schema compatibility.</li>
+<li>Розкласти budgets: payload/memory, concurrency, call latency, business deadline, retry attempts і server rate limits.</li>
+<li>Призначити owner: Retrofit declaration/converter, application/network interceptor, repository mapper, HTTP cache або durable storage — без дублювання policy.</li>
+<li>Побудувати typed error taxonomy і cancellation path до underlying call; вирішити, що user-facing, retryable та observable.</li>
+<li>Перевірити success і deterministic failures на pinned versions, включно з leak/cancellation/cache/concurrency behavior; додати redacted production signals.</li>
+</ol>
+
+<h2 id="stage18-uk-tradeoffs">Trade-offs and failure modes<a aria-label="Посилання на розділ: Trade-offs and failure modes" class="heading-anchor" href="#stage18-uk-tradeoffs">#</a></h2>
+<ul>
+<li>Агресивна concurrency знижує queue time для одного workload, але підсилює contention, radio/server load та 429; conservative limits можуть затримати unrelated calls одного host.</li>
+<li>Довший timeout витримує slow network, але тримає resources і stale UI; короткий створює false failures. Один global timeout ігнорує endpoint/payload SLA.</li>
+<li>Автоматичний retry покращує transient availability, але множить load і side effects; без jitter виникає retry storm, без total budget — прихована latency.</li>
+<li>Lenient parser переживає additive fields, але defaults можуть приховати contract break; strict parser знаходить drift раніше, але ламає forward compatibility.</li>
+<li>HTTP cache економить latency/bandwidth, але freshness не дорівнює domain consistency; ручне переписування headers може порушити server contract.</li>
+</ul>
+
+<h2 id="stage18-uk-production-scenario">Production scenario<a aria-label="Посилання на розділ: Production scenario" class="heading-anchor" href="#stage18-uk-production-scenario">#</a></h2>
+<p>Catalog screen використовує cursor endpoint з stable <code>(updatedAt,id)</code> ordering. Retrofit suspend method повертає DTO envelope; converter tolerates unknown fields, а mapper вимагає id/name і відрізняє missing від null. Application interceptor додає correlation ID; EventListener міряє DNS/connect/TLS/TTFB; network interceptor лише додає wire diagnostics у debug build. Server повертає <code>Cache-Control</code>, <code>ETag</code> і коректний <code>Vary: Accept-Language</code>; OkHttp revalidate через <code>If-None-Match</code>/304, але Room залишається окремим durable SSOT лише в Stage 21 design.</p>
+<p>Retry policy дозволяє максимум дві спроби GET для selected connection reset/503/429, поважає <code>Retry-After</code>, exponential backoff+jitter і спільний call budget; parsing, TLS і cancellation не retry. Dedupe за item id захищає UI від overlap, telemetry окремо рахує duplicates, cursor expiry та gaps. Network callback лише змінює UX hint. MockWebServer відтворює 304, delayed headers/body, disconnect during body, malformed JSON, 429, duplicate pages і cancellation.</p>
+
+<h2 id="stage18-uk-review-trap">Code-review / debug trap<a aria-label="Посилання на розділ: Code review and debug trap" class="heading-anchor" href="#stage18-uk-review-trap">#</a></h2>
+<pre><code class="language-kotlin">suspend fun load(): Result&lt;Payload&gt; = runCatching {
+    if (!connectivity.isOnline) error("offline")
+    retry(3) { api.getPayload().body()!! }
+}</code></pre>
+<p>Trap: stale connectivity gate відкидає workable network; blanket retry не перевіряє method/outcome/Retry-After/body replayability; <code>body()!!</code> змішує empty, parse, HTTP і domain failures; <code>runCatching</code> може перетворити <code>CancellationException</code> на failure; response/error body ownership невидимий; немає deadline, redaction чи correlation. Debug відтворення має починатися з request ID + phase timings + deterministic MockWebServer case, а не з “збільшимо timeout/retries”.</p>
+
+<h2 id="stage18-uk-testing">Testing strategy<a aria-label="Посилання на розділ: Testing strategy" class="heading-anchor" href="#stage18-uk-testing">#</a></h2>
+<ul>
+<li><strong>Pure fakes:</strong> repository/use-case tests для domain mapping, pagination merge/dedupe/order, retry decision та cancellation без HTTP imitation.</li>
+<li><strong>MockWebServer:</strong> перевірити method/path/query/headers/body і scripted responses: 2xx domain error, 304 validation, redirect, 404/409/429/503, malformed JSON, wrong content type, disconnect, throttled body, no response, large/streaming body. Assert body closure/connection reuse where observable.</li>
+<li><strong>Contract tests:</strong> consumer fixtures/schema проти provider contract; unknown/missing/null fields, enum evolution, error envelopes, cursor expiry та ordering. Не замінювати ними integration/E2E.</li>
+<li><strong>Determinism:</strong> injected clock, seeded jitter/random, fake sleeper, bounded virtual time, fixed dispatcher/limits where supported; assert attempts and total budget, не wall-clock luck.</li>
+</ul>
+
+<h2 id="stage18-uk-likely-qa">Likely practice questions and answers<a aria-label="Посилання на розділ: Likely practice questions" class="heading-anchor" href="#stage18-uk-likely-qa">#</a></h2>
+<p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
+<ol>
+<li><strong>1. Як request проходить через Retrofit і OkHttp?</strong> Retrofit парсить declaration, parameter handlers, converter та call adapter; OkHttp RealCall проходить Dispatcher, ordered application/internal/network interceptor chain, cache, route/DNS/pool/socket/TLS, codec; response body converter створює DTO, а repository — domain result.</li>
+<li><strong>2. Application vs network interceptor?</strong> Application бачить logical call один раз і cached responses; network — кожен wire exchange та connection. Headers/correlation/coarse policy зазвичай application; exchange diagnostics — network. Ordering змінює поведінку.</li>
+<li><strong>3. Що гарантує suspend cancellation?</strong> Retrofit скасує underlying OkHttp Call і не resume cancelled continuation як success; це звільняє client work, але не скасовує side effect уже обробленого server.</li>
+<li><strong>4. Safe та idempotent — одне?</strong> Ні. Safe не має intended mutation; idempotent має однаковий intended effect при повторі. PUT/DELETE idempotent, але не safe. Це protocol contract, не доказ backend implementation.</li>
+<li><strong>5. Чому 200 не завжди success?</strong> Це HTTP-level success; payload може мати application error envelope, incompatible schema або порушити domain invariant.</li>
+<li><strong>6. Як працює ETag revalidation?</strong> Stale cached response з ETag веде до <code>If-None-Match</code>; 304 дозволяє reuse stored body з updated metadata. <code>Vary</code> визначає, які request headers мають збігатися.</li>
+<li><strong>7. Які timeout boundaries?</strong> Connect/read/write контролюють різні I/O phases; call охоплює майже весь OkHttp call. Жоден автоматично не є distributed business deadline; caller budget і propagation проектують окремо.</li>
+<li><strong>8. Коли retry припустимий?</strong> Для selected transient failure, replayable body і idempotent operation або explicit idempotency-key contract, з Retry-After/backoff/jitter/max attempts/total budget та cancellation. Не гарантує success/exactly-once.</li>
+<li><strong>9. Чому connectivity callback не gate?</strong> Він описує network/capabilities у момент спостереження, не DNS/TLS/backend outcome. Реальний request може succeed або fail всупереч stale flag.</li>
+<li><strong>10. Як тестувати network layer?</strong> Fakes для policy/domain, MockWebServer для HTTP bytes/timing/failures, contract tests для schema/provider assumptions; deterministic clock/jitter і explicit cancellation/resource assertions.</li>
+</ol>
+
+<h2 id="stage18-uk-followups">Follow-up questions<a aria-label="Посилання на розділ: Follow-up questions" class="heading-anchor" href="#stage18-uk-followups">#</a></h2>
+<ol>
+<li>Як зміниться retry design для POST із server-supported idempotency key?</li>
+<li>Як відрізнити queue delay, DNS, connect, TLS, TTFB і body download у production trace?</li>
+<li>Які cache headers потрібні для localized authenticated catalog response?</li>
+<li>Як cursor pagination поводиться при зміні filters і concurrent updates?</li>
+</ol>
+
+<h2 id="stage18-uk-self-check">Unanswered self-checks<a aria-label="Посилання на розділ: Unanswered self checks" class="heading-anchor" href="#stage18-uk-self-check">#</a></h2>
+<ol>
+<li>Намалюйте точний topology вашого pinned stack і позначте thread/coroutine/resource ownership на кожній межі.</li>
+<li>Класифікуйте десять реальних failures вашого API та визначте retry/user message/telemetry без catch-all “network error”.</li>
+<li>Доведіть тестом, що 304, <code>Vary</code> і stale revalidation працюють, не перетворюючи HTTP cache на SSOT.</li>
+<li>Покажіть, де закриваються one-shot bodies і що відбувається при cancellation після server commit.</li>
+</ol>
+
+<h2 id="stage18-uk-english-skeletons">English answer skeletons<a aria-label="Посилання на розділ: English answer skeletons" class="heading-anchor" href="#stage18-uk-english-skeletons">#</a></h2>
+<h3 id="stage18-uk-answer-30">~30-second answer<a aria-label="Посилання на розділ: 30 second answer" class="heading-anchor" href="#stage18-uk-answer-30">#</a></h3>
+<blockquote><p>I treat networking as layered contracts. Retrofit turns a declaration into a request using converters and a call adapter; OkHttp owns the call, interceptor chain, cache, route, pooled connection, socket and TLS exchange; the repository maps the parsed DTO into a domain result. I separate transport, TLS, timeout, protocol, HTTP, parsing, domain and cancellation failures. Retries are bounded and only for selected transient, idempotent or explicitly deduplicated operations. Cancellation releases client work but cannot undo a server-side commit, and HTTP cache is not a durable domain source of truth.</p></blockquote>
+<h3 id="stage18-uk-answer-2min">~2-minute answer<a aria-label="Посилання на розділ: 2 minute answer" class="heading-anchor" href="#stage18-uk-answer-2min">#</a></h3>
+<blockquote><p>I start with topology. Retrofit parses the annotated service method, chooses parameter and body converters, and applies a call adapter. The resulting OkHttp RealCall is admitted by the asynchronous Dispatcher, traverses application interceptors, internal retry/bridge/cache/connect stages and network interceptors, then uses DNS and route selection to reuse a pooled connection or establish a socket and TLS session. The response status, headers and one-shot body return through the chain, then the converter produces a DTO and the repository validates the application envelope and domain invariants.</p><p>I keep semantics explicit. A 2xx response can still be a domain failure. GET being safe and idempotent is a protocol contract, not proof of a correct backend. Suspend cancellation propagates to the Call, but cannot undo a request already processed. Connect, read, write and call timeouts protect different boundaries and are not automatically an end-to-end business deadline. Retries require a selected transient failure, replayable body, idempotency or an idempotency-key contract, Retry-After handling, exponential backoff with jitter, attempt and total budgets.</p><p>Application interceptors own logical-call concerns such as correlation headers; network interceptors observe each wire exchange, and ordering matters. HTTP caching follows freshness, validators, Vary and 304 rules; it is not repository persistence. I test domain policy with fakes, protocol and deterministic failure cases with MockWebServer, and schema evolution with contract fixtures. In production I redact sensitive data and use correlation IDs plus EventListener phase timings. Authentication refresh, pinning and secrets are a separate security design.</p></blockquote>
+
+<h2 id="stage18-uk-sources">Офіційні джерела<a aria-label="Посилання на розділ: Офіційні джерела" class="heading-anchor" href="#stage18-uk-sources">#</a></h2>
+<ul>
+<li><a href="https://lysine.dev/retrofit/">Retrofit documentation</a> та <a href="https://lysine.dev/retrofit/2.x/retrofit/">Retrofit API</a></li>
+<li><a href="https://lysine.dev/okhttp/features/calls/">OkHttp Calls</a>, <a href="https://lysine.dev/okhttp/features/interceptors/">Interceptors</a>, <a href="https://lysine.dev/okhttp/features/connections/">Connections</a>, <a href="https://lysine.dev/okhttp/features/https/">HTTPS</a> та <a href="https://lysine.dev/okhttp/features/caching/">Caching</a></li>
+<li><a href="https://lysine.dev/okhttp/5.x/okhttp/okhttp3/-dispatcher/">OkHttp Dispatcher API</a>, <a href="https://lysine.dev/okhttp/5.x/okhttp/okhttp3/-event-listener/">EventListener API</a> та <a href="https://lysine.dev/okhttp/5.x/mockwebserver/okhttp3.mockwebserver/-mock-web-server/">MockWebServer API</a></li>
+<li><a href="https://developer.android.com/develop/connectivity/network-ops">Android network operations</a>, <a href="https://developer.android.com/training/monitoring-device-state/connectivity-status-type">Connectivity monitoring</a> та <a href="https://developer.android.com/privacy-and-security/security-config">Network Security Configuration</a></li>
+<li><a href="https://datatracker.ietf.org/doc/html/rfc9110">RFC 9110: HTTP Semantics</a>, <a href="https://datatracker.ietf.org/doc/html/rfc9111">RFC 9111: HTTP Caching</a> та <a href="https://datatracker.ietf.org/doc/html/rfc6585">RFC 6585: Additional HTTP Status Codes</a></li>
 </ul>
 </div></details>
 
@@ -12608,6 +12834,226 @@ class PaymentManager @Inject constructor(
 <li><a href="https://dagger.dev/dev-guide/">Dagger developer guide</a>, <a href="https://dagger.dev/dev-guide/subcomponents.html">Subcomponents</a>, <a href="https://dagger.dev/dev-guide/multibindings.html">Multibindings</a>, <a href="https://dagger.dev/dev-guide/assisted-injection.html">Assisted injection</a></li>
 <li><a href="https://developer.android.com/build/migrate-to-ksp">Migrate from kapt to KSP</a>, <a href="https://kotlinlang.org/docs/ksp-overview.html">Kotlin Symbol Processing overview</a>, <a href="https://kotlinlang.org/docs/kapt.html">kapt compiler plugin</a></li>
 <li><a href="https://docs.gradle.org/current/userguide/performance.html">Improving Gradle build performance</a> and <a href="https://docs.gradle.org/current/userguide/build_scans.html">Gradle Build Scans</a></li>
+</ul>
+</div></details>
+
+<details class="major-section" data-key="android-networking-fundamentals" data-title="Android networking fundamentals" id="en-android-networking-fundamentals" open=""><summary class="major-summary"><span class="major-title">Android networking fundamentals</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<h2 id="en-stage18-objective">Learning objective<a aria-label="Link to section: Learning objective" class="heading-anchor" href="#en-stage18-objective">#</a></h2>
+<p>After this stage, you should be able to trace a request from a Retrofit declaration to bytes on a socket and back; distinguish transport, HTTP, parsing, and domain failures; place interceptors, cache, timeouts, retries, cancellation, and observability at the correct boundaries; design evolvable serialization and pagination contracts; and verify them with MockWebServer, fakes, and contract tests. Token refresh, certificate pinning, and secrets belong to Stage 19; a durable offline-first source of truth belongs to Stage 21.</p>
+
+<h2 id="en-stage18-mental-model">Senior mental model<a aria-label="Link to section: Senior mental model" class="heading-anchor" href="#en-stage18-mental-model">#</a></h2>
+<blockquote><p><strong>Networking is a chain of independent contracts, not one “API call.”</strong> Retrofit describes and adapts an endpoint; OkHttp executes the HTTP exchange; DNS/TCP/TLS transport bytes; a converter transforms a representation; the data layer interprets the application contract. Every boundary has its own failure, lifetime, cancellation, and observability semantics.</p></blockquote>
+<ul>
+<li>HTTP success, parse success, and domain success are separate axes. <strong>A 2xx response may still contain a domain failure</strong> in a valid envelope.</li>
+<li>A network-availability signal, DNS resolution, socket connection, and reachability of a specific backend are not equivalent.</li>
+<li>A retry is a new attempt with a possibly unknown prior outcome; it guarantees neither success nor exactly-once processing.</li>
+<li>An HTTP cache, repository persistence, and a durable domain source of truth have different policies and owners.</li>
+</ul>
+
+<h2 id="en-stage18-topology">Internals: request/response topology<a aria-label="Link to section: Networking topology" class="heading-anchor" href="#en-stage18-topology">#</a></h2>
+<pre><code class="language-text">Retrofit interface + annotations
+  → ServiceMethod parses metadata
+  → request Converter (model → RequestBody)
+  → CallAdapter (Call / suspend / custom return type)
+  → OkHttpClient.newCall(Request) → RealCall
+  → execute() caller thread OR enqueue()/suspend async path
+  → Dispatcher admission (async global/per-host limits)
+  → application interceptors (once per logical call)
+  → retry/follow-up + bridge + HTTP cache + connect internals
+  → DNS → candidate routes/proxy → connection pool or new socket
+  → TCP socket → TLS handshake/hostname verification for HTTPS
+  → network interceptors (per network exchange)
+  → HTTP codec writes request / reads status, headers, body
+  → response Converter (ResponseBody → DTO)
+  → CallAdapter/coroutine resumes → repository maps DTO/domain result</code></pre>
+<p><code>RealCall</code> represents one prepared OkHttp call and can be executed once. A connection is reused from the pool when address, route, and protocol constraints allow it; otherwise route selection tries viable proxy/address paths and opens a socket. HTTP/2 can multiplex exchanges. Internal class names and ordering are implementation details: explain the responsibilities and inspect the pinned OkHttp source/version instead of coupling application code to internals.</p>
+<p>Retrofit resolves annotations, parameter handlers, a converter, and a call adapter for a service method. Converter ordering matters because the first capable factory wins. The call adapter shapes execution and the return type; it does not redefine HTTP success. <strong>Retrofit does not move work off the main thread by magic for every adapter or arbitrary custom code.</strong> A synchronous <code>Call.execute()</code> runs on its caller thread, and custom adapters/converters can also execute work where invoked.</p>
+<pre><code class="language-kotlin">interface CatalogApi {
+    @GET("v1/items")
+    suspend fun page(
+        @Query("cursor") cursor: String?,
+        @Header("If-None-Match") etag: String? = null,
+    ): Response&lt;ItemPageDto&gt;
+}
+
+val client = OkHttpClient.Builder()
+    .callTimeout(20, TimeUnit.SECONDS)
+    .connectTimeout(5, TimeUnit.SECONDS)
+    .readTimeout(10, TimeUnit.SECONDS)
+    .writeTimeout(10, TimeUnit.SECONDS)
+    .addInterceptor(CorrelationIdInterceptor()) // application
+    .eventListenerFactory(TimingEventListener.factory())
+    .cache(Cache(cacheDir.resolve("http"), 20L * 1024 * 1024))
+    .build()</code></pre>
+
+<h2 id="en-stage18-interceptors">Application vs network interceptors<a aria-label="Link to section: Interceptors" class="heading-anchor" href="#en-stage18-interceptors">#</a></h2>
+<table><thead><tr><th>Type</th><th>What it observes</th><th>Correct responsibilities</th></tr></thead><tbody>
+<tr><td>Application interceptor</td><td>One logical call; may receive a cached response; does not observe every redirect/retry exchange.</td><td>Stable request headers, correlation IDs, coarse logging/metrics, and application-wide request policy. Call <code>proceed()</code> according to an explicit contract.</td></tr>
+<tr><td>Network interceptor</td><td>Every real network exchange and its connection; not invoked when the cache fully satisfies a response.</td><td>Wire-level headers/metrics and diagnostics for a specific exchange; application code needs these less often.</td></tr>
+</tbody></table>
+<p><strong>Ordering matters:</strong> interceptors observe requests in registration order and responses in reverse order. Do not parse business envelopes, manage repository persistence, or run an arbitrary retry loop inside an interceptor. An OkHttp <code>Authenticator</code> is a specialized follow-up mechanism after an authentication challenge; that comparison is sufficient here, while token refresh, concurrency, and loop prevention are reserved for Stage 19.</p>
+
+<h2 id="en-stage18-execution">Synchronous, suspend, cancellation, and Dispatcher<a aria-label="Link to section: Execution and cancellation" class="heading-anchor" href="#en-stage18-execution">#</a></h2>
+<ul>
+<li><code>execute()</code> blocks its caller thread until a response or failure; the response body must be closed. <code>enqueue()</code> performs an asynchronous call through the Dispatcher and delivers a callback.</li>
+<li>Retrofit's <code>suspend</code> integration awaits the OkHttp call asynchronously and cancels the underlying <code>Call</code> when the coroutine is cancelled. Cancellation is cooperative and can end socket/read work, but <strong>cannot undo a request that the server has already processed</strong>.</li>
+<li>The OkHttp Dispatcher controls admission and running asynchronous calls, including global and per-host limits. Exact defaults, host accounting, WebSocket treatment, executor behavior, and APIs vary by version; synchronous calls use a different scheduling path. Do not treat a memorized number as an architecture guarantee—inspect the pinned version.</li>
+<li>The queue protects client resources, but it is not a product-priority queue or a server rate limiter. Excessive limits raise contention; limits that are too small introduce head-of-line delay.</li>
+</ul>
+
+<h2 id="en-stage18-http-semantics">HTTP semantics: methods, status, and headers<a aria-label="Link to section: HTTP semantics" class="heading-anchor" href="#en-stage18-http-semantics">#</a></h2>
+<ul>
+<li>A <strong>safe</strong> method has read-only intended semantics; <strong>idempotent</strong> means that one or multiple identical requests have the same intended effect. GET/HEAD/OPTIONS/TRACE are safe; safe methods are idempotent; PUT and DELETE are idempotent but not safe; POST/PATCH are not generally idempotent. <strong>GET safety and idempotency are protocol semantics, not proof that a backend is correct.</strong></li>
+<li>2xx represents HTTP-level success, 3xx redirection/selection, 4xx a client-side contract/request outcome, and 5xx a server-side failure class. Interpret the API contract: 404 may mean expected absence, 409 conflict, and 429 rate limiting. Never flatten every non-2xx response into “no internet.”</li>
+<li>An application envelope such as <code>{"ok":false,"error":...}</code> can arrive with 200. The repository must validate status, media type, schema, and domain invariants; Retrofit's <code>Response.isSuccessful</code> only checks for 2xx.</li>
+<li><code>Accept</code> describes acceptable response representations; <code>Content-Type</code> identifies the media type of the actual request or response body. Charset, encoding, locale, API version, authorization, and correlation headers need explicit ownership. Do not log sensitive headers or bodies.</li>
+</ul>
+
+<h2 id="en-stage18-cache">HTTP caching and validation<a aria-label="Link to section: HTTP caching" class="heading-anchor" href="#en-stage18-cache">#</a></h2>
+<p>OkHttp Cache applies HTTP cache rules; it does not merely “save the last JSON.” Freshness follows response directives and metadata: <code>Cache-Control: max-age</code>, <code>s-maxage</code> for shared caches, <code>Expires</code>, and heuristic rules. <code>no-cache</code> means revalidate before reuse, not “do not store”; <code>no-store</code> forbids storage. Request directives can require validation or constrain stale reuse.</p>
+<ul>
+<li>Once stale, a cache can issue a conditional request: <code>If-None-Match</code> with an <code>ETag</code>, or <code>If-Modified-Since</code> with <code>Last-Modified</code>. A <code>304 Not Modified</code> has no new representation body; the cache combines its metadata with the stored response.</li>
+<li><code>Vary</code> adds named request headers to cache-key matching. <code>Vary: *</code> is not reusable. An incorrect <code>Vary</code> can mix locale, encoding, or tenant representations.</li>
+<li>Cacheability depends on method, status, and directives; authenticated responses have additional rules. Assert <code>networkResponse</code>/<code>cacheResponse</code> in tests instead of assuming the source.</li>
+<li><strong>OkHttp cache obeys HTTP rules and is not repository persistence:</strong> entries can be evicted, the key is URL plus Vary, and it offers no domain queries, transactions, or migrations; the origin controls freshness. It is not a durable domain SSOT and is not the Stage 21 offline-first design.</li>
+</ul>
+
+<h2 id="en-stage18-timeouts-retries">Timeouts, deadlines, and retry boundaries<a aria-label="Link to section: Timeouts and retries" class="heading-anchor" href="#en-stage18-timeouts-retries">#</a></h2>
+<table><thead><tr><th>Control</th><th>Boundary</th></tr></thead><tbody>
+<tr><td>connect timeout</td><td>Establishing one socket connection; DNS/TLS/fallback details depend on the implementation.</td></tr>
+<tr><td>read timeout</td><td>Lack of progress during a socket read, not the maximum total download duration.</td></tr>
+<tr><td>write timeout</td><td>Lack of progress during a socket write.</td></tr>
+<tr><td>call timeout</td><td>An approximate bound for the complete OkHttp call: queue, connect, write, server processing, read, and follow-ups.</td></tr>
+<tr><td>coroutine timeout/deadline</td><td>The caller's budget; it should cancel the child call but is not a distributed business deadline without propagation to downstream hops.</td></tr>
+</tbody></table>
+<p><strong>Timeouts are not end-to-end business deadlines automatically.</strong> A budget must account for the UI/workflow SLA, queueing, retries, and server deadline propagation. The meaning of “0 = infinite” and per-call overrides is version/API-sensitive, so inspect the pinned client documentation.</p>
+<p>Retry only selected transient failures for idempotent operations, or a non-idempotent operation with an explicit idempotency-key/deduplication contract. Consider request-body replayability, whether bytes may have been sent, the status contract (often 408/429/selected 5xx), <code>Retry-After</code>, exponential backoff, jitter, maximum attempts, total time budget, and cancellation. Do not retry parsing, domain, or TLS trust failures. Backoff must not outlive the caller scope. <strong>A retry guarantees neither success nor exactly-once processing.</strong></p>
+
+<h2 id="en-stage18-bodies-serialization">Bodies, streaming, and schema evolution<a aria-label="Link to section: Bodies and serialization" class="heading-anchor" href="#en-stage18-bodies-serialization">#</a></h2>
+<ul>
+<li>A request/response body is a byte stream with a media type and lifetime. Buffering an entire payload is simpler but risks memory spikes; streaming enables incremental work but holds a connection and requires explicit ownership.</li>
+<li><code>ResponseBody</code> is one-shot: consume it once and close it with <code>use</code>/<code>close</code>; otherwise a leak exhausts the pool or sockets. Do not pass a streaming response across layers without an owner that always closes it.</li>
+<li>A streaming upload can be one-shot and non-replayable. Retry, redirect, or authentication follow-up may be impossible after a partial write; model replayability rather than assuming it.</li>
+<li>Unknown JSON fields should usually be ignored for additive evolution; a missing field, explicit <code>null</code>, and a default value are three different states. A nullable Kotlin type does not define the wire contract by itself. Validate required fields and invariants at the DTO-to-domain boundary.</li>
+<li>For schema evolution, additive optional fields are safer; an unknown enum value needs a fallback or explicit failure; changing a type, meaning, or requiredness is breaking. Contract tests need old/new schema fixtures, malformed JSON, and an unexpected media type.</li>
+</ul>
+
+<h2 id="en-stage18-pagination-connectivity-security">Pagination, connectivity, and TLS basics<a aria-label="Link to section: Pagination connectivity and TLS" class="heading-anchor" href="#en-stage18-pagination-connectivity-security">#</a></h2>
+<ul>
+<li>Offset pagination is simple, but concurrent inserts/deletes produce duplicate or missing items. Cursor/keyset contracts preserve position better, but a cursor is opaque, can expire, and depends on stable ordering.</li>
+<li>Specify deterministic sort plus tie-breaker, page boundary, end signal, duplicate identity policy, refresh anchor, filter/version binding, and mutation behavior. Client deduplication prevents duplicate rendering but cannot restore missing items or prove snapshot consistency.</li>
+<li><code>ConnectivityManager.NetworkCallback</code>, capabilities, and a validated network are useful UX and scheduling hints. <strong>A DNS result or connectivity callback does not guarantee internet or backend reachability</strong>: a captive portal, split DNS, firewall, stale validation, or backend outage remains possible. The concrete request outcome is the truth; do not reject requests solely because of a stale “offline” Boolean.</li>
+<li>For HTTPS, DNS finds an address, TCP establishes transport, and TLS verifies the certificate chain/hostname and negotiates crypto/protocol before HTTP. Network Security Config declaratively controls trust anchors, cleartext policy, and debug overrides. Disable cleartext for production domains.</li>
+<li>A TLS failure is not generic offline and is normally not a retry-loop target. Certificate pinning, token lifecycle, and secret storage are intentionally reserved for Stage 19.</li>
+</ul>
+
+<h2 id="en-stage18-errors-observability">Error taxonomy and observability<a aria-label="Link to section: Errors and observability" class="heading-anchor" href="#en-stage18-errors-observability">#</a></h2>
+<table><thead><tr><th>Category</th><th>Example / policy</th></tr></thead><tbody>
+<tr><td>Transport</td><td>DNS, refused/reset socket, unreachable route; may be transient, but the write outcome can be unknown.</td></tr>
+<tr><td>TLS</td><td>Handshake, trust, or hostname; a separate security/configuration category.</td></tr>
+<tr><td>Timeout</td><td>Call/connect/read/write/caller deadline; preserve the boundary in telemetry.</td></tr>
+<tr><td>Protocol</td><td>Malformed HTTP, unexpected redirect, or HTTP/2 stream/protocol issue.</td></tr>
+<tr><td>HTTP</td><td>Non-2xx status plus bounded/redacted error body, headers, and request ID.</td></tr>
+<tr><td>Parsing</td><td>Wrong media type or malformed/incompatible schema.</td></tr>
+<tr><td>Domain</td><td>A 2xx envelope failure or violated invariant.</td></tr>
+<tr><td>Cancellation</td><td>Expected control flow; do not present it as a network error or retry it.</td></tr>
+</tbody></table>
+<p>Capture a redacted method, route template rather than a raw PII URL, outcome taxonomy, status, byte counts, cache/network source, attempt, timings, and correlation/request ID. <code>EventListener</code> exposes DNS, connect, TLS, connection acquisition, and call-phase awareness; it observes but does not define business success. Never log Authorization, Cookie, tokens, secrets, or unbounded bodies. A correlation ID connects client/server traces, but it is not an idempotency key.</p>
+
+<h2 id="en-stage18-guarantees">Guarantees vs non-guarantees<a aria-label="Link to section: Guarantees versus non-guarantees" class="heading-anchor" href="#en-stage18-guarantees">#</a></h2>
+<ul>
+<li><strong>Guarantee:</strong> closing a response body returns client resources; <strong>non-guarantee:</strong> cancellation rolls back server state.</li>
+<li><strong>Guarantee:</strong> HTTP defines safe/idempotent semantics; <strong>non-guarantee:</strong> a concrete GET backend performs no mutation.</li>
+<li><strong>Guarantee:</strong> 2xx denotes successful HTTP semantics; <strong>non-guarantee:</strong> the payload satisfies domain rules.</li>
+<li><strong>Guarantee:</strong> the interceptor chain has a defined order; <strong>non-guarantee:</strong> arbitrary reordering of logging/cache/header/retry behavior is equivalent.</li>
+<li><strong>Guarantee:</strong> OkHttp cache follows the HTTP cache contract; <strong>non-guarantee:</strong> a durable, queryable domain SSOT.</li>
+<li><strong>Non-guarantees:</strong> retry success or exactly-once; connectivity/DNS as backend reachability; Retrofit as automatic off-main execution for every adapter/custom operation; a transport timeout as an end-to-end business deadline.</li>
+</ul>
+
+<h2 id="en-stage18-version-sensitive">Version-sensitive behavior<a aria-label="Link to section: Version-sensitive behavior" class="heading-anchor" href="#en-stage18-version-sensitive">#</a></h2>
+<p>Pin Retrofit, OkHttp, converter, and serializer versions. Before making a design claim, inspect release documentation/source for Dispatcher defaults and per-host accounting; built-in retry/follow-up policy; route, DNS, TLS, and platform behavior; HTTP/2 or HTTP/3 support; one-shot/duplex body APIs; timeout defaults and overrides; suspend and nullable-body behavior; and MockWebServer package/API. Android API level, security provider, Network Security Config, and manifest cleartext defaults also matter. Document measured behavior instead of copying constants from another major version.</p>
+
+<h2 id="en-stage18-decision-framework">Decision framework<a aria-label="Link to section: Decision framework" class="heading-anchor" href="#en-stage18-decision-framework">#</a></h2>
+<ol>
+<li>Write the endpoint contract: method semantics, media types, statuses/envelope, pagination, cache validators, idempotency, and schema compatibility.</li>
+<li>Allocate budgets: payload/memory, concurrency, call latency, business deadline, retry attempts, and server rate limits.</li>
+<li>Assign ownership to the Retrofit declaration/converter, application or network interceptor, repository mapper, HTTP cache, or durable storage—without duplicating policy.</li>
+<li>Build a typed error taxonomy and cancellation path to the underlying call; decide what is user-facing, retryable, and observable.</li>
+<li>Verify success and deterministic failures on pinned versions, including leak, cancellation, cache, and concurrency behavior; add redacted production signals.</li>
+</ol>
+
+<h2 id="en-stage18-tradeoffs">Trade-offs and failure modes<a aria-label="Link to section: Trade-offs and failure modes" class="heading-anchor" href="#en-stage18-tradeoffs">#</a></h2>
+<ul>
+<li>Aggressive concurrency lowers queue time for one workload but raises contention, radio/server load, and 429 responses; conservative limits can delay unrelated calls to one host.</li>
+<li>A longer timeout tolerates slow networks but retains resources and stale UI; a short one creates false failures. One global timeout ignores endpoint and payload SLAs.</li>
+<li>Automatic retry improves transient availability but multiplies load and side effects; without jitter it creates a retry storm, and without a total budget it hides latency.</li>
+<li>A lenient parser survives additive fields, but defaults can hide a contract break; a strict parser detects drift sooner but hurts forward compatibility.</li>
+<li>HTTP caching saves latency and bandwidth, but freshness is not domain consistency; manually rewriting headers can violate the server contract.</li>
+</ul>
+
+<h2 id="en-stage18-production-scenario">Production scenario<a aria-label="Link to section: Production scenario" class="heading-anchor" href="#en-stage18-production-scenario">#</a></h2>
+<p>A catalog screen uses a cursor endpoint with stable <code>(updatedAt,id)</code> ordering. A Retrofit suspend method returns a DTO envelope; the converter tolerates unknown fields, while the mapper requires id/name and distinguishes missing from null. An application interceptor adds a correlation ID; EventListener measures DNS/connect/TLS/TTFB; a network interceptor only adds wire diagnostics in a debug build. The server returns <code>Cache-Control</code>, <code>ETag</code>, and a correct <code>Vary: Accept-Language</code>; OkHttp revalidates with <code>If-None-Match</code>/304, while Room remains a separate durable SSOT only in the Stage 21 design.</p>
+<p>The retry policy permits at most two GET attempts for selected connection resets, 503, or 429; respects <code>Retry-After</code>; applies exponential backoff plus jitter; and shares a call budget. Parsing, TLS, and cancellation are not retried. Deduplication by item ID protects the UI from overlap, while telemetry separately counts duplicates, cursor expiry, and gaps. A network callback only changes a UX hint. MockWebServer reproduces 304, delayed headers/body, disconnect during a body, malformed JSON, 429, duplicate pages, and cancellation.</p>
+
+<h2 id="en-stage18-review-trap">Code-review / debug trap<a aria-label="Link to section: Code review and debug trap" class="heading-anchor" href="#en-stage18-review-trap">#</a></h2>
+<pre><code class="language-kotlin">suspend fun load(): Result&lt;Payload&gt; = runCatching {
+    if (!connectivity.isOnline) error("offline")
+    retry(3) { api.getPayload().body()!! }
+}</code></pre>
+<p>Trap: the stale connectivity gate rejects a workable network; blanket retry ignores method, prior outcome, Retry-After, and body replayability; <code>body()!!</code> collapses empty, parsing, HTTP, and domain failures; <code>runCatching</code> can turn <code>CancellationException</code> into a failure; response/error-body ownership is invisible; and there is no deadline, redaction, or correlation. Start debugging with a request ID, phase timings, and a deterministic MockWebServer case—not “increase the timeout and retries.”</p>
+
+<h2 id="en-stage18-testing">Testing strategy<a aria-label="Link to section: Testing strategy" class="heading-anchor" href="#en-stage18-testing">#</a></h2>
+<ul>
+<li><strong>Pure fakes:</strong> repository/use-case tests for domain mapping, pagination merge/deduplication/order, retry decisions, and cancellation without imitating HTTP.</li>
+<li><strong>MockWebServer:</strong> assert method/path/query/headers/body and script 2xx domain errors, 304 validation, redirects, 404/409/429/503, malformed JSON, wrong content type, disconnect, throttled body, no response, and large/streaming bodies. Assert body closure and connection reuse where observable.</li>
+<li><strong>Contract tests:</strong> run consumer fixtures/schema against provider assumptions: unknown/missing/null fields, enum evolution, error envelopes, cursor expiry, and ordering. They do not replace integration/E2E tests.</li>
+<li><strong>Determinism:</strong> inject a clock, seeded jitter/random source, fake sleeper, bounded virtual time, and fixed dispatcher limits where supported; assert attempts and total budget instead of relying on wall-clock luck.</li>
+</ul>
+
+<h2 id="en-stage18-likely-qa">Likely practice questions and answers<a aria-label="Link to section: Likely practice questions" class="heading-anchor" href="#en-stage18-likely-qa">#</a></h2>
+<p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
+<ol>
+<li><strong>1. How does a request travel through Retrofit and OkHttp?</strong> Retrofit parses the declaration, parameter handlers, converter, and call adapter. An OkHttp RealCall traverses Dispatcher admission, ordered application/internal/network interceptors, cache, route/DNS/pool/socket/TLS, and the codec; a response converter creates a DTO and the repository maps a domain result.</li>
+<li><strong>2. Application versus network interceptor?</strong> An application interceptor sees one logical call and cached responses; a network interceptor sees each wire exchange and connection. Headers/correlation/coarse policy normally belong to application interceptors; exchange diagnostics belong to network interceptors. Ordering changes behavior.</li>
+<li><strong>3. What does suspend cancellation guarantee?</strong> Retrofit cancels the underlying OkHttp Call and does not resume a cancelled continuation as success. This releases client work, but it cannot undo a side effect already processed by the server.</li>
+<li><strong>4. Are safe and idempotent the same?</strong> No. Safe means no intended mutation; idempotent means repeated identical requests have the same intended effect. PUT/DELETE are idempotent but not safe. These are protocol contracts, not proof of backend implementation.</li>
+<li><strong>5. Why is 200 not always success?</strong> It is HTTP-level success; the payload can contain an application error envelope, incompatible schema, or violated domain invariant.</li>
+<li><strong>6. How does ETag revalidation work?</strong> A stale cached response with an ETag leads to <code>If-None-Match</code>; a 304 permits reuse of the stored body with updated metadata. <code>Vary</code> specifies which request headers must match.</li>
+<li><strong>7. What are the timeout boundaries?</strong> Connect/read/write govern distinct I/O phases, while call timeout covers nearly the complete OkHttp call. None automatically forms a distributed business deadline; design caller budgets and propagation separately.</li>
+<li><strong>8. When is retry acceptable?</strong> For a selected transient failure, replayable body, and idempotent operation or explicit idempotency-key contract, with Retry-After, backoff, jitter, attempt/total budgets, and cancellation. It does not guarantee success or exactly-once.</li>
+<li><strong>9. Why is a connectivity callback not a gate?</strong> It reports a network and capabilities at an observation point, not the DNS/TLS/backend result. A real request can succeed or fail contrary to a stale flag.</li>
+<li><strong>10. How do you test a network layer?</strong> Use fakes for domain policy, MockWebServer for HTTP bytes, timing, and failures, and contract tests for schema/provider assumptions, with deterministic clocks/jitter and explicit cancellation/resource assertions.</li>
+</ol>
+
+<h2 id="en-stage18-followups">Follow-up questions<a aria-label="Link to section: Follow-up questions" class="heading-anchor" href="#en-stage18-followups">#</a></h2>
+<ol>
+<li>How would the retry design change for a POST with a server-supported idempotency key?</li>
+<li>How would you distinguish queue delay, DNS, connect, TLS, TTFB, and body download in a production trace?</li>
+<li>Which cache headers are required for a localized, authenticated catalog response?</li>
+<li>How should cursor pagination behave when filters and concurrent updates change?</li>
+</ol>
+
+<h2 id="en-stage18-self-check">Unanswered self-checks<a aria-label="Link to section: Unanswered self checks" class="heading-anchor" href="#en-stage18-self-check">#</a></h2>
+<ol>
+<li>Draw the exact topology of your pinned stack and mark thread, coroutine, and resource ownership at every boundary.</li>
+<li>Classify ten real failures from your API and assign retry, user message, and telemetry without a catch-all “network error.”</li>
+<li>Prove with a test that 304, <code>Vary</code>, and stale revalidation work without turning the HTTP cache into the SSOT.</li>
+<li>Show where one-shot bodies are closed and what happens when cancellation arrives after the server commits.</li>
+</ol>
+
+<h2 id="en-stage18-english-skeletons">English answer skeletons<a aria-label="Link to section: English answer skeletons" class="heading-anchor" href="#en-stage18-english-skeletons">#</a></h2>
+<h3 id="en-stage18-answer-30">~30-second answer<a aria-label="Link to section: 30 second answer" class="heading-anchor" href="#en-stage18-answer-30">#</a></h3>
+<blockquote><p>I treat networking as layered contracts. Retrofit turns a declaration into a request using converters and a call adapter; OkHttp owns the call, interceptor chain, cache, route, pooled connection, socket and TLS exchange; the repository maps the parsed DTO into a domain result. I separate transport, TLS, timeout, protocol, HTTP, parsing, domain and cancellation failures. Retries are bounded and only for selected transient, idempotent or explicitly deduplicated operations. Cancellation releases client work but cannot undo a server-side commit, and HTTP cache is not a durable domain source of truth.</p></blockquote>
+<h3 id="en-stage18-answer-2min">~2-minute answer<a aria-label="Link to section: 2 minute answer" class="heading-anchor" href="#en-stage18-answer-2min">#</a></h3>
+<blockquote><p>I start with topology. Retrofit parses the annotated service method, chooses parameter and body converters, and applies a call adapter. The resulting OkHttp RealCall is admitted by the asynchronous Dispatcher, traverses application interceptors, internal retry/bridge/cache/connect stages and network interceptors, then uses DNS and route selection to reuse a pooled connection or establish a socket and TLS session. The response status, headers and one-shot body return through the chain, then the converter produces a DTO and the repository validates the application envelope and domain invariants.</p><p>I keep semantics explicit. A 2xx response can still be a domain failure. GET being safe and idempotent is a protocol contract, not proof of a correct backend. Suspend cancellation propagates to the Call, but cannot undo a request already processed. Connect, read, write and call timeouts protect different boundaries and are not automatically an end-to-end business deadline. Retries require a selected transient failure, replayable body, idempotency or an idempotency-key contract, Retry-After handling, exponential backoff with jitter, attempt and total budgets.</p><p>Application interceptors own logical-call concerns such as correlation headers; network interceptors observe each wire exchange, and ordering matters. HTTP caching follows freshness, validators, Vary and 304 rules; it is not repository persistence. I test domain policy with fakes, protocol and deterministic failure cases with MockWebServer, and schema evolution with contract fixtures. In production I redact sensitive data and use correlation IDs plus EventListener phase timings. Authentication refresh, pinning and secrets are a separate security design.</p></blockquote>
+
+<h2 id="en-stage18-sources">Official references<a aria-label="Link to section: Official references" class="heading-anchor" href="#en-stage18-sources">#</a></h2>
+<ul>
+<li><a href="https://lysine.dev/retrofit/">Retrofit documentation</a> and <a href="https://lysine.dev/retrofit/2.x/retrofit/">Retrofit API</a></li>
+<li><a href="https://lysine.dev/okhttp/features/calls/">OkHttp Calls</a>, <a href="https://lysine.dev/okhttp/features/interceptors/">Interceptors</a>, <a href="https://lysine.dev/okhttp/features/connections/">Connections</a>, <a href="https://lysine.dev/okhttp/features/https/">HTTPS</a>, and <a href="https://lysine.dev/okhttp/features/caching/">Caching</a></li>
+<li><a href="https://lysine.dev/okhttp/5.x/okhttp/okhttp3/-dispatcher/">OkHttp Dispatcher API</a>, <a href="https://lysine.dev/okhttp/5.x/okhttp/okhttp3/-event-listener/">EventListener API</a>, and <a href="https://lysine.dev/okhttp/5.x/mockwebserver/okhttp3.mockwebserver/-mock-web-server/">MockWebServer API</a></li>
+<li><a href="https://developer.android.com/develop/connectivity/network-ops">Android network operations</a>, <a href="https://developer.android.com/training/monitoring-device-state/connectivity-status-type">Connectivity monitoring</a>, and <a href="https://developer.android.com/privacy-and-security/security-config">Network Security Configuration</a></li>
+<li><a href="https://datatracker.ietf.org/doc/html/rfc9110">RFC 9110: HTTP Semantics</a>, <a href="https://datatracker.ietf.org/doc/html/rfc9111">RFC 9111: HTTP Caching</a>, and <a href="https://datatracker.ietf.org/doc/html/rfc6585">RFC 6585: Additional HTTP Status Codes</a></li>
 </ul>
 </div></details>
 

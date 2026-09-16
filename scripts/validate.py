@@ -28,6 +28,7 @@ STAGE14_KEY = "jetpack-compose-runtime-state"
 STAGE15_KEY = "compose-effects-navigation-viewmodel"
 STAGE16_KEY = "jetpack-compose-performance"
 STAGE17_KEY = "dependency-injection-android"
+STAGE18_KEY = "android-networking-fundamentals"
 
 
 def validate_html(path: Path) -> list[str]:
@@ -85,6 +86,7 @@ def validate_index_structure() -> list[str]:
         (6, STAGE6_KEY), (7, STAGE7_KEY), (8, STAGE8_KEY), (9, STAGE9_KEY),
         (10, STAGE10_KEY), (11, STAGE11_KEY), (12, STAGE12_KEY), (13, STAGE13_KEY),
         (14, STAGE14_KEY), (15, STAGE15_KEY), (16, STAGE16_KEY), (17, STAGE17_KEY),
+        (18, STAGE18_KEY),
     ):
         expected_stage_ids = (stage_key, f"en-{stage_key}")
         if content.count(f'data-key="{stage_key}"') != 2:
@@ -121,12 +123,13 @@ def validate_index_structure() -> list[str]:
             f'{prefix}{STAGE15_KEY}',
             f'{prefix}{STAGE16_KEY}',
             f'{prefix}{STAGE17_KEY}',
+            f'{prefix}{STAGE18_KEY}',
             f'{prefix}kotlin-for-android',
         )
         positions = [content.find(f'id="{value}"') for value in ordered_ids]
         if -1 in positions or positions != sorted(positions):
             errors.append(
-                f"index.html: {prefix or 'uk-'}Stages 2–17 must follow Stage 1 and precede Kotlin for Android"
+                f"index.html: {prefix or 'uk-'}Stages 2–18 must follow Stage 1 and precede Kotlin for Android"
             )
 
         stage5_id = f"{prefix}{STAGE5_KEY}"
@@ -142,6 +145,7 @@ def validate_index_structure() -> list[str]:
         stage15_id = f"{prefix}{STAGE15_KEY}"
         stage16_id = f"{prefix}{STAGE16_KEY}"
         stage17_id = f"{prefix}{STAGE17_KEY}"
+        stage18_id = f"{prefix}{STAGE18_KEY}"
         major_ids = re.findall(
             r'<details\s+class="major-section"[^>]*\bid="([^"]+)"',
             content,
@@ -161,6 +165,7 @@ def validate_index_structure() -> list[str]:
             or stage15_id not in major_ids
             or stage16_id not in major_ids
             or stage17_id not in major_ids
+            or stage18_id not in major_ids
             or major_ids.index(stage6_id) != major_ids.index(stage5_id) + 1
             or major_ids.index(stage7_id) != major_ids.index(stage6_id) + 1
             or major_ids.index(stage8_id) != major_ids.index(stage7_id) + 1
@@ -173,6 +178,7 @@ def validate_index_structure() -> list[str]:
             or major_ids.index(stage15_id) != major_ids.index(stage14_id) + 1
             or major_ids.index(stage16_id) != major_ids.index(stage15_id) + 1
             or major_ids.index(stage17_id) != major_ids.index(stage16_id) + 1
+            or major_ids.index(stage18_id) != major_ids.index(stage17_id) + 1
         ):
             errors.append(
                 f"index.html: {stage6_id!r} must immediately follow {stage5_id!r}, "
@@ -186,7 +192,8 @@ def validate_index_structure() -> list[str]:
                 f"{stage14_id!r} must immediately follow {stage13_id!r}, and "
                 f"{stage15_id!r} must immediately follow {stage14_id!r}, and "
                 f"{stage16_id!r} must immediately follow {stage15_id!r}, and "
-                f"{stage17_id!r} must immediately follow {stage16_id!r}"
+                f"{stage17_id!r} must immediately follow {stage16_id!r}, and "
+                f"{stage18_id!r} must immediately follow {stage17_id!r}"
             )
 
         toc_adjacency = re.search(
@@ -319,6 +326,17 @@ def validate_index_structure() -> list[str]:
         if not stage17_toc_adjacency:
             errors.append(
                 f"index.html: TOC link {stage17_id!r} must be immediately after {stage16_id!r}"
+            )
+
+        stage18_toc_adjacency = re.search(
+            rf'<li class="toc-major">\s*<a data-target="{re.escape(stage17_id)}"[^>]*>.*?</a>\s*'
+            rf'</li>\s*<li class="toc-major">\s*<a data-target="{re.escape(stage18_id)}"[^>]*>',
+            content,
+            re.S,
+        )
+        if not stage18_toc_adjacency:
+            errors.append(
+                f"index.html: TOC link {stage18_id!r} must be immediately after {stage17_id!r}"
             )
 
     stage4_contracts = (
@@ -1272,6 +1290,91 @@ def validate_index_structure() -> list[str]:
                     errors.append(
                         f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}"
                     )
+
+    stage18_contracts = (
+        "objective", "mental-model", "topology", "interceptors", "execution",
+        "http-semantics", "cache", "timeouts-retries", "bodies-serialization",
+        "pagination-connectivity-security", "errors-observability", "guarantees",
+        "version-sensitive", "decision-framework", "tradeoffs", "production-scenario",
+        "review-trap", "testing", "likely-qa", "followups", "self-check",
+        "english-skeletons", "answer-30", "answer-2min", "sources",
+    )
+    for prefix in ("stage18-uk-", "en-stage18-"):
+        for suffix in stage18_contracts:
+            stage_id = f"{prefix}{suffix}"
+            if ids.count(stage_id) != 1:
+                errors.append(f"index.html: expected exactly one Stage 18 contract id {stage_id!r}")
+
+    stage18_sections: dict[str, str] = {}
+    for stage_id in (STAGE18_KEY, f"en-{STAGE18_KEY}"):
+        match = re.search(
+            rf'<details\s+class="major-section"[^>]*\bid="{re.escape(stage_id)}"[^>]*>(.*?)</div></details>',
+            content,
+            re.I | re.S,
+        )
+        stage18_sections[stage_id] = match.group(1) if match else ""
+        if not match:
+            errors.append(f"index.html: unable to isolate Stage 18 section {stage_id!r}")
+
+    common_stage18_markers = (
+        "Retrofit", "Converter", "CallAdapter", "RealCall", "Dispatcher", "application interceptor",
+        "network interceptor", "connection", "DNS", "route", "socket", "TLS", "Authenticator",
+        "execute()", "suspend", "cancellation", "safe", "idempotent", "2xx", "Content-Type",
+        "Cache-Control", "ETag", "If-None-Match", "Last-Modified", "Vary", "304 Not Modified",
+        "connect timeout", "read timeout", "write timeout", "call timeout", "Retry-After",
+        "backoff", "jitter", "one-shot", "ResponseBody", "unknown", "missing", "null",
+        "pagination", "cursor", "NetworkCallback", "Network Security Config", "transport",
+        "protocol", "parsing", "domain", "EventListener", "correlation ID", "MockWebServer",
+        "contract tests", "Stage 19", "Stage 21",
+    )
+    language_stage18_markers = {
+        STAGE18_KEY: (
+            "Це likely practice questions, не підтверджений і не гарантований список співбесіди.",
+            "2xx може містити domain failure", "Retry не гарантує success або exactly-once",
+            "не може відкрутити request, який server уже обробив",
+            "GET safety/idempotency — protocol semantics, не доказ",
+            "OkHttp cache obeys HTTP rules and is not repository persistence",
+            "Retrofit does not move every adapter or arbitrary custom code off the main thread by magic",
+            "Timeouts are not end-to-end business deadlines automatically",
+            "DNS result або connectivity callback не гарантує internet чи backend reachability",
+        ),
+        f"en-{STAGE18_KEY}": (
+            "These are likely practice questions, not a confirmed or guaranteed interview list.",
+            "A 2xx response may still contain a domain failure",
+            "A retry guarantees neither success nor exactly-once processing",
+            "cannot undo a request that the server has already processed",
+            "GET safety and idempotency are protocol semantics, not proof",
+            "OkHttp cache obeys HTTP rules and is not repository persistence",
+            "Retrofit does not move work off the main thread by magic for every adapter",
+            "Timeouts are not end-to-end business deadlines automatically",
+            "DNS result or connectivity callback does not guarantee internet or backend reachability",
+        ),
+    }
+    for stage_id, section in stage18_sections.items():
+        for marker in (*common_stage18_markers, *language_stage18_markers[stage_id]):
+            if marker not in section:
+                errors.append(
+                    f"index.html: Stage 18 section {stage_id!r} is missing focused marker {marker!r}"
+                )
+
+    for prefix in ("stage18-uk-", "en-stage18-"):
+        for suffix, expected in (("likely-qa", 10), ("followups", 4), ("self-check", 4)):
+            match = re.search(
+                rf'id="{re.escape(prefix + suffix)}".*?</h2>.*?<ol>(.*?)</ol>',
+                content,
+                re.S,
+            )
+            count = len(re.findall(r"<li>", match.group(1))) if match else 0
+            if count != expected:
+                errors.append(
+                    f"index.html: {prefix + suffix!r} must contain exactly {expected} list items; found {count}"
+                )
+            if suffix == "likely-qa" and match:
+                labelled = len(re.findall(r"<li>\s*<strong>.*?</strong>", match.group(1), re.S))
+                if labelled != expected:
+                    errors.append(
+                        f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}"
+                    )
     return errors
 
 
@@ -1289,7 +1392,7 @@ def main() -> int:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
-    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–17 navigation/contracts, and baseline checksum are valid.")
+    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–18 navigation/contracts, and baseline checksum are valid.")
     return 0
 
 
