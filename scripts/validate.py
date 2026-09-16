@@ -21,6 +21,7 @@ STAGE7_KEY = "kotlin-coroutines-foundations-internals"
 STAGE8_KEY = "kotlin-coroutines-failures-supervision-testing"
 STAGE9_KEY = "kotlin-flow-foundations"
 STAGE10_KEY = "kotlin-hot-flows-ui-state-events"
+STAGE11_KEY = "advanced-kotlin-flow-production"
 
 
 def validate_html(path: Path) -> list[str]:
@@ -76,7 +77,7 @@ def validate_index_structure() -> list[str]:
     for stage_number, stage_key in (
         (2, STAGE2_KEY), (3, STAGE3_KEY), (4, STAGE4_KEY), (5, STAGE5_KEY),
         (6, STAGE6_KEY), (7, STAGE7_KEY), (8, STAGE8_KEY), (9, STAGE9_KEY),
-        (10, STAGE10_KEY),
+        (10, STAGE10_KEY), (11, STAGE11_KEY),
     ):
         expected_stage_ids = (stage_key, f"en-{stage_key}")
         if content.count(f'data-key="{stage_key}"') != 2:
@@ -106,12 +107,13 @@ def validate_index_structure() -> list[str]:
             f'{prefix}{STAGE8_KEY}',
             f'{prefix}{STAGE9_KEY}',
             f'{prefix}{STAGE10_KEY}',
+            f'{prefix}{STAGE11_KEY}',
             f'{prefix}kotlin-for-android',
         )
         positions = [content.find(f'id="{value}"') for value in ordered_ids]
         if -1 in positions or positions != sorted(positions):
             errors.append(
-                f"index.html: {prefix or 'uk-'}Stages 2–10 must follow Stage 1 and precede Kotlin for Android"
+                f"index.html: {prefix or 'uk-'}Stages 2–11 must follow Stage 1 and precede Kotlin for Android"
             )
 
         stage5_id = f"{prefix}{STAGE5_KEY}"
@@ -120,6 +122,7 @@ def validate_index_structure() -> list[str]:
         stage8_id = f"{prefix}{STAGE8_KEY}"
         stage9_id = f"{prefix}{STAGE9_KEY}"
         stage10_id = f"{prefix}{STAGE10_KEY}"
+        stage11_id = f"{prefix}{STAGE11_KEY}"
         major_ids = re.findall(
             r'<details\s+class="major-section"[^>]*\bid="([^"]+)"',
             content,
@@ -132,18 +135,21 @@ def validate_index_structure() -> list[str]:
             or stage8_id not in major_ids
             or stage9_id not in major_ids
             or stage10_id not in major_ids
+            or stage11_id not in major_ids
             or major_ids.index(stage6_id) != major_ids.index(stage5_id) + 1
             or major_ids.index(stage7_id) != major_ids.index(stage6_id) + 1
             or major_ids.index(stage8_id) != major_ids.index(stage7_id) + 1
             or major_ids.index(stage9_id) != major_ids.index(stage8_id) + 1
             or major_ids.index(stage10_id) != major_ids.index(stage9_id) + 1
+            or major_ids.index(stage11_id) != major_ids.index(stage10_id) + 1
         ):
             errors.append(
                 f"index.html: {stage6_id!r} must immediately follow {stage5_id!r}, "
                 f"{stage7_id!r} must immediately follow {stage6_id!r}, and "
                 f"{stage8_id!r} must immediately follow {stage7_id!r}, and "
                 f"{stage9_id!r} must immediately follow {stage8_id!r}, and "
-                f"{stage10_id!r} must immediately follow {stage9_id!r}"
+                f"{stage10_id!r} must immediately follow {stage9_id!r}, and "
+                f"{stage11_id!r} must immediately follow {stage10_id!r}"
             )
 
         toc_adjacency = re.search(
@@ -199,6 +205,17 @@ def validate_index_structure() -> list[str]:
         if not stage10_toc_adjacency:
             errors.append(
                 f"index.html: TOC link {stage10_id!r} must be immediately after {stage9_id!r}"
+            )
+
+        stage11_toc_adjacency = re.search(
+            rf'<li class="toc-major">\s*<a data-target="{re.escape(stage10_id)}"[^>]*>.*?</a>\s*'
+            rf'</li>\s*<li class="toc-major">\s*<a data-target="{re.escape(stage11_id)}"[^>]*>',
+            content,
+            re.S,
+        )
+        if not stage11_toc_adjacency:
+            errors.append(
+                f"index.html: TOC link {stage11_id!r} must be immediately after {stage10_id!r}"
             )
 
     stage4_contracts = (
@@ -633,6 +650,80 @@ def validate_index_structure() -> list[str]:
                     errors.append(
                         f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}"
                     )
+
+    stage11_contracts = (
+        "objective", "mental-model", "internals", "composition", "latest-search",
+        "multi-source", "errors-retry", "sharing-cache", "fusion-concurrency",
+        "callbacks-lifecycle", "guarantees", "version-sensitive", "decision-framework",
+        "tradeoffs", "production-scenario", "review-trap", "testing-observability",
+        "likely-qa", "followups", "self-check", "english-skeletons", "answer-30",
+        "answer-2min", "sources",
+    )
+    for prefix in ("stage11-uk-", "en-stage11-"):
+        for suffix in stage11_contracts:
+            stage_id = f"{prefix}{suffix}"
+            if ids.count(stage_id) != 1:
+                errors.append(f"index.html: expected exactly one Stage 11 contract id {stage_id!r}")
+
+    stage11_sections: dict[str, str] = {}
+    for stage_id in (STAGE11_KEY, f"en-{STAGE11_KEY}"):
+        match = re.search(
+            rf'<details\s+class="major-section"[^>]*\bid="{re.escape(stage_id)}"[^>]*>(.*?)</div></details>',
+            content,
+            re.I | re.S,
+        )
+        stage11_sections[stage_id] = match.group(1) if match else ""
+        if not match:
+            errors.append(f"index.html: unable to isolate Stage 11 section {stage_id!r}")
+
+    common_stage11_markers = (
+        "combine", "zip", "merge", "flatMapLatest", "flatMapConcat", "flatMapMerge",
+        "transformLatest", "mapLatest", "debounce", "distinctUntilChanged", "catch",
+        "onCompletion", "retryWhen", "CancellationException", "stateIn", "shareIn",
+        "replayExpirationMillis", "callbackFlow", "awaitClose", "flatMapMerge(concurrency",
+        "TestCoroutineScheduler", "repeatOnLifecycle", "exactly-once",
+    )
+    language_stage11_markers = {
+        STAGE11_KEY: (
+            "Це likely practice questions, не підтверджений і не гарантований список співбесіди.",
+            "combine чекає перше значення від кожного input",
+            "catch не ловить failures downstream collector",
+            "latest-оператори скасовують cooperative",
+            "Replay hot sharing — не durable cache",
+        ),
+        f"en-{STAGE11_KEY}": (
+            "These are likely practice questions, not a confirmed or guaranteed interview list.",
+            "combine waits for the first value from every input",
+            "catch does not catch downstream collector failures",
+            "latest operators cancel cooperatively",
+            "Hot-sharing replay is not a durable cache",
+        ),
+    }
+    for stage_id, section in stage11_sections.items():
+        for marker in (*common_stage11_markers, *language_stage11_markers[stage_id]):
+            if marker not in section:
+                errors.append(
+                    f"index.html: Stage 11 section {stage_id!r} is missing focused marker {marker!r}"
+                )
+
+    for prefix in ("stage11-uk-", "en-stage11-"):
+        for suffix, expected in (("likely-qa", 10), ("followups", 4), ("self-check", 5)):
+            match = re.search(
+                rf'id="{re.escape(prefix + suffix)}".*?</h2>.*?<ol>(.*?)</ol>',
+                content,
+                re.S,
+            )
+            count = len(re.findall(r"<li>", match.group(1))) if match else 0
+            if count != expected:
+                errors.append(
+                    f"index.html: {prefix + suffix!r} must contain exactly {expected} list items; found {count}"
+                )
+            if suffix == "likely-qa" and match:
+                labelled = len(re.findall(r"<li>\s*<strong>.*?</strong>", match.group(1), re.S))
+                if labelled != expected:
+                    errors.append(
+                        f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}"
+                    )
     return errors
 
 
@@ -650,7 +741,7 @@ def main() -> int:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
-    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–10 navigation/contracts, and baseline checksum are valid.")
+    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–11 navigation/contracts, and baseline checksum are valid.")
     return 0
 
 

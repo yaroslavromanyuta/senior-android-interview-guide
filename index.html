@@ -495,6 +495,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="kotlin-hot-flows-ui-state-events" href="#kotlin-hot-flows-ui-state-events">StateFlow, SharedFlow, Channel та Android UI state/events</a>
 </li>
 <li class="toc-major">
+<a data-target="advanced-kotlin-flow-production" href="#advanced-kotlin-flow-production">Advanced Kotlin Flow у production</a>
+</li>
+<li class="toc-major">
 <a data-target="kotlin-for-android" href="#kotlin-for-android">Kotlin for Android</a>
 <ol class="toc-children">
 <li><a data-target="val-vs-var-immutability" href="#val-vs-var-immutability">val vs var, immutability</a></li>
@@ -801,6 +804,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-hot-flows-ui-state-events" href="#en-kotlin-hot-flows-ui-state-events">StateFlow, SharedFlow, Channel, and Android UI state/events</a>
+</li>
+<li class="toc-major">
+<a data-target="en-advanced-kotlin-flow-production" href="#en-advanced-kotlin-flow-production">Advanced Kotlin Flow in production</a>
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-for-android" href="#en-kotlin-for-android">Kotlin for Android</a>
@@ -3369,6 +3375,229 @@ orders.stateIn(GlobalScope)                                       // wrong lifet
 <li><a href="https://developer.android.com/kotlin/flow/stateflow-and-sharedflow">StateFlow and SharedFlow on Android</a>, <a href="https://developer.android.com/topic/architecture/ui-layer/events">Android UI events</a>, <a href="https://developer.android.com/topic/architecture/ui-layer/state-production">UI state production</a></li>
 <li><a href="https://developer.android.com/topic/libraries/architecture/coroutines">Lifecycle-aware collection</a>, <a href="https://developer.android.com/develop/ui/compose/state">State in Compose</a>, <a href="https://developer.android.com/reference/kotlin/androidx/lifecycle/compose/package-summary">collectAsStateWithLifecycle</a>, <a href="https://developer.android.com/topic/libraries/architecture/viewmodel/viewmodel-savedstate">SavedStateHandle</a></li>
 <li><a href="https://developer.android.com/kotlin/flow/test">Testing Kotlin flows on Android</a> та <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/">kotlinx-coroutines-test</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="advanced-kotlin-flow-production" data-title="Advanced Kotlin Flow у production" id="advanced-kotlin-flow-production" open=""><summary class="major-summary"><span class="major-title">Advanced Kotlin Flow у production</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<h2 id="stage11-uk-objective">Learning objective<a aria-label="Посилання на розділ: Learning objective" class="heading-anchor" href="#stage11-uk-objective">#</a></h2>
+<p>Після етапу ви маєте проєктувати production Flow topology: обирати timing/order/completion semantics для composition і flattening, будувати latest-wins search без stale state, локалізувати failure/retry, володіти sharing lifecycle/cache boundary, інтегрувати callbacks та доводити timing, cancellation, retry і sharing детермінованими тестами. Stage 9 basics і Stage 10 primitives тут згадуються лише для порівняння.</p>
+
+<h2 id="stage11-uk-mental-model">Senior mental model<a aria-label="Посилання на розділ: Senior mental model" class="heading-anchor" href="#stage11-uk-mental-model">#</a></h2>
+<blockquote><p><strong>Flow topology — це executable policy.</strong> Для кожної стрілки назвіть ownership, ordering, concurrency, buffering, cancellation, failure, restart і durability. Оператор не виправляє неправильний business contract: latest-wins, all-results, paired-results і durable work — різні задачі.</p></blockquote>
+<ul>
+<li>Cold chain виконується per collector; hot boundary переносить execution у owner scope. Lifecycle collector і producer lifecycle — окремі рішення.</li>
+<li>Cancellation — control flow, не rollback. latest-оператори скасовують cooperative роботу, але не можуть відкликати вже відправлений HTTP request, commit у БД або інший external side effect.</li>
+<li>Errors або завершують stream, або materialize-яться як typed domain value. Вибір має бути явним на layer boundary.</li>
+</ul>
+
+<h2 id="stage11-uk-internals">Internals та operator topology<a aria-label="Посилання на розділ: Internals and operator topology" class="heading-anchor" href="#stage11-uk-internals">#</a></h2>
+<pre><code class="language-text">source(s) → admission/rate policy → composition/flattening → error policy
+          → context/buffer boundary → domain state → stateIn/shareIn(owner scope)
+          → repeatOnLifecycle collector → render
+
+Each async/buffer/share boundary can change lifetime, ordering, backpressure,
+exception propagation, memory use, and duplicate-side-effect risk.</code></pre>
+<p><code>map</code>/<code>filter</code> are normally sequential in the collector coroutine. Operators such as <code>buffer</code>, <code>flowOn</code>, flattening, <code>channelFlow</code> and hot sharing introduce queues or coroutines. Read the chain left-to-right for data and right-to-left for cancellation/error effects; then mark every external effect.</p>
+
+<h3 id="stage11-uk-composition">combine vs zip vs merge; flattening та latest transforms<a aria-label="Посилання на розділ: combine zip merge and flattening" class="heading-anchor" href="#stage11-uk-composition">#</a></h3>
+<table><thead><tr><th>Operator</th><th>Timing/order</th><th>Completion/failure</th></tr></thead><tbody>
+<tr><td><code>combine</code></td><td>Після initial barrier emit-ить transform із latest value кожного input при наступній зміні будь-якого input.</td><td><strong>combine чекає перше значення від кожного input</strong>; input без initial emission може залишити UI у loading. Failure скасовує composition; completion одного input залишає його latest value, доки інші можуть emit-ити.</td></tr>
+<tr><td><code>zip</code></td><td>Pairs n-th з n-th; faster side чекає/буферизується за contract, зайві unmatched values не формують pair.</td><td>Завершується, коли один flow завершився і більше pair неможливий, та скасовує remaining collection; failure propagates.</td></tr>
+<tr><td><code>merge</code></td><td>Collect-ить inputs concurrently та emit-ить як готові; між inputs order не гарантується.</td><td>Нормально завершується після всіх inputs; failure за structured concurrency завершує merge і скасовує siblings, якщо його не materialize до merge.</td></tr>
+</tbody></table>
+<ul>
+<li><code>flatMapConcat</code> collect-ить inner flows послідовно і зберігає outer order, але slow inner створює head-of-line blocking.</li>
+<li><code>flatMapMerge(concurrency = n)</code> collect-ить до <code>n</code> inner flows concurrently; output order залежить від completion/emission timing. Limit — ресурсна політика, не rate limiter і не business ordering.</li>
+<li><code>flatMapLatest</code> скасовує previous inner flow при новому outer value. <code>mapLatest</code> скасовує попередній transform; <code>transformLatest</code> може emit-ити кілька values і скасовує весь попередній transform block. Latest cancellation cooperative.</li>
+<li>Якщо потрібні всі результати — latest wrong; якщо потрібен лише current query — concat/merge можуть показати stale output. Naming має виражати policy.</li>
+</ul>
+
+<h3 id="stage11-uk-latest-search">Search pipeline: latest cancellation і stale-result protection<a aria-label="Посилання на розділ: Search pipeline latest cancellation and stale protection" class="heading-anchor" href="#stage11-uk-latest-search">#</a></h3>
+<pre><code class="language-kotlin">val results: StateFlow&lt;SearchUiState&gt; = query
+    .map(String::trim)
+    .debounce(300)
+    .distinctUntilChanged()
+    .flatMapLatest { q -&gt;
+        if (q.length &lt; 2) flowOf(SearchUiState.Idle)
+        else flow {
+            emit(SearchUiState.Loading(q))
+            emit(SearchUiState.Content(q, repository.search(q)))
+        }.catch { e -&gt;
+            if (e is CancellationException) throw e
+            emit(SearchUiState.Error(q, e.toDomainError()))
+        }
+    }
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SearchUiState.Idle)</code></pre>
+<ul>
+<li><code>debounce</code> controls quiet-time admission; <code>distinctUntilChanged</code> removes adjacent equal normalized queries; neither is a cache.</li>
+<li><code>flatMapLatest</code> prevents an older cooperative inner flow from emitting after a newer query. For non-cooperative/uncancellable APIs or separately launched work, add a request generation/query key at reducer boundary and reject mismatched results.</li>
+<li>Cancellation cannot undo server mutation. Search should be read-only/idempotent; writes need idempotency keys and reconciliation rather than latest-wins.</li>
+</ul>
+
+<h3 id="stage11-uk-multi-source">Multi-source UI state та initial-emission traps<a aria-label="Посилання на розділ: Multi source UI state and initial emission traps" class="heading-anchor" href="#stage11-uk-multi-source">#</a></h3>
+<ul>
+<li>Use <code>combine</code> for latest account + local rows + filter when any source should re-render. Model loading/absent/error explicitly; do not use a magic empty list as “not loaded”.</li>
+<li>A callback flow that emits only on change, a filtered source, or a <code>SharedFlow(replay=0)</code> may never provide the first value, so combine emits nothing. Seed only when a truthful initial state exists (<code>onStart</code>, StateFlow, database snapshot), not to silence a test.</li>
+<li>Combining many independent fields can expose cross-source snapshots, not an atomic transaction. If consistency matters, read a database transaction/snapshot or combine a single versioned aggregate.</li>
+<li>One failing source terminates the combined chain by default. Materialize recoverable per-source errors before combine when partial UI is a requirement; otherwise fail the aggregate deliberately.</li>
+</ul>
+
+<h3 id="stage11-uk-errors-retry">Exception transparency, completion та retry boundaries<a aria-label="Посилання на розділ: Exception transparency completion and retry" class="heading-anchor" href="#stage11-uk-errors-retry">#</a></h3>
+<ul>
+<li><code>catch</code> handles exceptions from operators upstream of it and is transparent to cancellation; <strong>catch не ловить failures downstream collector</strong>. Put <code>onEach</code> before <code>catch</code> if its failure belongs to that recovery policy; after <code>catch</code> if it must remain downstream.</li>
+<li><code>onCompletion { cause -&gt; }</code> observes normal completion, failure or cancellation. It does not suppress failure; emitting fallback is safe only on normal completion. Use it for metrics/cleanup, not as <code>catch</code>.</li>
+<li><code>retry</code>/<code>retryWhen</code> re-subscribes to upstream. That repeats upstream builders, network calls and side effects. Predicate by typed transient failures and attempt; never retry programmer defects, cancellation, authentication/authorization, validation or deterministic 4xx errors.</li>
+<li>Backoff belongs inside <code>retryWhen</code>: bounded attempts, exponential delay capped to a maximum, jitter to avoid synchronized clients, network/connectivity policy, and total deadline. Inject randomness/clock for tests. Server <code>Retry-After</code> may override client delay within product bounds.</li>
+<li>Always preserve <code>CancellationException</code>: rethrow it (and do not wrap it into domain error). Materialize expected domain errors as <code>Result</code>/sealed value when the stream should continue; let invariant/programmer failures terminate and surface.</li>
+</ul>
+
+<h3 id="stage11-uk-sharing-cache">stateIn/shareIn lifecycle, cache та single source of truth<a aria-label="Посилання на розділ: Sharing lifecycle cache and source of truth" class="heading-anchor" href="#stage11-uk-sharing-cache">#</a></h3>
+<ul>
+<li><code>stateIn</code>/<code>shareIn</code> launch sharing in the supplied scope; that scope owns upstream lifetime. ViewModel scope is screen lifetime, application/repository scope may outlive screens, and an unowned/global scope hides leaks and retry lifetime.</li>
+<li><code>Eagerly</code> starts now; <code>Lazily</code> starts on first subscriber and keeps running; <code>WhileSubscribed(stopTimeoutMillis, replayExpirationMillis)</code> may stop, expire replay/initial state, then restart. Rotation/subscriber gaps can therefore repeat connection setup, logging or writes.</li>
+<li>Handle <code>catch</code>/<code>retryWhen</code>/<code>onCompletion</code> before the sharing boundary. Normal upstream completion does not complete hot subscribers; upstream exception is handled by owner scope. Restart semantics depend on strategy and new subscription.</li>
+<li><strong>Replay hot sharing — не durable cache.</strong> It disappears with process/scope and can be reset. Repository/database/network cache policy and invalidation belong to a single source of truth; hot replay avoids duplicate active collection but does not define freshness or persistence.</li>
+<li>No exactly-once network/database effect follows from sharing. Make effects idempotent, move durable work to a transactional/outbox boundary, and observe by operation ID.</li>
+</ul>
+
+<h3 id="stage11-uk-fusion-concurrency">Context, fusion, buffers, concurrency та partial results<a aria-label="Посилання на розділ: Context fusion buffers and concurrency" class="heading-anchor" href="#stage11-uk-fusion-concurrency">#</a></h3>
+<ul>
+<li><code>flowOn</code> changes context only upstream and may introduce a channel across dispatchers. It cannot change collector context; context preservation still applies.</li>
+<li>Adjacent <code>channelFlow</code>/<code>callbackFlow</code>, <code>flowOn</code>, <code>buffer</code> and <code>produceIn</code> can fuse into one channel. Capacity/overflow and placement alter suspension, cancellation windows and element loss; do not infer one queue per operator.</li>
+<li><code>buffer</code> overlaps producer/consumer; <code>conflate</code> drops intermediates; latest cancels work. Place expensive map before/after a buffer intentionally and measure memory/latency.</li>
+<li><code>flatMapMerge</code> concurrency bounds active inner collections, but each inner may open more work. Add backend quotas and structured resource limits; output order is not input order.</li>
+<li>For independent partial results with failure isolation, use <code>supervisorScope</code> outside Flow to produce typed results, then emit/materialize them. Do not expect <code>merge</code> itself to be a supervisor boundary.</li>
+</ul>
+
+<h3 id="stage11-uk-callbacks-lifecycle">callbackFlow та Android lifecycle re-subscription<a aria-label="Посилання на розділ: Callback Flow and lifecycle resubscription" class="heading-anchor" href="#stage11-uk-callbacks-lifecycle">#</a></h3>
+<ul>
+<li><code>callbackFlow</code> is cold: register callback per collector, use thread-safe <code>trySend</code>, inspect failure, and always unregister in <code>awaitClose</code>. Define buffer/overflow when callback rate exceeds consumption.</li>
+<li>Guard double callback/close and callback races according to source API. Cancellation invokes cleanup; it does not retract callback side effects already performed.</li>
+<li><code>repeatOnLifecycle</code> cancels and relaunches collection as lifecycle crosses the target state. A cold callback source re-registers; <code>WhileSubscribed</code> sharing may stop/restart after timeout. Test start/stop counts and make registration idempotent.</li>
+<li>Share at a longer owner only if concurrent collectors truly should reuse one registration; otherwise sharing can retain sensors/listeners longer than UI need.</li>
+</ul>
+
+<h2 id="stage11-uk-guarantees">Guarantees vs non-guarantees<a aria-label="Посилання на розділ: Guarantees versus non guarantees" class="heading-anchor" href="#stage11-uk-guarantees">#</a></h2>
+<table><thead><tr><th>Guarantee</th><th>Non-guarantee</th></tr></thead><tbody>
+<tr><td><code>combine</code> uses latest values after every input emitted once; <code>zip</code> pairs; <code>merge</code> interleaves concurrent inputs.</td><td>Universal ordering, atomic multi-source snapshots, or emission when one combine input never emits.</td></tr>
+<tr><td>Latest operators request cancellation of previous work.</td><td>Preemption of blocking/non-cooperative code or rollback of external side effects.</td></tr>
+<tr><td><code>retryWhen</code> can conditionally re-subscribe.</td><td>Safe/idempotent repeats, recovery from auth/validation/programmer errors, or exactly-once effects.</td></tr>
+<tr><td><code>catch</code> sees upstream non-cancellation failures.</td><td>It catches downstream collector failures or cancellation.</td></tr>
+<tr><td>Sharing reuses an upstream within scope/start policy and can replay memory values.</td><td>Replay is durable cache, lifecycle restart is invisible, or a network/database effect happens exactly once.</td></tr>
+</tbody></table>
+
+<h2 id="stage11-uk-version-sensitive">Version-sensitive behavior<a aria-label="Посилання на розділ: Version sensitive behavior" class="heading-anchor" href="#stage11-uk-version-sensitive">#</a></h2>
+<ul>
+<li><code>flatMapLatest</code>, <code>flatMapMerge</code>, <code>transformLatest</code>, <code>mapLatest</code>, dynamic <code>debounce</code> and some sharing APIs may carry experimental/preview annotations in particular resolved releases. Inspect the pinned <code>kotlinx-coroutines</code API, not memory.</li>
+<li>Default merge concurrency is library/property-sensitive; pass an explicit value when it is an operational contract. Default buffer capacities are implementation/configuration details.</li>
+<li><code>SharingStarted.WhileSubscribed</code> overloads, Duration support and replay expiration annotations vary by release. Pin one coroutines family and test exact boundaries.</li>
+<li>AndroidX lifecycle APIs and <code>collectAsStateWithLifecycle</code> signatures/default states depend on resolved AndroidX versions; lifecycle semantics do not create delivery durability.</li>
+</ul>
+
+<h2 id="stage11-uk-decision-framework">Decision framework<a aria-label="Посилання на розділ: Decision framework" class="heading-anchor" href="#stage11-uk-decision-framework">#</a></h2>
+<ol>
+<li>State the requirement: paired, latest snapshot, all concurrent results, latest-wins, ordered all-results, or durable work.</li>
+<li>Mark initial-value, normal completion and failure behavior for every source.</li>
+<li>Choose cancellation and concurrency; classify every external side effect as idempotent, transactional, compensatable or unsafe to repeat.</li>
+<li>Place context, buffers, catch/retry and hot boundary; assign owner scope/start/expiration.</li>
+<li>Define source of truth, freshness/invalidation, lifecycle re-subscription, observability fields and deterministic test timeline.</li>
+</ol>
+
+<h2 id="stage11-uk-tradeoffs">Trade-offs і failure modes<a aria-label="Посилання на розділ: Trade offs and failure modes" class="heading-anchor" href="#stage11-uk-tradeoffs">#</a></h2>
+<ul>
+<li><code>combine</code> gives responsive latest state but can recompute frequently and wait forever for an unseeded input; <code>zip</code> preserves pairing but stalls behind imbalance; <code>merge</code> maximizes concurrency but gives nondeterministic interleaving.</li>
+<li>Latest-wins reduces stale UI and wasted cooperative work but drops partial progress; concat preserves all/order with latency; merge improves throughput with ordering, load and memory costs.</li>
+<li>Broad <code>catch { emit(emptyList()) }</code> hides incidents and converts programmer bugs to plausible empty UI. Broad infinite retry amplifies outages and battery/network use.</li>
+<li>Sharing prevents duplicate active subscriptions but wrong scope leaks work; short stop timeout thrashes, long timeout retains resources; replay can expose stale memory state.</li>
+<li>Lifecycle re-collection plus retry plus sharing restart can multiply side effects. Observe starts, attempts, cancellations and operation IDs rather than only final UI.</li>
+</ul>
+
+<h2 id="stage11-uk-production-scenario">Production scenario: offline-first search screen<a aria-label="Посилання на розділ: Production scenario offline first search" class="heading-anchor" href="#stage11-uk-production-scenario">#</a></h2>
+<p><strong>Гіпотетично:</strong> normalized query, account і filters combine into a versioned request. Query uses debounce/distinct/latest. Repository returns database Flow as single source of truth; refresh writes network results transactionally into DB under request key. UI observes DB plus typed refresh status. A request generation prevents stale uncancellable completion from updating the current request. Transient IO gets bounded jittered retry; auth/validation becomes explicit domain state and cancellation is rethrown.</p>
+<pre><code class="language-kotlin">data class RequestKey(val query: String, val filters: Filters, val accountId: String)
+
+val uiState = combine(query, filters, account) { q, f, a -&gt;
+    RequestKey(q.trim(), f, a.id)
+}.debounce(300).distinctUntilChanged().flatMapLatest { key -&gt;
+    repository.observeRows(key)
+        .map { rows -&gt; SearchUiState.Content(key, rows) }
+        .onStart { repository.refresh(key) } // idempotent/transactional boundary required
+        .retryWhen { e, attempt -&gt;
+            val retry = e is IOException &amp;&amp; attempt &lt; 3
+            if (retry) delay(backoffWithJitter(attempt))
+            retry
+        }
+        .catch { e -&gt;
+            if (e is CancellationException) throw e
+            emit(SearchUiState.Error(key, e.toDomainError()))
+        }
+}.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SearchUiState.Initial)</code></pre>
+<p><code>onStart</code> placement means refresh belongs to each inner subscription and may repeat after retry/restart; production code may move refresh behind repository deduplication/transaction. There is no exactly-once network/database effect: stable keys, idempotency and persisted reconciliation carry that requirement.</p>
+
+<h2 id="stage11-uk-review-trap">Code-review/debugging trap<a aria-label="Посилання на розділ: Code review debugging trap" class="heading-anchor" href="#stage11-uk-review-trap">#</a></h2>
+<pre><code class="language-kotlin">query.flatMapMerge { api.search(it) }          // stale results + unbounded intent
+    .catch { emit(emptyList()) }               // hides cancellation/domain/programmer failures
+    .retryWhen { _, _ -&gt; true }                // infinite re-subscription and repeated effects
+    .shareIn(GlobalScope, Eagerly, replay = 1) // leaked owner; replay is not persistence</code></pre>
+<p>Review asks: Which result wins? What happens before every source emits? Which operator can repeat an effect? Is cancellation preserved? Who owns sharing? Where is durable truth? Debug with correlation/request ID, query key, attempt, upstream start/stop, subscriber count, cancellation cause, latency, buffer/drop counters and lifecycle state. Never log sensitive query/token payloads.</p>
+
+<h2 id="stage11-uk-testing-observability">Deterministic testing та observability<a aria-label="Посилання на розділ: Deterministic testing and observability" class="heading-anchor" href="#stage11-uk-testing-observability">#</a></h2>
+<ul>
+<li>Use one <code>runTest</code> and shared <code>TestCoroutineScheduler</code> for all injected <code>StandardTestDispatcher</code>s. Avoid real dispatchers/delays; use <code>runCurrent</code>, <code>advanceTimeBy</code> and <code>advanceUntilIdle</code> around exact boundaries.</li>
+<li>Composition: script timestamps and assert combine initial barrier/latest snapshots, zip pairs/early completion, merge membership without false global order, and sibling cancellation on failure.</li>
+<li>Latest/retry: make old inner suspend in <code>finally</code>-observable fake, advance debounce exactly, assert cancellation and no stale reduction; count subscriptions/side effects, predicate errors, backoff+jitter bounds and cancellation during delay.</li>
+<li>Sharing/lifecycle: collect in <code>backgroundScope</code>, count upstream starts/stops, cross stop timeout and <code>replayExpirationMillis</code>, re-subscribe, cancel owner, and assert replay/reset. Lifecycle integration asserts callback registration/cleanup.</li>
+<li>Production telemetry should distinguish requested, admitted, started, cancelled, retried, succeeded, materialized error, dropped/stale-rejected and rendered—not infer them from one “success” event.</li>
+</ul>
+
+<h2 id="stage11-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice questions and answers" class="heading-anchor" href="#stage11-uk-likely-qa">#</a></h2>
+<p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
+<ol>
+<li><strong><code>combine</code>, <code>zip</code> чи <code>merge</code>?</strong> Combine дає latest snapshot після first value кожного input; zip — positional pairs і завершується з shorter side; merge — concurrent interleaving без cross-source order.</li>
+<li><strong>Який flatten operator?</strong> Concat — всі inner flows послідовно; merge — concurrent all-results з limit; latest — лише newest intent із cooperative cancellation.</li>
+<li><strong>Чому search усе ще може показати stale result із flatMapLatest?</strong> Blocking/non-cooperative або detached work може завершитися зовні; перевіряйте request key/generation у reducer і не запускайте unstructured children.</li>
+<li><strong>Де поставити <code>catch</code>?</strong> Після operators, failures яких він має recover-ити, і до sharing/materialization boundary. Downstream collector failures він не ловить.</li>
+<li><strong>Що означає <code>onCompletion</code>?</strong> Observation normal/failure/cancellation із nullable cause; не suppression. Для fallback on failure потрібен catch.</li>
+<li><strong>Коли retry safe?</strong> Лише для classified transient failure, bounded attempts/deadline/backoff/jitter і repeat-safe upstream. Не для auth, validation, bugs чи cancellation.</li>
+<li><strong>Чому WhileSubscribed дублює I/O?</strong> Після stop новий subscriber re-starts cold upstream. Виберіть owner/timeout та idempotent setup, протестуйте start count.</li>
+<li><strong>Чи є replay cache?</strong> Лише in-memory replay у lifetime hot object; не durable, не freshness policy і не single source of truth.</li>
+<li><strong>Як отримати partial results?</strong> Materialize per-source domain outcome; якщо потрібна незалежна concurrent isolation, supervisorScope outside Flow продукує typed results.</li>
+<li><strong>Як тестувати timing?</strong> runTest + один shared scheduler, controlled fakes, explicit virtual-time steps і assertions на cancellation/subscription/attempt counts, не wall-clock sleeps.</li>
+</ol>
+
+<h2 id="stage11-uk-followups">4 senior follow-ups з відповідями<a aria-label="Посилання на розділ: 4 senior follow ups" class="heading-anchor" href="#stage11-uk-followups">#</a></h2>
+<ol>
+<li><strong>Один combine input нормально завершився після value.</strong> Його latest value може далі комбінуватися з emissions інших inputs; задокументуйте, чи stale completed dimension допустимий.</li>
+<li><strong>Retry metrics показують одну user action, але три POST.</strong> Retry re-subscribed upstream. POST потребує idempotency key/status reconciliation або retry boundary лише навколо safe read.</li>
+<li><strong>Rotation reconnects callback twice.</strong> Trace repeatOnLifecycle, sharing stop timeout і owner scope; make register/unregister symmetric and test concurrent subscribers.</li>
+<li><strong>Потрібен input order і concurrency.</strong> Assign sequence IDs, bound flatMapMerge, then reorder/materialize at explicit aggregator—or use concat if latency allows. Merge does not preserve it.</li>
+</ol>
+
+<h2 id="stage11-uk-self-check">5 self-check без відповідей<a aria-label="Посилання на розділ: 5 self check without answers" class="heading-anchor" href="#stage11-uk-self-check">#</a></h2>
+<ol>
+<li>Який initial/completion/error contract має кожен source і що буде, якщо він ніколи не emit-ить?</li>
+<li>Де cooperative cancellation закінчується і який stale-result guard потрібен?</li>
+<li>Які upstream effects retry/re-subscription/sharing restart можуть повторити?</li>
+<li>Хто володіє hot scope, replay lifetime, source of truth та invalidation?</li>
+<li>Яка virtual-time timeline доводить debounce, cancellation, retry і replay expiration?</li>
+</ol>
+
+<h2 id="stage11-uk-english-skeletons">Interview-ready English answer skeletons<a aria-label="Посилання на розділ: Interview ready English answer skeletons" class="heading-anchor" href="#stage11-uk-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you design a production Kotlin Flow pipeline?</em></p>
+<h3 id="stage11-uk-answer-30">~30-second answer<a aria-label="Посилання на розділ: 30 second answer" class="heading-anchor" href="#stage11-uk-answer-30">#</a></h3>
+<blockquote><p>I treat a Flow chain as an execution policy. I choose combine for latest snapshots after every input has emitted, zip for pairs, and merge for unordered concurrent values. For search I normalize, debounce, deduplicate, and use flatMapLatest, while still rejecting stale request IDs because cancellation is cooperative. I classify errors before bounded retry, preserve cancellation, and place catch upstream of the boundary it owns. stateIn or shareIn gets an explicit owner scope and start policy; replay is not durable cache. I verify timing, cancellation, retries, sharing restarts, and lifecycle re-subscription with runTest and one shared scheduler.</p></blockquote>
+<h3 id="stage11-uk-answer-2min">~2-minute answer<a aria-label="Посилання на розділ: 2 minute answer" class="heading-anchor" href="#stage11-uk-answer-2min">#</a></h3>
+<blockquote><p>I start by writing the semantics: do I need positional pairs, a latest multi-source snapshot, all concurrent results, latest-wins, ordered work, or durable work? combine waits for one value from every source and then recomputes with latest values. zip pairs and ends with the shorter side. merge and flatMapMerge interleave concurrent results, so I set an explicit concurrency limit and do not promise ordering. flatMapConcat preserves order, while flatMapLatest, mapLatest, and transformLatest cancel previous cooperative work.</p><p>A search chain normally trims, debounces, applies distinctUntilChanged, and flatMaps latest. Because cancellation cannot roll back an HTTP request, database commit, blocking call, or detached coroutine, I also carry a request key and reject stale completion at the reducer. For multi-source state I model initial/loading/error values; otherwise combine can wait forever, and independent sources do not form an atomic snapshot.</p><p>I place catch according to exception transparency: it handles upstream non-cancellation failures, not downstream collectors. onCompletion observes termination but does not recover it. retryWhen re-subscribes and may repeat side effects, so I retry only classified transient failures with bounded exponential backoff, jitter and a total deadline; cancellation, programmer, auth and validation errors are not retried. Expected domain errors may become values; invariant failures terminate.</p><p>Hot conversion is a lifecycle decision. stateIn/shareIn belongs to a named scope; Eagerly, Lazily and WhileSubscribed have different start, stop, replay expiration and restart behavior. Replay is memory, not durable cache or source of truth. Buffers, flowOn and callbackFlow boundaries affect concurrency and can fuse, so placement is explicit. Android repeatOnLifecycle re-subscribes, and callbackFlow must unregister in awaitClose. Tests use runTest, one TestCoroutineScheduler, controlled sources and exact virtual-time assertions for first emissions, cancellation, retries, upstream start/stop and replay expiration. Telemetry carries request IDs, attempts, cancellation causes and start/stop counts. None of this guarantees exactly-once network or database effects; idempotency and transactional reconciliation do.</p></blockquote>
+
+<h2 id="stage11-uk-sources">Офіційні джерела<a aria-label="Посилання на розділ: Офіційні джерела" class="heading-anchor" href="#stage11-uk-sources">#</a></h2>
+<ul>
+<li><a href="https://kotlinlang.org/docs/flow.html">Kotlin Flow guide</a> та <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/">kotlinx.coroutines Flow API</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/combine.html">combine</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/zip.html">zip</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/merge.html">merge</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/flat-map-latest.html">flatMapLatest</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/flat-map-merge.html">flatMapMerge</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/flat-map-concat.html">flatMapConcat</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/transform-latest.html">transformLatest</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/map-latest.html">mapLatest</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/catch.html">catch</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/on-completion.html">onCompletion</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/retry-when.html">retryWhen</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/state-in.html">stateIn</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/share-in.html">shareIn</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-sharing-started/">SharingStarted</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/buffer.html">buffer та operator fusion</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/flow-on.html">flowOn</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/callback-flow.html">callbackFlow</a></li>
+<li><a href="https://developer.android.com/kotlin/flow/stateflow-and-sharedflow">StateFlow and SharedFlow on Android</a>, <a href="https://developer.android.com/topic/libraries/architecture/coroutines">Lifecycle-aware Flow collection</a>, <a href="https://developer.android.com/kotlin/flow/test">Testing Kotlin flows on Android</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/">kotlinx-coroutines-test</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/run-test.html">runTest</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-test-coroutine-scheduler/">TestCoroutineScheduler</a></li>
 </ul>
 </div></details>
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
@@ -9825,6 +10054,122 @@ orders.stateIn(GlobalScope)                                       // wrong lifet
 <li><a href="https://developer.android.com/kotlin/flow/stateflow-and-sharedflow">StateFlow and SharedFlow on Android</a>, <a href="https://developer.android.com/topic/architecture/ui-layer/events">Android UI events</a>, <a href="https://developer.android.com/topic/architecture/ui-layer/state-production">UI state production</a></li>
 <li><a href="https://developer.android.com/topic/libraries/architecture/coroutines">Lifecycle-aware collection</a>, <a href="https://developer.android.com/develop/ui/compose/state">State in Compose</a>, <a href="https://developer.android.com/reference/kotlin/androidx/lifecycle/compose/package-summary">collectAsStateWithLifecycle</a>, <a href="https://developer.android.com/topic/libraries/architecture/viewmodel/viewmodel-savedstate">SavedStateHandle</a></li>
 <li><a href="https://developer.android.com/kotlin/flow/test">Testing Kotlin flows on Android</a> and <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/">kotlinx-coroutines-test</a></li>
+</ul>
+</div></details>
+<details class="major-section" data-key="advanced-kotlin-flow-production" data-title="Advanced Kotlin Flow in production" id="en-advanced-kotlin-flow-production" open=""><summary class="major-summary"><span class="major-title">Advanced Kotlin Flow in production</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<h2 id="en-stage11-objective">Learning objective<a aria-label="Link to section: Learning objective" class="heading-anchor" href="#en-stage11-objective">#</a></h2>
+<p>After this stage you should be able to design a production Flow topology: select timing, order, and completion semantics for composition and flattening; build latest-wins search without stale state; localize failure and retry; own sharing lifecycle and cache boundaries; integrate callbacks; and prove timing, cancellation, retry, and sharing with deterministic tests. Stage 9 basics and Stage 10 primitives appear only as comparative context.</p>
+<h2 id="en-stage11-mental-model">Senior mental model<a aria-label="Link to section: Senior mental model" class="heading-anchor" href="#en-stage11-mental-model">#</a></h2>
+<blockquote><p><strong>A Flow topology is executable policy.</strong> For every edge, name ownership, ordering, concurrency, buffering, cancellation, failure, restart, and durability. An operator cannot repair the wrong business contract: latest-wins, all-results, paired-results, and durable work are different requirements.</p></blockquote>
+<ul><li>A cold chain runs per collector; a hot boundary moves execution into its owner scope. Collector lifecycle and producer lifecycle are separate decisions.</li><li>Cancellation is control flow, not rollback. latest operators cancel cooperatively and cannot retract an HTTP request, database commit, or other external side effect.</li><li>Errors either terminate a stream or become typed domain values. Choose explicitly at a layer boundary.</li></ul>
+<h2 id="en-stage11-internals">Internals and operator topology<a aria-label="Link to section: Internals and operator topology" class="heading-anchor" href="#en-stage11-internals">#</a></h2>
+<pre><code class="language-text">source(s) → admission/rate policy → composition/flattening → error policy
+          → context/buffer boundary → domain state → stateIn/shareIn(owner scope)
+          → repeatOnLifecycle collector → render</code></pre>
+<p>Sequential operators normally execute in the collector coroutine. <code>buffer</code>, <code>flowOn</code>, flattening, <code>channelFlow</code>, and sharing may introduce channels or coroutines. Read data left-to-right, cancellation and failures right-to-left, and mark every external effect.</p>
+<h3 id="en-stage11-composition">combine vs zip vs merge; flattening and latest transforms<a aria-label="Link to section: combine zip merge and flattening" class="heading-anchor" href="#en-stage11-composition">#</a></h3>
+<table><thead><tr><th>Operator</th><th>Timing/order</th><th>Completion/failure</th></tr></thead><tbody>
+<tr><td><code>combine</code></td><td>After its initial barrier, transforms latest values whenever any input changes.</td><td><strong>combine waits for the first value from every input</strong>. A completed input can retain its latest value while others emit; a failure terminates composition.</td></tr>
+<tr><td><code>zip</code></td><td>Pairs the n-th values; a faster side waits/buffers under the contract.</td><td>Completes when one side can form no more pairs and cancels remaining collection; failures propagate.</td></tr>
+<tr><td><code>merge</code></td><td>Collects inputs concurrently and interleaves ready values without cross-input order.</td><td>Normally completes after all inputs; an unhandled failure terminates merge and cancels siblings.</td></tr>
+</tbody></table>
+<ul><li><code>flatMapConcat</code> collects inner flows sequentially and preserves outer order, with head-of-line blocking.</li><li><code>flatMapMerge(concurrency = n)</code> collects up to <code>n</code> inners; output ordering follows timing. The limit is resource policy, not a business order or rate limit.</li><li><code>flatMapLatest</code> cancels the previous inner; <code>mapLatest</code> cancels its previous transform; <code>transformLatest</code> can emit multiple values and cancels the whole previous block.</li><li>Use latest only when old work is obsolete. Use concat or bounded merge when every result matters.</li></ul>
+<h3 id="en-stage11-latest-search">Search pipeline: latest cancellation and stale-result protection<a aria-label="Link to section: Search latest cancellation and stale protection" class="heading-anchor" href="#en-stage11-latest-search">#</a></h3>
+<pre><code class="language-kotlin">val results: StateFlow&lt;SearchUiState&gt; = query
+    .map(String::trim).debounce(300).distinctUntilChanged()
+    .flatMapLatest { q -&gt;
+        if (q.length &lt; 2) flowOf(SearchUiState.Idle)
+        else flow&lt;SearchUiState&gt; {
+            emit(SearchUiState.Loading(q))
+            emit(SearchUiState.Content(q, repository.search(q)))
+        }.catch { e -&gt;
+            if (e is CancellationException) throw e
+            emit(SearchUiState.Error(q, e.toDomainError()))
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SearchUiState.Idle)</code></pre>
+<ul><li><code>debounce</code> is quiet-time admission; <code>distinctUntilChanged</code> removes adjacent equal normalized queries. Neither is caching.</li><li>For a blocking, uncancellable, or detached API, carry a request generation/query key into the reducer and reject a mismatched result.</li><li>Cancellation cannot undo a server mutation; writes need idempotency and reconciliation, not latest-wins.</li></ul>
+<h3 id="en-stage11-multi-source">Multi-source UI state and initial-emission traps<a aria-label="Link to section: Multi source UI state and initial emission traps" class="heading-anchor" href="#en-stage11-multi-source">#</a></h3>
+<ul><li>Use combine for latest account, rows, and filter state when any source should rerender. Model initial/loading/absent/error explicitly.</li><li>A change-only callback, filtered source, or <code>SharedFlow(replay=0)</code> may never provide the first value, so combine may emit nothing. Seed only with a truthful initial state.</li><li>Independent latest values are not an atomic multi-source transaction. Read a database transaction or one versioned aggregate when consistency requires it.</li><li>One unhandled input failure terminates the aggregate. Materialize recoverable per-source errors before combine only when partial UI is required.</li></ul>
+<h3 id="en-stage11-errors-retry">Exception transparency, completion, and retry boundaries<a aria-label="Link to section: Exception transparency completion and retry" class="heading-anchor" href="#en-stage11-errors-retry">#</a></h3>
+<ul><li><code>catch</code> handles upstream exceptions and preserves cancellation; <strong>catch does not catch downstream collector failures</strong>. An <code>onEach</code> before catch is in its recovery scope; one after catch is downstream.</li><li><code>onCompletion { cause }</code> observes normal completion, failure, or cancellation and does not suppress failure. It is not catch.</li><li><code>retry</code>/<code>retryWhen</code> re-subscribes and may repeat builders, calls, and side effects. Retry only typed transient failures with bounded attempts; never retry cancellation, programmer defects, authentication/authorization, validation, or deterministic client errors.</li><li>Use capped exponential backoff, jitter, connectivity policy, and a total deadline. Inject clock/randomness in tests and honor bounded server retry guidance.</li><li>Rethrow <code>CancellationException</code>. Materialize expected domain failures as sealed values if the stream should continue; terminate on invariants/programmer errors.</li></ul>
+<h3 id="en-stage11-sharing-cache">stateIn/shareIn lifecycle, cache, and single source of truth<a aria-label="Link to section: Sharing lifecycle cache and source of truth" class="heading-anchor" href="#en-stage11-sharing-cache">#</a></h3>
+<ul><li>The supplied scope owns <code>stateIn</code>/<code>shareIn</code>. Match it to data lifetime; do not hide it in a global scope.</li><li><code>Eagerly</code> starts now, <code>Lazily</code> starts once, and <code>WhileSubscribed(stopTimeoutMillis, replayExpirationMillis)</code> can stop, expire state/replay, and restart. Subscriber gaps can repeat setup or side effects.</li><li>Place catch/retry/completion policy before sharing. Normal upstream completion does not complete hot subscribers; an upstream exception is handled by the owner scope.</li><li><strong>Hot-sharing replay is not a durable cache.</strong> It does not define freshness, persistence, invalidation, or the repository/database single source of truth.</li><li>Sharing provides no exactly-once network/database effect. Use idempotency, transactions/outbox, operation IDs, and reconciliation.</li></ul>
+<h3 id="en-stage11-fusion-concurrency">Context, fusion, buffers, concurrency, and partial results<a aria-label="Link to section: Context fusion buffers and concurrency" class="heading-anchor" href="#en-stage11-fusion-concurrency">#</a></h3>
+<ul><li><code>flowOn</code> changes upstream context only and may create a channel across dispatchers; it cannot change collector context.</li><li>Adjacent <code>channelFlow</code>/<code>callbackFlow</code>, <code>flowOn</code>, <code>buffer</code>, and <code>produceIn</code> may fuse. Capacity, overflow, and placement change suspension, loss, and cancellation windows.</li><li><code>buffer</code> overlaps producer and consumer; <code>conflate</code> drops intermediate values; latest cancels work. Place expensive transforms deliberately.</li><li><code>flatMapMerge</code> bounds active inner collections, not all work those inners may spawn. Output order is not input order.</li><li>For independent partial failure, use <code>supervisorScope</code> outside Flow to create typed outcomes, then emit them. Merge is not a supervisor boundary.</li></ul>
+<h3 id="en-stage11-callbacks-lifecycle">callbackFlow and Android lifecycle re-subscription<a aria-label="Link to section: Callback Flow and lifecycle resubscription" class="heading-anchor" href="#en-stage11-callbacks-lifecycle">#</a></h3>
+<ul><li><code>callbackFlow</code> registers per collector, uses thread-safe <code>trySend</code>, and must unregister in <code>awaitClose</code>. Set buffering for the callback rate and inspect failed sends.</li><li>Make close/unregister races safe under the callback API. Cancellation cleans up but cannot undo callback side effects.</li><li><code>repeatOnLifecycle</code> cancels and relaunches collection. A cold callback re-registers, and WhileSubscribed may restart after its timeout. Test start/stop counts.</li><li>Share in a longer owner only when multiple collectors should truly reuse one registration.</li></ul>
+<h2 id="en-stage11-guarantees">Guarantees vs non-guarantees<a aria-label="Link to section: Guarantees versus non guarantees" class="heading-anchor" href="#en-stage11-guarantees">#</a></h2>
+<table><thead><tr><th>Guarantee</th><th>Non-guarantee</th></tr></thead><tbody>
+<tr><td>combine uses latest after all first values; zip pairs; merge interleaves.</td><td>Universal ordering, atomic snapshots, or an emission when a combine input never emits.</td></tr>
+<tr><td>Latest requests cancellation of previous work.</td><td>Preemption of blocking code or rollback of external effects.</td></tr>
+<tr><td>Retry can re-subscribe conditionally.</td><td>Safe repeats or exactly-once effects.</td></tr>
+<tr><td>catch sees upstream non-cancellation failures.</td><td>Downstream failures or cancellation are caught.</td></tr>
+<tr><td>Sharing can replay in-memory values within its scope.</td><td>Durable caching, invisible restart, or exactly-once network/database effects.</td></tr>
+</tbody></table>
+<h2 id="en-stage11-version-sensitive">Version-sensitive behavior<a aria-label="Link to section: Version sensitive behavior" class="heading-anchor" href="#en-stage11-version-sensitive">#</a></h2>
+<ul><li>Latest/flattening/dynamic debounce and sharing APIs may have experimental or preview annotations in a resolved release. Inspect the pinned API.</li><li>Default merge concurrency and channel capacity can be library/property-sensitive; pass explicit values when operationally relevant.</li><li>WhileSubscribed overloads, Duration support, and replay-expiration annotations vary by release. Pin one coroutines family and test boundaries.</li><li>AndroidX lifecycle and Compose collection signatures/default states depend on the resolved AndroidX version; lifecycle is not durability.</li></ul>
+<h2 id="en-stage11-decision-framework">Decision framework<a aria-label="Link to section: Decision framework" class="heading-anchor" href="#en-stage11-decision-framework">#</a></h2>
+<ol><li>Name the requirement: paired, latest snapshot, concurrent all-results, latest-wins, ordered work, or durable work.</li><li>Write initial, completion, and failure behavior for every source.</li><li>Choose cancellation/concurrency and classify every effect as idempotent, transactional, compensatable, or unsafe to repeat.</li><li>Place context, buffers, catch/retry, and sharing; assign owner/start/expiration.</li><li>Define source of truth, freshness, lifecycle re-subscription, telemetry, and a deterministic test timeline.</li></ol>
+<h2 id="en-stage11-tradeoffs">Trade-offs and failure modes<a aria-label="Link to section: Trade offs and failure modes" class="heading-anchor" href="#en-stage11-tradeoffs">#</a></h2>
+<ul><li>combine is responsive but can recompute or wait forever; zip preserves pairing but stalls; merge improves concurrency with nondeterministic interleaving.</li><li>Latest removes stale cooperative work but drops progress; concat preserves order with latency; merge adds load, memory, and ordering costs.</li><li>Broad fallback catch hides incidents. Infinite broad retry amplifies outages and resource use.</li><li>Wrong sharing scope leaks; short timeout thrashes; long timeout retains resources; replay can be stale.</li><li>Lifecycle collection, retry, and sharing restart can multiply effects. Observe starts, attempts, cancellation, and operation IDs.</li></ul>
+<h2 id="en-stage11-production-scenario">Production scenario: offline-first search<a aria-label="Link to section: Production scenario offline first search" class="heading-anchor" href="#en-stage11-production-scenario">#</a></h2>
+<p><strong>Hypothetically:</strong> normalized query, account, and filters combine into a versioned request. Debounce/distinct/latest controls search. A database Flow is the single source of truth; refresh transactionally writes keyed network results. A generation guard rejects stale uncancellable completions. Bounded jittered retry handles transient I/O; auth and validation become domain state; cancellation is rethrown.</p>
+<pre><code class="language-kotlin">combine(query, filters, account) { q, f, a -&gt; RequestKey(q.trim(), f, a.id) }
+    .debounce(300).distinctUntilChanged().flatMapLatest { key -&gt;
+        repository.observeRows(key)
+            .onStart { repository.refresh(key) } // repeat-safe boundary required
+            .retryWhen { e, attempt -&gt;
+                val retry = e is IOException &amp;&amp; attempt &lt; 3
+                if (retry) delay(backoffWithJitter(attempt))
+                retry
+            }.catch { e -&gt;
+                if (e is CancellationException) throw e
+                emit(emptyList()) // real code maps a typed domain error
+            }
+    }</code></pre>
+<p>The onStart refresh can repeat after retry or restart; production repository deduplication/idempotency owns it. There is no exactly-once network/database effect.</p>
+<h2 id="en-stage11-review-trap">Code-review/debugging trap<a aria-label="Link to section: Code review debugging trap" class="heading-anchor" href="#en-stage11-review-trap">#</a></h2>
+<pre><code class="language-kotlin">query.flatMapMerge { api.search(it) }          // stale results, unclear concurrency
+    .catch { emit(emptyList()) }               // hides domain/programmer failures
+    .retryWhen { _, _ -&gt; true }                // repeats forever
+    .shareIn(GlobalScope, Eagerly, replay = 1) // leaked owner; not persistence</code></pre>
+<p>Ask which result wins, what happens before first values, what can repeat, whether cancellation is preserved, who owns sharing, and where durable truth lives. Trace request ID, key, attempt, upstream start/stop, subscriber count, cancellation cause, latency, drops, and lifecycle state without logging secrets.</p>
+<h2 id="en-stage11-testing-observability">Deterministic testing and observability<a aria-label="Link to section: Deterministic testing and observability" class="heading-anchor" href="#en-stage11-testing-observability">#</a></h2>
+<ul><li>Use one <code>runTest</code> and shared <code>TestCoroutineScheduler</code> across injected test dispatchers; advance exact virtual-time boundaries.</li><li>Assert combine's barrier/latest snapshots, zip pairing/early completion, merge membership without false global order, and failure cancellation.</li><li>Make the old latest inner suspend, observe its finally, advance debounce exactly, reject stale output, and count retry subscriptions/effects/backoff.</li><li>For sharing, count starts/stops, cross timeout and <code>replayExpirationMillis</code>, resubscribe, cancel owner, and verify callback cleanup under lifecycle.</li><li>Telemetry distinguishes requested, admitted, started, cancelled, retried, succeeded, materialized error, stale-rejected, dropped, and rendered.</li></ul>
+<h2 id="en-stage11-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice questions and answers" class="heading-anchor" href="#en-stage11-likely-qa">#</a></h2>
+<p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
+<ol>
+<li><strong>combine, zip, or merge?</strong> combine produces latest snapshots after all first values; zip forms positional pairs and ends with the shorter side; merge interleaves concurrent inputs.</li>
+<li><strong>Which flattening operator?</strong> concat for ordered all-results, bounded merge for concurrent all-results, latest when previous intent is obsolete.</li>
+<li><strong>Why can search still become stale?</strong> Blocking, uncancellable, or detached work can complete externally; carry a generation/key and reject mismatches.</li>
+<li><strong>Where should catch go?</strong> After the operators it owns and before its materialization/sharing boundary; it does not catch downstream collectors.</li>
+<li><strong>What does onCompletion do?</strong> Observes normal, failed, or cancelled termination; it does not recover failure.</li>
+<li><strong>When is retry safe?</strong> For classified transient failures with bounded backoff/jitter/deadline and repeat-safe upstream, never auth/validation/bugs/cancellation.</li>
+<li><strong>Why can WhileSubscribed duplicate I/O?</strong> A new subscriber restarts a stopped cold upstream; choose owner/timeout and idempotent setup.</li>
+<li><strong>Is replay a cache?</strong> It is only in-memory replay, not durable storage, freshness policy, or source of truth.</li>
+<li><strong>How do partial results work?</strong> Materialize per-source outcomes; use supervisorScope outside Flow for independent concurrent failure isolation.</li>
+<li><strong>How do you test timing?</strong> runTest with one scheduler, controlled fakes, explicit virtual-time steps, and cancellation/subscription/attempt assertions.</li>
+</ol>
+<h2 id="en-stage11-followups">4 senior follow-ups with answers<a aria-label="Link to section: 4 senior follow ups" class="heading-anchor" href="#en-stage11-followups">#</a></h2>
+<ol><li><strong>A combine input completed after a value.</strong> Its latest can continue combining with other inputs; decide whether that stale completed dimension is acceptable.</li><li><strong>One user action caused three POSTs.</strong> Retry re-subscribed. Use an idempotency key and reconciliation or retry only a safe read.</li><li><strong>Rotation reconnects a callback twice.</strong> Trace repeatOnLifecycle, stop timeout, and owner; make register/unregister symmetric and test subscribers.</li><li><strong>You need input order and concurrency.</strong> Add sequence IDs and an explicit reordering aggregator, or use concat when latency permits.</li></ol>
+<h2 id="en-stage11-self-check">5 unanswered self-checks<a aria-label="Link to section: 5 unanswered self checks" class="heading-anchor" href="#en-stage11-self-check">#</a></h2>
+<ol><li>What are each source's initial, completion, and error contracts if it never emits?</li><li>Where does cooperative cancellation end, and what stale guard remains?</li><li>Which effects can retry, re-subscription, or sharing restart repeat?</li><li>Who owns hot scope, replay lifetime, source of truth, and invalidation?</li><li>What virtual timeline proves debounce, cancellation, retry, and replay expiration?</li></ol>
+<h2 id="en-stage11-english-skeletons">Interview-ready English answer skeletons<a aria-label="Link to section: Interview ready English answer skeletons" class="heading-anchor" href="#en-stage11-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you design a production Kotlin Flow pipeline?</em></p>
+<h3 id="en-stage11-answer-30">~30-second answer<a aria-label="Link to section: 30 second answer" class="heading-anchor" href="#en-stage11-answer-30">#</a></h3>
+<blockquote><p>I treat a Flow chain as an execution policy. I use combine for latest snapshots after every input emits, zip for pairs, and merge for unordered concurrent values. Search normalizes, debounces, deduplicates, and uses flatMapLatest plus a stale request guard because cancellation is cooperative. I classify failures before bounded retry, preserve cancellation, and scope catch upstream. Sharing has an explicit owner and start strategy; replay is not durable cache. runTest with one scheduler verifies timing, cancellation, retries, restart, and lifecycle re-subscription.</p></blockquote>
+<h3 id="en-stage11-answer-2min">~2-minute answer<a aria-label="Link to section: 2 minute answer" class="heading-anchor" href="#en-stage11-answer-2min">#</a></h3>
+<blockquote><p>I first name the required semantics: positional pairs, latest snapshot, concurrent all-results, latest-wins, ordered work, or durable work. combine waits for every first value, zip pairs and ends with the shorter side, and merge interleaves. flatMapConcat preserves order, flatMapMerge bounds concurrent inner flows, and latest variants cooperatively cancel old work.</p><p>For search I normalize, debounce, deduplicate, and flatMapLatest. Cancellation cannot roll back a request, commit, blocking call, or detached job, so I carry a request key and reject stale completion. Multi-source UI models truthful initial/loading/error values; independent latest values are not an atomic transaction.</p><p>catch handles upstream non-cancellation failures, not downstream collectors. onCompletion observes but does not recover. retryWhen re-subscribes and can repeat effects, so only typed transient failures receive bounded capped backoff, jitter, and a total deadline; cancellation, auth, validation, and programmer errors do not. Expected domain errors may become values.</p><p>stateIn/shareIn belongs to a named scope. Eagerly, Lazily, and WhileSubscribed differ in start, stop, replay expiration, and restart, so upstream setup must tolerate repetition. Replay is memory, not durable cache or source of truth. flowOn and buffer placement changes concurrency and may fuse with callbackFlow; awaitClose owns callback cleanup. repeatOnLifecycle re-subscribes. Tests use one TestCoroutineScheduler and assert exact emissions, cancellation, attempts, starts/stops, replay reset, and callback cleanup. Observability records request IDs, attempts, cancellation causes, and lifecycle. Exactly-once network/database effects require idempotency and transactional reconciliation outside Flow.</p></blockquote>
+<h2 id="en-stage11-sources">Official references<a aria-label="Link to section: Official references" class="heading-anchor" href="#en-stage11-sources">#</a></h2>
+<ul>
+<li><a href="https://kotlinlang.org/docs/flow.html">Kotlin Flow guide</a> and <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/">kotlinx.coroutines Flow API</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/combine.html">combine</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/zip.html">zip</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/merge.html">merge</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/flat-map-latest.html">flatMapLatest</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/flat-map-merge.html">flatMapMerge</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/flat-map-concat.html">flatMapConcat</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/transform-latest.html">transformLatest</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/map-latest.html">mapLatest</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/catch.html">catch</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/on-completion.html">onCompletion</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/retry-when.html">retryWhen</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/state-in.html">stateIn</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/share-in.html">shareIn</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-sharing-started/">SharingStarted</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/buffer.html">buffer та operator fusion</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/flow-on.html">flowOn</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/callback-flow.html">callbackFlow</a></li>
+<li><a href="https://developer.android.com/kotlin/flow/stateflow-and-sharedflow">StateFlow and SharedFlow on Android</a>, <a href="https://developer.android.com/topic/libraries/architecture/coroutines">Lifecycle-aware Flow collection</a>, <a href="https://developer.android.com/kotlin/flow/test">Testing Kotlin flows on Android</a></li>
+<li><a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/">kotlinx-coroutines-test</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/run-test.html">runTest</a>, <a href="https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-test-coroutine-scheduler/">TestCoroutineScheduler</a></li>
 </ul>
 </div></details>
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="en-kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
