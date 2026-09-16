@@ -510,6 +510,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="compose-effects-navigation-viewmodel" href="#compose-effects-navigation-viewmodel">Compose effects, navigation та ViewModel integration</a>
 </li>
 <li class="toc-major">
+<a data-target="jetpack-compose-performance" href="#jetpack-compose-performance">Jetpack Compose performance</a>
+</li>
+<li class="toc-major">
 <a data-target="kotlin-for-android" href="#kotlin-for-android">Kotlin for Android</a>
 <ol class="toc-children">
 <li><a data-target="val-vs-var-immutability" href="#val-vs-var-immutability">val vs var, immutability</a></li>
@@ -831,6 +834,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </li>
 <li class="toc-major">
 <a data-target="en-compose-effects-navigation-viewmodel" href="#en-compose-effects-navigation-viewmodel">Compose effects, navigation, and ViewModel integration</a>
+</li>
+<li class="toc-major">
+<a data-target="en-jetpack-compose-performance" href="#en-jetpack-compose-performance">Jetpack Compose performance</a>
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-for-android" href="#en-kotlin-for-android">Kotlin for Android</a>
@@ -4466,6 +4472,209 @@ fun Checkout(vm: CheckoutViewModel, nav: NavController) {
 <li><a href="https://developer.android.com/guide/navigation/testing/compose">Test Navigation Compose</a> та <a href="https://developer.android.com/jetpack/androidx/releases/navigation">Navigation release notes</a></li>
 </ul>
 </div></details>
+<details class="major-section" data-key="jetpack-compose-performance" data-title="Jetpack Compose performance" id="jetpack-compose-performance" open=""><summary class="major-summary"><span class="major-title">Jetpack Compose performance</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<h2 id="stage16-uk-objective">Learning objective<a aria-label="Посилання на розділ: Learning objective" class="heading-anchor" href="#stage16-uk-objective">#</a></h2>
+<p>Після етапу ви маєте evidence-first діагностувати Compose jank від frame symptom до composition, layout, draw, GPU та I/O; вибирати Macrobenchmark або Microbenchmark; читати Perfetto/System Trace, Layout Inspector counters і Compose compiler reports; виправляти доведені проблеми stability, state-read phase, lazy identity, allocation, image чи animation; та повторно вимірювати regression budget на representative data. Тут фокус — rendering та interaction; broad startup optimization і повний Baseline Profile workflow залишаються Stage 25.</p>
+
+<h2 id="stage16-uk-mental-model">Senior mental model<a aria-label="Посилання на розділ: Senior mental model" class="heading-anchor" href="#stage16-uk-mental-model">#</a></h2>
+<blockquote><p><strong>Оптимізуйте пропущений frame, а не proxy metric.</strong> State change може invalidувати restart scope; runtime може виконати recomposition або skip; далі окремо можливі measure/layout, draw, recording і GPU work. Recomposition — нормальний механізм, не дефект. Менше recompositions не обов’язково означає швидші frames: один image decode, intrinsic pass або overdraw може коштувати більше за багато дешевих skips.</p></blockquote>
+<ul>
+<li>Спочатку зафіксуйте user journey, frame deadline і trace; потім локалізуйте CPU/GPU/IO, phase та owner work.</li>
+<li>Розділяйте startup від steady-state rendering. Macrobenchmark може вимірювати обидва, але цей етап оптимізує scroll, animation і screen rendering; startup системно розглядається у Stage 25.</li>
+<li>Зміна має пояснювати trace: який work прибрано, з якої phase, якою ціною для correctness, memory та readability.</li>
+</ul>
+
+<h2 id="stage16-uk-topology">Runtime/performance topology<a aria-label="Посилання на розділ: Runtime performance topology" class="heading-anchor" href="#stage16-uk-topology">#</a></h2>
+<pre><code class="language-text">input / State write
+  → snapshot invalidation of scopes that read it
+  → recomposition execution or skipping
+  → node changes / measure → layout → draw recording
+  → RenderThread / GPU composition → displayed frame
+
+release/profileable app + representative dataset
+  → Macrobenchmark/JankStats symptom
+  → Perfetto/System Trace attribution
+  → Layout Inspector counters + compiler reports as supporting evidence
+  → one targeted change → same benchmark and regression budget</code></pre>
+<p>Frame timing is end-to-end: UI thread, RenderThread, GPU, binder, decoding, GC і scheduling можуть бути critical path. <code>JankStats</code> додає per-frame timing/state observability, але не пояснює root cause сам; trace потрібен для attribution.</p>
+
+<h2 id="stage16-uk-evidence">Performance pipeline та evidence tools<a aria-label="Посилання на розділ: Performance evidence pipeline" class="heading-anchor" href="#stage16-uk-evidence">#</a></h2>
+<table><thead><tr><th>Інструмент</th><th>Правильне питання</th><th>Межа</th></tr></thead><tbody>
+<tr><td>Macrobenchmark</td><td>Чи вкладається реальний startup/scroll/navigation journey у frame/startup metrics?</td><td>End-to-end, device-sensitive; broad startup reserved for Stage 25.</td></tr>
+<tr><td>Microbenchmark</td><td>Чи швидший ізольований pure function/layout primitive?</td><td>Не моделює scheduler, full UI, GPU або end-to-end UX.</td></tr>
+<tr><td>Perfetto / System Trace</td><td>Де critical path, long frame, main/RenderThread/GC/decode work?</td><td>Trace треба корелювати з interaction і app markers.</td></tr>
+<tr><td>Layout Inspector</td><td>Які composables recomposed/skipped під час контрольованої дії?</td><td>Counters — lead, не frame-time verdict; tooling має overhead.</td></tr>
+<tr><td>Compose compiler reports</td><td>Що restartable/skippable і яку stability inferred compiler?</td><td>Build-time model, не runtime proof of jank.</td></tr>
+<tr><td>JankStats/frame metrics</td><td>Які frames janky і який UI state був активний?</td><td>Observability/field signal, не автоматичний root cause.</td></tr>
+</tbody></table>
+<p>Фінальні висновки робіть на release-like, non-debuggable або контрольовано <code>profileable</code> build; debug builds непридатні для остаточних performance conclusions. Baseline Profile може змінити compilation state і startup/rendering numbers, тому фіксуйте його presence/mode, але повний profile workflow — Stage 25.</p>
+
+<h2 id="stage16-uk-recomposition-stability">Recomposition, skipping, stability та churn<a aria-label="Посилання на розділ: Recomposition skipping stability and churn" class="heading-anchor" href="#stage16-uk-recomposition-stability">#</a></h2>
+<ul>
+<li><strong>Restartable</strong> означає, що runtime може restart-ити scope; <strong>skippable</strong> — що за contract/compiler mode він може не виконувати body при unchanged inputs. Invalidation не дорівнює execution, а execution не означає повний layout/draw.</li>
+<li>У strong skipping mode restartable composables з unstable params зазвичай skippable; stable params порівнюються через equality, unstable — через instance identity. Новий unstable instance на кожній recomposition все одно програє comparison.</li>
+<li><code>@Immutable</code> обіцяє, що observable public state не зміниться; <code>@Stable</code> — stable equality і observable changes. Це compiler contracts, не runtime enforcement. Неправдива annotation може залишити stale UI; stable annotations не роблять mutable data safe.</li>
+<li>Kotlin <code>List</code>/<code>Set</code>/<code>Map</code> interfaces не є доказом immutability. На UI boundary доречні truly immutable models/immutable collections; stability configuration — promise для external types, а не suppression file.</li>
+<li>Перевіряйте instance/lambda churn у call site. Strong skipping може automatically memoize lambdas, але version/mode і capture keys важливі; не додавайте ручний <code>remember</code> без виміру або correct keys.</li>
+</ul>
+<pre><code class="language-kotlin">@Immutable
+data class FeedUi(val items: ImmutableList&lt;FeedItemUi&gt;)
+
+// Contract truthful only if FeedItemUi and every reachable value are immutable.
+@Composable
+fun FeedRow(item: FeedItemUi, onOpen: (Long) -&gt; Unit) { /* cheap UI */ }</code></pre>
+
+<h2 id="stage16-uk-phases-caching">State-read phases, deferred reads, caching та backwards writes<a aria-label="Посилання на розділ: State read phases caching and backwards writes" class="heading-anchor" href="#stage16-uk-phases-caching">#</a></h2>
+<pre><code class="language-kotlin">val offset = animateIntOffsetAsState(targetValue, label = "cardOffset")
+Box(Modifier.offset { offset.value }) // read in layout, not composition
+
+val color = animateColorAsState(targetColor, label = "cardColor")
+Box(Modifier.drawBehind { drawRect(color.value) }) // draw-phase read</code></pre>
+<ul>
+<li>State read у composition invalidує composition; у layout/draw block — відповідну пізнішу phase. Передавайте provider lambda і використовуйте block-form <code>offset { }</code>, <code>graphicsLayer { }</code>, <code>drawBehind</code>, коли fast-changing value не змінює tree shape.</li>
+<li>Не back-write observable state composition→composition. Так само <code>onSizeChanged</code> у layout, що пише value, прочитане sibling-ом у composition, створює layout→composition loop; передавайте measurement через layout constraint/placement, якщо можливо.</li>
+<li><code>derivedStateOf</code> має observation/calculation cost. Він корисний, коли inputs змінюються частіше за derived threshold/result (наприклад, “show scroll-to-top”); для дешевого string concatenation на кожний legitimate input change — ні.</li>
+<li><code>remember(keys)</code> кешує в межах composition identity, але remember не робить expensive work free: first calculation, invalid keys, memory retention і main-thread cost лишаються. Неповні keys дають stale data; heavy CPU краще підготувати поза composition.</li>
+</ul>
+
+<h2 id="stage16-uk-lazy-layout">Lazy lists, item identity та layout cost<a aria-label="Посилання на розділ: Lazy lists identity and layout cost" class="heading-anchor" href="#stage16-uk-lazy-layout">#</a></h2>
+<ul>
+<li>Давайте stable unique <code>key</code>, щоб identity/state рухалися з item при insert/reorder; keys preserve identity but do not guarantee zero recomposition. Не використовуйте position, якщо order змінюється.</li>
+<li><code>contentType</code> допомагає reuse сумісних item compositions для heterogeneous feed. Тримайте type семантично стабільним і не змішуйте несумісні layouts.</li>
+<li>Paging зменшує resident dataset, але placeholder size має бути реалістичною, IDs стабільними, load/error rows окремо keyed; інакше viewport може нескінченно запитувати pages або identity стрибатиме.</li>
+<li>Avoid same-direction nested lazy containers без bounded size/чіткого ownership; flatten sections або використовуйте один parent lazy DSL. Nested horizontal carousels можуть бути валідні, але вимірюйте composition/reuse.</li>
+<li><code>SubcomposeLayout</code>/<code>BoxWithConstraints</code> потрібні, коли composition залежить від constraints, але subcomposition додає work. Intrinsic measurement може вимірювати додатково. Custom layout прибирає wrappers лише якщо trace показав layout bottleneck; correctness constraints важливіша.</li>
+</ul>
+
+<h2 id="stage16-uk-rendering-animation">Modifiers, drawing, images, overdraw та animation<a aria-label="Посилання на розділ: Rendering images and animation" class="heading-anchor" href="#stage16-uk-rendering-animation">#</a></h2>
+<ul>
+<li>Hoist/reuse long modifier chains лише коли allocation churn доведений або chain стабільний; correctness modifier order важливіша. У draw path використовуйте caching API на кшталт <code>drawWithCache</code> для objects, залежних від size/state, а не allocates brushes/paths every frame.</li>
+<li><code>graphicsLayer</code> може перенести translation/alpha/scale до layer і уникнути composition/layout, але layer має memory, recording і offscreen-compositing cost; не додавати “про всяк випадок”.</li>
+<li>Request/decode image близько до display size, використовуйте thumbnail/cache policy і не декодуйте huge bitmap для small cell. Перевіряйте placeholder→image size stability та main-thread work.</li>
+<li>Прибирайте redundant opaque backgrounds, clipping/offscreen buffers і невидимі layers; overdraw/GPU bottleneck не вилікує skipping.</li>
+<li>Frame-rate animation state читайте у layout/draw, якщо tree не змінюється; скорочуйте animated area/effects і перевіряйте frame pacing. Не знижуйте refresh rate або visual quality без product/accessibility decision.</li>
+</ul>
+
+<h2 id="stage16-uk-guarantees">Guarantees vs explicit non-guarantees<a aria-label="Посилання на розділ: Guarantees and non guarantees" class="heading-anchor" href="#stage16-uk-guarantees">#</a></h2>
+<table><thead><tr><th>Корисний contract</th><th>Не гарантує</th></tr></thead><tbody>
+<tr><td>Skipping може не виконати restartable body за unchanged inputs.</td><td>Що fewer recompositions означає faster frames або відсутність layout/draw/GPU cost.</td></tr>
+<tr><td>Truthful stability contract дозволяє визначене comparison/skipping.</td><td>Що <code>@Stable</code>/<code>@Immutable</code> зроблять mutable data безпечною.</td></tr>
+<tr><td><code>remember(keys)</code> reuse-ить value для identity і keys.</td><td>Що expensive work безкоштовний, background або не стане stale.</td></tr>
+<tr><td>Lazy key зберігає logical identity при move.</td><td>Zero recomposition, zero measurement або zero allocation.</td></tr>
+<tr><td>Microbenchmark точно міряє заданий hot loop у своїх умовах.</td><td>End-to-end UX, scroll jank чи production scheduler/GPU behavior.</td></tr>
+<tr><td>Macrobenchmark/trace дає evidence для конкретного build/device/journey.</td><td>Універсальну швидкість на всіх devices/datasets.</td></tr>
+<tr><td>Modules та abstractions можуть покращити ownership/build isolation.</td><td>Rendering performance; більше modules/abstractions тут irrelevant без evidence.</td></tr>
+<tr><td>Debug tooling допомагає знайти lead.</td><td>Фінальний verdict: debug builds unsuitable для final conclusions.</td></tr>
+</tbody></table>
+
+<h2 id="stage16-uk-version-sensitive">Version-sensitive behavior<a aria-label="Посилання на розділ: Version sensitive behavior" class="heading-anchor" href="#stage16-uk-version-sensitive">#</a></h2>
+<ul>
+<li>Strong skipping enabled by default у Kotlin 2.0.20+ Compose compiler setup, але це не universal rule для старих compiler versions, disabled mode або pinned toolchains. Зафіксуйте Kotlin/Compose compiler version і flags.</li>
+<li>Automatic lambda memoization та stable/unstable comparison rules залежать від strong skipping mode; звіряйте current compiler docs/reports shipped variant.</li>
+<li>Compiler report Gradle configuration змінилася з Kotlin Compose compiler plugin; не копіюйте старі flags без перевірки.</li>
+<li>Layout Inspector counters, tracing labels, Macrobenchmark/JankStats metrics і Baseline Profile behavior залежать від Android Studio, device API та library versions. Pin versions і зберігайте raw traces/results.</li>
+</ul>
+
+<h2 id="stage16-uk-decision-framework">Diagnosis/decision framework<a aria-label="Посилання на розділ: Diagnosis decision framework" class="heading-anchor" href="#stage16-uk-decision-framework">#</a></h2>
+<ol>
+<li>Назвіть user-visible symptom, journey, device class, dataset, frame/startup metric і budget.</li>
+<li>Відтворіть на release/profileable build; warm up згідно scenario, повторіть iterations, збережіть distribution і noisy environment notes.</li>
+<li>Macrobenchmark для journey; Microbenchmark лише для isolated suspect. Correlate slow iteration з Perfetto/System Trace.</li>
+<li>Класифікуйте critical path: composition/skipping, layout/intrinsics/subcomposition, draw/allocation, image/IO, RenderThread/GPU, GC або unrelated work.</li>
+<li>Layout Inspector/compiler reports використовуйте для перевірки конкретної Compose hypothesis, не як goal.</li>
+<li>Внесіть одну мінімальну correctness-preserving зміну; повторіть identical measurement, порівняйте percentile/distribution і regression budget.</li>
+<li>Додайте benchmark/observability guard та перевірте accessibility, visual fidelity, memory і representative worst-case data.</li>
+</ol>
+
+<h2 id="stage16-uk-tradeoffs">Trade-offs та failure modes<a aria-label="Посилання на розділ: Trade offs and failure modes" class="heading-anchor" href="#stage16-uk-tradeoffs">#</a></h2>
+<ul>
+<li>False stability annotation покращує report і ламає updates; immutable copy знижує mutation risk, але може мати allocation cost.</li>
+<li>Надмірний caching утримує memory/stale values; недостатні keys дають correctness bug, надто broad keys — cache misses.</li>
+<li>Deferred read скорочує composition, але callback/provider ускладнює API; застосовуйте для measured hot state, не branching UI.</li>
+<li><code>derivedStateOf</code> зменшує downstream invalidations лише коли result змінюється рідше; інакше додає overhead.</li>
+<li>Layer/cache покращує repeated transform/draw, але збільшує memory/offscreen work; custom layout економить nodes, але підвищує complexity.</li>
+<li>Benchmark на tiny dataset, одному flagship device або одному lucky iteration маскує tail latency; thermal throttling, background work і compilation mode шумлять.</li>
+</ul>
+
+<h2 id="stage16-uk-production-scenario">Production optimization scenario: janky product feed<a aria-label="Посилання на розділ: Production optimization scenario" class="heading-anchor" href="#stage16-uk-production-scenario">#</a></h2>
+<p><strong>Before.</strong> Feed із 500 mixed cards janks при fling: positions як keys, без <code>contentType</code>, full-resolution images, scroll offset прочитаний у composition для toolbar, row створює lists/lambdas, а nested vertical lazy sections мають невизначену reuse.</p>
+<p><strong>Measure.</strong> Release/profileable Macrobenchmark запускає однаковий seeded dataset і scripted fling після warmup; JankStats/frame metrics задають symptom, Perfetto показує main-thread composition/layout + image decode, Layout Inspector — churn visible rows, compiler report — new unstable wrapper instances. Фіксуємо median/tail, janky frames і regression budget, не один run.</p>
+<p><strong>Change.</strong> Stable item IDs + semantic <code>contentType</code>, flattened vertical lazy DSL, thumbnail-sized requests, immutable per-item model, removal call-site instance churn; toolbar отримує scroll provider і читає його у <code>graphicsLayer { }</code>. Не додаємо annotation, поки contract не truthful.</p>
+<p><strong>Re-measure.</strong> Той сам device/build/profile state/dataset/journey показує менше long frames і decode/layout slices без memory/visual regression. Compiler/counters підтримують explanation, але acceptance — frame distribution у budget. Startup number записуємо для guard, а broad startup/Baseline Profile tuning переносимо до Stage 25.</p>
+
+<h2 id="stage16-uk-review-trap">Code-review/debug trap<a aria-label="Посилання на розділ: Code review and debugging trap" class="heading-anchor" href="#stage16-uk-review-trap">#</a></h2>
+<pre><code class="language-kotlin">@Immutable // false: mutable list can change invisibly
+class FeedState(val items: MutableList&lt;Item&gt;)
+
+@Composable
+fun Feed(state: FeedState, listState: LazyListState) {
+    val y = listState.firstVisibleItemScrollOffset // frame-rate composition read
+    val visible = remember { expensiveFilter(state.items) } // stale: missing key
+    LazyColumn {
+        itemsIndexed(visible, key = { index, _ -&gt; index }) { _, item -&gt;
+            Card(Modifier.graphicsLayer(translationY = -y.toFloat()))
+        }
+    }
+}</code></pre>
+<p>Trap: annotation lies; mutable in-place data can skip incorrectly; cache is stale; position key loses identity; scroll crosses every row boundary as composition value; value-form layer cannot defer read. Do not “fix” by adding modules, more annotations або counting fewer recompositions. Reproduce one fling, inspect trace/reports, make model and identity truthful, move the read to a provider/block layer, size images, and re-run the benchmark.</p>
+
+<h2 id="stage16-uk-testability">Testability та observability<a aria-label="Посилання на розділ: Testability and observability" class="heading-anchor" href="#stage16-uk-testability">#</a></h2>
+<ul>
+<li>Inject deterministic representative datasets, fake image sources і controllable clocks/animation where possible; benchmark production-like code paths.</li>
+<li>Keep semantics/correctness Compose tests separate from performance tests. A test asserting output/identity guards refactors; Macrobenchmark guards frame journey; Microbenchmark guards proven isolated primitive.</li>
+<li>Add trace sections around app work, stable scenario labels and JankStats state so field/session evidence maps to screen mode without PII.</li>
+<li>Store raw Perfetto traces, build SHA, device/API, thermal/compilation/Baseline Profile mode, iterations and distributions. CI budgets should allow known noise yet fail sustained regression, not one outlier.</li>
+</ul>
+
+<h2 id="stage16-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice questions and answers" class="heading-anchor" href="#stage16-uk-likely-qa">#</a></h2>
+<p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
+<ol>
+<li><strong>Macrobenchmark чи Microbenchmark?</strong> Macro — user journey, frames/startup і system interaction; Micro — isolated hot code. Micro result не прогнозує end-to-end UX.</li>
+<li><strong>Чи recomposition є поганою?</strong> Ні. Це expected update mechanism; проблема лише коли measured critical path виконує непотрібну/дорогу роботу.</li>
+<li><strong>Restartable vs skippable?</strong> Restartable scope може бути re-entered; skippable body може не виконатися за unchanged inputs і applicable compiler mode.</li>
+<li><strong>Що змінив strong skipping?</strong> У Kotlin 2.0.20+ він default: unstable params не автоматично забороняють skipping, але порівнюються identity; перевіряйте version/mode.</li>
+<li><strong>Коли ставити <code>@Immutable</code>?</strong> Лише коли весь observable contract справді immutable; annotation — promise, не repair mutable model.</li>
+<li><strong>Коли <code>derivedStateOf</code>?</strong> Коли frequently changing input рідше змінює derived result/threshold; не для кожної дешевої derivation.</li>
+<li><strong>Навіщо deferred state read?</strong> Щоб frame-rate value invalidував layout/draw замість composition, якщо він не змінює emitted tree.</li>
+<li><strong>Що дають lazy <code>key</code> і <code>contentType</code>?</strong> Stable identity при move і сумісний item reuse; не гарантують zero recomposition.</li>
+<li><strong>Чому не міряти debug build?</strong> Debug/tooling/compiler behavior спотворює timings; final verdict потребує release/profileable representative setup.</li>
+<li><strong>Як довести optimization?</strong> Same journey/build mode/device/dataset: before trace + distribution, one explained change, re-measure і budget/regression guard.</li>
+</ol>
+
+<h2 id="stage16-uk-followups">4 senior follow-ups з відповідями<a aria-label="Посилання на розділ: 4 senior follow ups" class="heading-anchor" href="#stage16-uk-followups">#</a></h2>
+<ol>
+<li><strong>Counters впали, jank ні.</strong> Шукайте layout/draw/GPU/decode/GC critical path; count не містить cost.</li>
+<li><strong>Stable model усе одно recomposes.</strong> Перевірте real changed params, parent execution, lambda/instance churn, strong-skipping mode і compiler report; legitimate state може вимагати execution.</li>
+<li><strong>Fling benchmark noisy.</strong> Seed data, fixed gesture, warmup/iterations, device thermal/background control; аналізуйте distribution/trace і не cherry-pick.</li>
+<li><strong><code>graphicsLayer</code> прискорив CPU, memory зросла.</strong> Виміряйте layer size/offscreen cost і GPU; обмежте area/lifetime або поверніться до direct draw, якщо total frame гірший.</li>
+</ol>
+
+<h2 id="stage16-uk-self-check">4 unanswered self-checks<a aria-label="Посилання на розділ: 4 unanswered self checks" class="heading-anchor" href="#stage16-uk-self-check">#</a></h2>
+<ol>
+<li>Який конкретний frame journey, percentile і device-class budget захищає ваш benchmark?</li>
+<li>Де кожний fast-changing state читається: composition, measure, placement чи draw — і чому?</li>
+<li>Які stability annotations/config entries є доказовими contracts, а які лише приховують mutable data?</li>
+<li>Чи representative dataset охоплює paging, mixed content types, large images, reorder і worst-case animation?</li>
+</ol>
+
+<h2 id="stage16-uk-english-skeletons">Interview-ready English answer skeletons<a aria-label="Посилання на розділ: Interview ready English answer skeletons" class="heading-anchor" href="#stage16-uk-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you diagnose and optimize Jetpack Compose performance?</em></p>
+<h3 id="stage16-uk-answer-30">~30-second answer<a aria-label="Посилання на розділ: 30 second answer" class="heading-anchor" href="#stage16-uk-answer-30">#</a></h3>
+<blockquote><p>I optimize frame time, not recomposition counts. I reproduce a representative journey in a release or profileable build, use Macrobenchmark and frame metrics for the symptom, and Perfetto for attribution. Layout Inspector counters and compiler reports test a specific Compose hypothesis. I then fix the proven phase—stability or instance churn, deferred state reads, lazy identity, layout, drawing, images, or animation—and rerun the same benchmark. Fewer recompositions, stable annotations, remember, keys, and microbenchmarks are not end-to-end guarantees.</p></blockquote>
+<h3 id="stage16-uk-answer-2min">~2-minute answer<a aria-label="Посилання на розділ: 2 minute answer" class="heading-anchor" href="#stage16-uk-answer-2min">#</a></h3>
+<blockquote><p>I start with a user-visible journey and a budget: for example, tail frame time during a fling on a mid-tier device with a seeded production-sized feed. I measure a release or profileable build with Macrobenchmark, control warmup, compilation and Baseline Profile state, retain distributions and traces, and use JankStats or frame metrics for observability. Microbenchmark is only for an isolated primitive; it cannot predict full UX.</p><p>In Perfetto I locate the critical path across the UI thread, RenderThread, GPU, decoding, GC and scheduling. If composition is implicated, I use Layout Inspector counters and Compose compiler reports to distinguish invalidation, execution and skipping. Restartability is not skippability. With Kotlin 2.0.20+ strong skipping is default, unstable parameters can still be skippable but compare by identity, so fresh instances still churn. I make data truly immutable or configure external stable types truthfully; annotations never make mutation safe.</p><p>I then target the phase. Fast scroll or animation values that do not change tree shape can be read in block-form layout/draw modifiers or provider lambdas. I avoid backwards writes, use derivedStateOf only when the result changes less often, and key remember correctly. Lazy lists get stable keys, content types and realistic paging placeholders. I inspect subcomposition, intrinsics, modifier/draw allocations, layer trade-offs, image decode size and overdraw.</p><p>Finally I make one change and re-run the identical benchmark against a regression budget, checking memory, visuals and correctness. Fewer recompositions are supporting evidence, not success. Broad startup and the full Baseline Profile strategy belong to the later startup stage.</p></blockquote>
+
+<h2 id="stage16-uk-sources">Офіційні джерела<a aria-label="Посилання на розділ: Офіційні джерела" class="heading-anchor" href="#stage16-uk-sources">#</a></h2>
+<ul>
+<li><a href="https://developer.android.com/develop/ui/compose/performance">Jetpack Compose performance</a>, <a href="https://developer.android.com/develop/ui/compose/performance/bestpractices">Performance best practices</a>, <a href="https://developer.android.com/develop/ui/compose/performance/phases">Compose phases and performance</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/performance/stability">Stability in Compose</a>, <a href="https://developer.android.com/develop/ui/compose/performance/stability/diagnose">Diagnose stability issues</a>, <a href="https://developer.android.com/develop/ui/compose/performance/stability/fix">Fix stability issues</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/performance/stability/strongskipping">Strong skipping mode</a> та <a href="https://developer.android.com/studio/debug/layout-inspector">Debug your layout with Layout Inspector</a></li>
+<li><a href="https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview">Macrobenchmark overview</a>, <a href="https://developer.android.com/topic/performance/benchmarking/microbenchmark-overview">Microbenchmark overview</a>, <a href="https://developer.android.com/topic/performance/benchmarking/macrobenchmark-metrics">Macrobenchmark metrics</a></li>
+<li><a href="https://developer.android.com/topic/performance/tracing">Overview of system tracing</a>, <a href="https://perfetto.dev/docs/">Perfetto documentation</a>, <a href="https://developer.android.com/topic/performance/jankstats">JankStats</a></li>
+<li><a href="https://developer.android.com/topic/performance/baselineprofiles/overview">Baseline Profiles overview</a> та <a href="https://developer.android.com/topic/performance/appstartup/analysis-optimization">App startup analysis and optimization</a> (повний scope у Stage 25)</li>
+</ul>
+</div></details>
+
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
 <h2 id="val-vs-var-immutability">val vs var, immutability<a aria-label="Посилання на розділ: val vs var, immutability" class="heading-anchor" href="#val-vs-var-immutability">#</a></h2>
 <h3 id="питання-8">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-8">#</a></h3>
@@ -11747,6 +11956,209 @@ fun Checkout(vm: CheckoutViewModel, nav: NavController) {
 <li><a href="https://developer.android.com/guide/navigation/testing/compose">Test Navigation Compose</a> and <a href="https://developer.android.com/jetpack/androidx/releases/navigation">Navigation release notes</a></li>
 </ul>
 </div></details>
+<details class="major-section" data-key="jetpack-compose-performance" data-title="Jetpack Compose performance" id="en-jetpack-compose-performance" open=""><summary class="major-summary"><span class="major-title">Jetpack Compose performance</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<h2 id="en-stage16-objective">Learning objective<a aria-label="Link to section: Learning objective" class="heading-anchor" href="#en-stage16-objective">#</a></h2>
+<p>After this stage, you should diagnose Compose jank evidence-first from a frame symptom through composition, layout, draw, GPU, and I/O; choose Macrobenchmark or Microbenchmark; interpret Perfetto/System Trace, Layout Inspector counters, and Compose compiler reports; fix a demonstrated stability, state-read phase, lazy identity, allocation, image, or animation problem; and re-measure a regression budget with representative data. The focus is rendering and interaction; broad startup optimization and the full Baseline Profile workflow are reserved for Stage 25.</p>
+
+<h2 id="en-stage16-mental-model">Senior mental model<a aria-label="Link to section: Senior mental model" class="heading-anchor" href="#en-stage16-mental-model">#</a></h2>
+<blockquote><p><strong>Optimize the missed frame, not a proxy metric.</strong> A state change can invalidate a restart scope; runtime can execute recomposition or skip it; measure/layout, draw recording, and GPU work are separate. Recomposition is a normal update mechanism, not a defect. Fewer recompositions do not necessarily mean faster frames: one image decode, intrinsic pass, or overdraw hotspot can cost more than many cheap skips.</p></blockquote>
+<ul>
+<li>First pin down the user journey, frame deadline, and trace; then locate CPU/GPU/I/O work, phase, and owner.</li>
+<li>Separate startup from steady-state rendering. Macrobenchmark can measure both, but this stage optimizes scroll, animation, and screen rendering; broad startup belongs to Stage 25.</li>
+<li>Every change should explain the trace: which work moved or disappeared, from which phase, and at what correctness, memory, or readability cost.</li>
+</ul>
+
+<h2 id="en-stage16-topology">Runtime/performance topology<a aria-label="Link to section: Runtime performance topology" class="heading-anchor" href="#en-stage16-topology">#</a></h2>
+<pre><code class="language-text">input / State write
+  → snapshot invalidation of scopes that read it
+  → recomposition execution or skipping
+  → node changes / measure → layout → draw recording
+  → RenderThread / GPU composition → displayed frame
+
+release/profileable app + representative dataset
+  → Macrobenchmark/JankStats symptom
+  → Perfetto/System Trace attribution
+  → Layout Inspector counters + compiler reports as supporting evidence
+  → one targeted change → same benchmark and regression budget</code></pre>
+<p>Frame timing is end-to-end: UI thread, RenderThread, GPU, binder, decoding, GC, and scheduling can all be the critical path. <code>JankStats</code> adds per-frame timing and UI-state observability, but does not identify root cause by itself.</p>
+
+<h2 id="en-stage16-evidence">Performance pipeline and evidence tools<a aria-label="Link to section: Performance evidence pipeline" class="heading-anchor" href="#en-stage16-evidence">#</a></h2>
+<table><thead><tr><th>Tool</th><th>Correct question</th><th>Boundary</th></tr></thead><tbody>
+<tr><td>Macrobenchmark</td><td>Does a real startup/scroll/navigation journey meet frame or startup metrics?</td><td>End-to-end and device-sensitive; broad startup is reserved for Stage 25.</td></tr>
+<tr><td>Microbenchmark</td><td>Is an isolated pure function or layout primitive faster?</td><td>Does not model full UI, scheduler, GPU, or end-to-end UX.</td></tr>
+<tr><td>Perfetto / System Trace</td><td>Where is the critical path for a long frame: main, RenderThread, GC, decode?</td><td>Correlate the trace with the interaction and app markers.</td></tr>
+<tr><td>Layout Inspector</td><td>Which composables recompose or skip during one controlled action?</td><td>Counters are a lead, not a frame-time verdict; tooling adds overhead.</td></tr>
+<tr><td>Compose compiler reports</td><td>What is restartable/skippable, and what stability did the compiler infer?</td><td>A build-time model, not runtime proof of jank.</td></tr>
+<tr><td>JankStats/frame metrics</td><td>Which frames are janky, and which UI state was active?</td><td>Observability/field signal, not automatic attribution.</td></tr>
+</tbody></table>
+<p>Make final conclusions on a release-like non-debuggable or controlled <code>profileable</code> build; debug builds are unsuitable for final performance conclusions. Baseline Profiles can change compilation state and startup/rendering numbers, so record their mode, while leaving the full profile workflow to Stage 25.</p>
+
+<h2 id="en-stage16-recomposition-stability">Recomposition, skipping, stability, and churn<a aria-label="Link to section: Recomposition skipping stability and churn" class="heading-anchor" href="#en-stage16-recomposition-stability">#</a></h2>
+<ul>
+<li><strong>Restartable</strong> means runtime can restart a scope; <strong>skippable</strong> means its body can be omitted for unchanged inputs under the applicable contract/compiler mode. Invalidation is not execution, and execution does not imply full layout/draw.</li>
+<li>Under strong skipping, restartable composables with unstable parameters are generally skippable; stable parameters compare by equality and unstable parameters by instance identity. A fresh unstable instance on every recomposition still defeats comparison.</li>
+<li><code>@Immutable</code> promises observable public state never changes; <code>@Stable</code> promises stable equality and observable changes. These are compiler contracts, not runtime enforcement. A false annotation can leave stale UI; stable annotations do not make mutable data safe.</li>
+<li>Kotlin <code>List</code>/<code>Set</code>/<code>Map</code> interfaces do not prove immutability. Prefer truly immutable UI models/immutable collections; stability configuration is a promise for external types, not a suppression file.</li>
+<li>Inspect call-site instance and lambda churn. Strong skipping can automatically memoize lambdas, but version/mode and capture keys matter; do not add manual <code>remember</code> without evidence and correct keys.</li>
+</ul>
+<pre><code class="language-kotlin">@Immutable
+data class FeedUi(val items: ImmutableList&lt;FeedItemUi&gt;)
+
+// Truthful only if FeedItemUi and every reachable value are immutable.
+@Composable
+fun FeedRow(item: FeedItemUi, onOpen: (Long) -&gt; Unit) { /* cheap UI */ }</code></pre>
+
+<h2 id="en-stage16-phases-caching">State-read phases, deferred reads, caching, and backwards writes<a aria-label="Link to section: State read phases caching and backwards writes" class="heading-anchor" href="#en-stage16-phases-caching">#</a></h2>
+<pre><code class="language-kotlin">val offset = animateIntOffsetAsState(targetValue, label = "cardOffset")
+Box(Modifier.offset { offset.value }) // layout-phase read
+
+val color = animateColorAsState(targetColor, label = "cardColor")
+Box(Modifier.drawBehind { drawRect(color.value) }) // draw-phase read</code></pre>
+<ul>
+<li>A state read in composition invalidates composition; a read in a layout/draw block can invalidate only that later phase. Pass a provider lambda and use block-form <code>offset { }</code>, <code>graphicsLayer { }</code>, or <code>drawBehind</code> when a fast value does not change tree shape.</li>
+<li>Do not back-write observable state composition→composition. Likewise, <code>onSizeChanged</code> in layout writing a value read by a sibling in composition creates a layout→composition loop; keep the measurement in constraint/placement work where possible.</li>
+<li><code>derivedStateOf</code> has observation/calculation cost. Use it when inputs change more often than a derived threshold/result, such as showing a scroll-to-top control; not for cheap concatenation that legitimately changes with every input.</li>
+<li><code>remember(keys)</code> caches within composition identity, but remember does not make expensive work free: first calculation, invalid keys, retention, and main-thread cost remain. Missing keys produce stale data; heavy CPU work often belongs outside composition.</li>
+</ul>
+
+<h2 id="en-stage16-lazy-layout">Lazy lists, item identity, and layout cost<a aria-label="Link to section: Lazy lists identity and layout cost" class="heading-anchor" href="#en-stage16-lazy-layout">#</a></h2>
+<ul>
+<li>Provide stable unique <code>key</code> values so identity/state move with items during insert/reorder; keys preserve identity but do not guarantee zero recomposition. Avoid positions when order can change.</li>
+<li><code>contentType</code> helps reuse compatible item compositions in heterogeneous feeds. Keep it semantically stable and do not group incompatible layouts.</li>
+<li>Paging reduces the resident dataset, but placeholders need realistic size, IDs must remain stable, and load/error rows need distinct keys; otherwise a viewport can request pages repeatedly or identity can jump.</li>
+<li>Avoid same-direction nested lazy containers without bounded size and clear ownership; flatten sections into one parent lazy DSL. Nested horizontal carousels can be valid, but measure composition/reuse.</li>
+<li><code>SubcomposeLayout</code>/<code>BoxWithConstraints</code> are appropriate when composition depends on constraints, but subcomposition adds work. Intrinsic measurement can add passes. A custom layout only earns its complexity when a trace proves layout is the bottleneck.</li>
+</ul>
+
+<h2 id="en-stage16-rendering-animation">Modifiers, drawing, images, overdraw, and animation<a aria-label="Link to section: Rendering images and animation" class="heading-anchor" href="#en-stage16-rendering-animation">#</a></h2>
+<ul>
+<li>Hoist/reuse long modifier chains only when allocation churn is demonstrated or the chain is stable; modifier order and correctness come first. Use caching draw APIs such as <code>drawWithCache</code> for size/state-dependent brushes or paths instead of allocating each frame.</li>
+<li><code>graphicsLayer</code> can move translation/alpha/scale to a layer and avoid composition/layout, but layers cost memory, recording, and sometimes offscreen compositing. Do not add them prophylactically.</li>
+<li>Request/decode images near display size, use thumbnail/cache policy, and avoid decoding a huge bitmap for a small cell. Check placeholder→image size stability and main-thread work.</li>
+<li>Remove redundant opaque backgrounds, clipping/offscreen buffers, and invisible layers; skipping cannot cure overdraw or a GPU bottleneck.</li>
+<li>Read frame-rate animation state in layout/draw when tree shape is unchanged; limit animated area/effects and verify frame pacing. Do not reduce refresh rate or visual quality without a product/accessibility decision.</li>
+</ul>
+
+<h2 id="en-stage16-guarantees">Guarantees versus explicit non-guarantees<a aria-label="Link to section: Guarantees and non guarantees" class="heading-anchor" href="#en-stage16-guarantees">#</a></h2>
+<table><thead><tr><th>Useful contract</th><th>Does not guarantee</th></tr></thead><tbody>
+<tr><td>Skipping can avoid a restartable body for unchanged inputs.</td><td>Fewer recompositions mean faster frames, or no layout/draw/GPU cost.</td></tr>
+<tr><td>A truthful stability contract enables defined comparison/skipping.</td><td><code>@Stable</code>/<code>@Immutable</code> make mutable data safe.</td></tr>
+<tr><td><code>remember(keys)</code> reuses a value for an identity and keys.</td><td>Expensive work becomes free, background, or immune to stale data.</td></tr>
+<tr><td>A lazy key preserves logical identity through moves.</td><td>Zero recomposition, measurement, or allocation.</td></tr>
+<tr><td>A Microbenchmark measures its hot loop under stated conditions.</td><td>End-to-end UX, scroll jank, or production scheduler/GPU behavior.</td></tr>
+<tr><td>A Macrobenchmark/trace gives evidence for one build/device/journey.</td><td>Universal speed across every device and dataset.</td></tr>
+<tr><td>Modules and abstractions can improve ownership/build isolation.</td><td>Rendering speed; more modules/abstractions are irrelevant without evidence.</td></tr>
+<tr><td>Debug tooling can expose a lead.</td><td>A final verdict: debug builds are unsuitable for final conclusions.</td></tr>
+</tbody></table>
+
+<h2 id="en-stage16-version-sensitive">Version-sensitive behavior<a aria-label="Link to section: Version sensitive behavior" class="heading-anchor" href="#en-stage16-version-sensitive">#</a></h2>
+<ul>
+<li>Strong skipping is enabled by default in Kotlin 2.0.20+ Compose compiler setups, but that is not universal for older compiler versions, disabled mode, or pinned toolchains. Record Kotlin/Compose compiler versions and flags.</li>
+<li>Automatic lambda memoization and stable/unstable comparison rules depend on strong-skipping mode; use the current compiler documentation and reports for the shipped variant.</li>
+<li>Compiler-report Gradle configuration changed with the Kotlin Compose compiler plugin; do not copy old flags without checking.</li>
+<li>Layout Inspector counters, trace labels, Macrobenchmark/JankStats metrics, and Baseline Profile behavior vary with Android Studio, device API, and library versions. Pin versions and retain raw results.</li>
+</ul>
+
+<h2 id="en-stage16-decision-framework">Diagnosis/decision framework<a aria-label="Link to section: Diagnosis decision framework" class="heading-anchor" href="#en-stage16-decision-framework">#</a></h2>
+<ol>
+<li>Name the visible symptom, journey, device class, dataset, frame/startup metric, and budget.</li>
+<li>Reproduce on a release/profileable build; warm up for the scenario, repeat iterations, and retain a distribution plus noisy-environment notes.</li>
+<li>Use Macrobenchmark for the journey and Microbenchmark only for an isolated suspect. Correlate a slow iteration with Perfetto/System Trace.</li>
+<li>Classify the critical path: composition/skipping, layout/intrinsics/subcomposition, draw/allocation, image/I/O, RenderThread/GPU, GC, or unrelated work.</li>
+<li>Use Layout Inspector and compiler reports to test a concrete Compose hypothesis, not as the goal.</li>
+<li>Make one minimal correctness-preserving change; repeat the identical measurement and compare percentiles/distribution against the regression budget.</li>
+<li>Add a benchmark/observability guard and verify accessibility, visual fidelity, memory, and representative worst-case data.</li>
+</ol>
+
+<h2 id="en-stage16-tradeoffs">Trade-offs and failure modes<a aria-label="Link to section: Trade offs and failure modes" class="heading-anchor" href="#en-stage16-tradeoffs">#</a></h2>
+<ul>
+<li>A false stability annotation improves a report and breaks updates; immutable copies reduce mutation risk but can add allocations.</li>
+<li>Excess caching retains memory or stale values; missing keys break correctness and broad keys miss the cache.</li>
+<li>A deferred read avoids composition but adds a callback/provider contract; use it for measured hot state, not UI branching.</li>
+<li><code>derivedStateOf</code> reduces downstream invalidation only when the result changes less often; otherwise it adds overhead.</li>
+<li>A layer/cache can help repeated transform/draw but costs memory/offscreen work; a custom layout saves nodes at a complexity cost.</li>
+<li>A tiny dataset, one flagship device, or one lucky iteration hides tail latency; thermal throttling, background work, and compilation mode add noise.</li>
+</ul>
+
+<h2 id="en-stage16-production-scenario">Production optimization scenario: janky product feed<a aria-label="Link to section: Production optimization scenario" class="heading-anchor" href="#en-stage16-production-scenario">#</a></h2>
+<p><strong>Before.</strong> A 500-card mixed feed janks during fling: positions are keys, there is no <code>contentType</code>, images are full resolution, toolbar scroll offset is read in composition, rows create lists/lambdas, and nested vertical lazy sections have unclear reuse.</p>
+<p><strong>Measure.</strong> A release/profileable Macrobenchmark uses the same seeded dataset and scripted fling after warmup. JankStats/frame metrics establish the symptom; Perfetto shows main-thread composition/layout plus image decode; Layout Inspector shows visible-row churn; the compiler report shows fresh unstable wrapper instances. Record median/tail, janky frames, and the regression budget—not one run.</p>
+<p><strong>Change.</strong> Add stable item IDs and semantic <code>contentType</code>, flatten the vertical lazy DSL, request thumbnail-sized images, make the per-item model immutable, and remove call-site instance churn. Pass a scroll provider to the toolbar and read it in <code>graphicsLayer { }</code>. Do not add an annotation until its contract is truthful.</p>
+<p><strong>Re-measure.</strong> The same device/build/profile state/dataset/journey shows fewer long frames and shorter decode/layout slices without memory or visual regression. Reports and counters support the explanation, but acceptance is the frame distribution within budget. Record startup as a guard and defer broad startup/Baseline Profile tuning to Stage 25.</p>
+
+<h2 id="en-stage16-review-trap">Code-review/debug trap<a aria-label="Link to section: Code review and debugging trap" class="heading-anchor" href="#en-stage16-review-trap">#</a></h2>
+<pre><code class="language-kotlin">@Immutable // false: mutable list can change invisibly
+class FeedState(val items: MutableList&lt;Item&gt;)
+
+@Composable
+fun Feed(state: FeedState, listState: LazyListState) {
+    val y = listState.firstVisibleItemScrollOffset // frame-rate composition read
+    val visible = remember { expensiveFilter(state.items) } // stale: missing key
+    LazyColumn {
+        itemsIndexed(visible, key = { index, _ -&gt; index }) { _, item -&gt;
+            Card(Modifier.graphicsLayer(translationY = -y.toFloat()))
+        }
+    }
+}</code></pre>
+<p>The annotation lies; in-place mutation can be skipped incorrectly; the cache is stale; a position key loses identity; scroll crosses every row boundary as a composition value; and the value-form layer cannot defer the read. Do not “fix” this with modules, more annotations, or a lower recomposition count. Trace one fling, make model and identity truthful, move the read to a provider/block layer, size images, and rerun the benchmark.</p>
+
+<h2 id="en-stage16-testability">Testability and observability<a aria-label="Link to section: Testability and observability" class="heading-anchor" href="#en-stage16-testability">#</a></h2>
+<ul>
+<li>Inject deterministic representative datasets, fake image sources, and controllable clocks/animation where possible; benchmark production-like paths.</li>
+<li>Keep semantics/correctness Compose tests separate from performance tests. Output/identity tests protect refactors; Macrobenchmark guards a frame journey; Microbenchmark guards a proven isolated primitive.</li>
+<li>Add trace sections around app work, stable scenario labels, and JankStats state so a field/session signal maps to screen mode without PII.</li>
+<li>Store raw Perfetto traces, build SHA, device/API, thermal/compilation/Baseline Profile mode, iterations, and distributions. CI budgets should tolerate known noise but fail a sustained regression, not one outlier.</li>
+</ul>
+
+<h2 id="en-stage16-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice questions and answers" class="heading-anchor" href="#en-stage16-likely-qa">#</a></h2>
+<p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
+<ol>
+<li><strong>Macrobenchmark or Microbenchmark?</strong> Macro measures a user journey, frames/startup, and system interaction; Micro measures isolated hot code. A Microbenchmark does not predict end-to-end UX.</li>
+<li><strong>Is recomposition bad?</strong> No. It is the expected update mechanism; only unnecessary or expensive work on a measured critical path is a problem.</li>
+<li><strong>Restartable versus skippable?</strong> A restartable scope can be re-entered; a skippable body can be omitted for unchanged inputs under the applicable compiler mode.</li>
+<li><strong>What did strong skipping change?</strong> In Kotlin 2.0.20+ it is default: unstable parameters do not automatically prevent skipping, but compare by identity; verify version/mode.</li>
+<li><strong>When should you add <code>@Immutable</code>?</strong> Only when the whole observable contract is truly immutable; the annotation is a promise, not a repair for mutable state.</li>
+<li><strong>When is <code>derivedStateOf</code> useful?</strong> When a frequently changing input changes a derived result/threshold less often, not for every cheap derivation.</li>
+<li><strong>Why defer a state read?</strong> So a frame-rate value invalidates layout/draw rather than composition when it does not alter the emitted tree.</li>
+<li><strong>What do lazy <code>key</code> and <code>contentType</code> provide?</strong> Stable move identity and compatible item reuse, not zero recomposition.</li>
+<li><strong>Why not measure a debug build?</strong> Debug, tooling, and compiler behavior distort timings; final conclusions require a release/profileable representative setup.</li>
+<li><strong>How do you prove an optimization?</strong> Same journey/build mode/device/dataset: before trace/distribution, one explained change, re-measurement, and a budget/regression guard.</li>
+</ol>
+
+<h2 id="en-stage16-followups">4 senior follow-ups with answers<a aria-label="Link to section: 4 senior follow ups" class="heading-anchor" href="#en-stage16-followups">#</a></h2>
+<ol>
+<li><strong>Counters fell, but jank did not.</strong> Inspect layout/draw/GPU/decode/GC critical path; a count does not contain cost.</li>
+<li><strong>A stable model still recomposes.</strong> Check truly changed parameters, parent execution, lambda/instance churn, strong-skipping mode, and the compiler report; legitimate state can require execution.</li>
+<li><strong>The fling benchmark is noisy.</strong> Seed data, fix the gesture, control warmup/iterations/device thermal/background state, analyze distributions/traces, and never cherry-pick.</li>
+<li><strong><code>graphicsLayer</code> improved CPU but memory rose.</strong> Measure layer size, offscreen, and GPU cost; bound its area/lifetime or return to direct draw if total frame performance is worse.</li>
+</ol>
+
+<h2 id="en-stage16-self-check">4 unanswered self-checks<a aria-label="Link to section: 4 unanswered self checks" class="heading-anchor" href="#en-stage16-self-check">#</a></h2>
+<ol>
+<li>Which exact frame journey, percentile, and device-class budget does your benchmark protect?</li>
+<li>Where is each fast-changing state read—composition, measure, placement, or draw—and why?</li>
+<li>Which stability annotations/config entries are evidenced contracts, and which merely hide mutable data?</li>
+<li>Does the representative dataset include paging, mixed content types, large images, reorder, and worst-case animation?</li>
+</ol>
+
+<h2 id="en-stage16-english-skeletons">Interview-ready English answer skeletons<a aria-label="Link to section: Interview ready English answer skeletons" class="heading-anchor" href="#en-stage16-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you diagnose and optimize Jetpack Compose performance?</em></p>
+<h3 id="en-stage16-answer-30">~30-second answer<a aria-label="Link to section: 30 second answer" class="heading-anchor" href="#en-stage16-answer-30">#</a></h3>
+<blockquote><p>I optimize frame time, not recomposition counts. I reproduce a representative journey in a release or profileable build, use Macrobenchmark and frame metrics for the symptom, and Perfetto for attribution. Layout Inspector counters and compiler reports test a specific Compose hypothesis. I then fix the proven phase—stability or instance churn, deferred state reads, lazy identity, layout, drawing, images, or animation—and rerun the same benchmark. Fewer recompositions, stable annotations, remember, keys, and microbenchmarks are not end-to-end guarantees.</p></blockquote>
+<h3 id="en-stage16-answer-2min">~2-minute answer<a aria-label="Link to section: 2 minute answer" class="heading-anchor" href="#en-stage16-answer-2min">#</a></h3>
+<blockquote><p>I start with a user-visible journey and a budget: for example, tail frame time during a fling on a mid-tier device with a seeded production-sized feed. I measure a release or profileable build with Macrobenchmark, control warmup, compilation and Baseline Profile state, retain distributions and traces, and use JankStats or frame metrics for observability. Microbenchmark is only for an isolated primitive; it cannot predict full UX.</p><p>In Perfetto I locate the critical path across the UI thread, RenderThread, GPU, decoding, GC, and scheduling. If composition is implicated, I use Layout Inspector counters and Compose compiler reports to distinguish invalidation, execution, and skipping. Restartability is not skippability. With Kotlin 2.0.20+ strong skipping is default, unstable parameters can still be skippable but compare by identity, so fresh instances still churn. I make data truly immutable or configure external stable types truthfully; annotations never make mutation safe.</p><p>I then target the phase. Fast scroll or animation values that do not change tree shape can be read in block-form layout/draw modifiers or provider lambdas. I avoid backwards writes, use derivedStateOf only when the result changes less often, and key remember correctly. Lazy lists get stable keys, content types, and realistic paging placeholders. I inspect subcomposition, intrinsics, modifier/draw allocations, layer trade-offs, image decode size, and overdraw.</p><p>Finally I make one change and rerun the identical benchmark against a regression budget, checking memory, visuals, and correctness. Fewer recompositions are supporting evidence, not success. Broad startup and the full Baseline Profile strategy belong to the later startup stage.</p></blockquote>
+
+<h2 id="en-stage16-sources">Official references<a aria-label="Link to section: Official references" class="heading-anchor" href="#en-stage16-sources">#</a></h2>
+<ul>
+<li><a href="https://developer.android.com/develop/ui/compose/performance">Jetpack Compose performance</a>, <a href="https://developer.android.com/develop/ui/compose/performance/bestpractices">Performance best practices</a>, <a href="https://developer.android.com/develop/ui/compose/performance/phases">Compose phases and performance</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/performance/stability">Stability in Compose</a>, <a href="https://developer.android.com/develop/ui/compose/performance/stability/diagnose">Diagnose stability issues</a>, <a href="https://developer.android.com/develop/ui/compose/performance/stability/fix">Fix stability issues</a></li>
+<li><a href="https://developer.android.com/develop/ui/compose/performance/stability/strongskipping">Strong skipping mode</a> and <a href="https://developer.android.com/studio/debug/layout-inspector">Debug your layout with Layout Inspector</a></li>
+<li><a href="https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview">Macrobenchmark overview</a>, <a href="https://developer.android.com/topic/performance/benchmarking/microbenchmark-overview">Microbenchmark overview</a>, <a href="https://developer.android.com/topic/performance/benchmarking/macrobenchmark-metrics">Macrobenchmark metrics</a></li>
+<li><a href="https://developer.android.com/topic/performance/tracing">Overview of system tracing</a>, <a href="https://perfetto.dev/docs/">Perfetto documentation</a>, <a href="https://developer.android.com/topic/performance/jankstats">JankStats</a></li>
+<li><a href="https://developer.android.com/topic/performance/baselineprofiles/overview">Baseline Profiles overview</a> and <a href="https://developer.android.com/topic/performance/appstartup/analysis-optimization">App startup analysis and optimization</a> (full scope in Stage 25)</li>
+</ul>
+</div></details>
+
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="en-kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
 <h2 id="en-val-vs-var-and-immutability"><code>val</code> vs <code>var</code> and immutability<a aria-label="Link to section: val vs var and immutability" class="heading-anchor" href="#en-val-vs-var-and-immutability">#</a></h2>
 <p><code>val</code> means the reference is read-only; it does not guarantee deep immutability. <code>var</code> means the reference can be reassigned. In Android UI state, immutability makes state predictable and easier to test.</p>
