@@ -513,6 +513,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="jetpack-compose-performance" href="#jetpack-compose-performance">Jetpack Compose performance</a>
 </li>
 <li class="toc-major">
+<a data-target="dependency-injection-android" href="#dependency-injection-android">Dependency injection на Android</a>
+</li>
+<li class="toc-major">
 <a data-target="kotlin-for-android" href="#kotlin-for-android">Kotlin for Android</a>
 <ol class="toc-children">
 <li><a data-target="val-vs-var-immutability" href="#val-vs-var-immutability">val vs var, immutability</a></li>
@@ -837,6 +840,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </li>
 <li class="toc-major">
 <a data-target="en-jetpack-compose-performance" href="#en-jetpack-compose-performance">Jetpack Compose performance</a>
+</li>
+<li class="toc-major">
+<a data-target="en-dependency-injection-android" href="#en-dependency-injection-android">Dependency injection on Android</a>
 </li>
 <li class="toc-major">
 <a data-target="en-kotlin-for-android" href="#en-kotlin-for-android">Kotlin for Android</a>
@@ -4672,6 +4678,229 @@ fun Feed(state: FeedState, listState: LazyListState) {
 <li><a href="https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview">Macrobenchmark overview</a>, <a href="https://developer.android.com/topic/performance/benchmarking/microbenchmark-overview">Microbenchmark overview</a>, <a href="https://developer.android.com/topic/performance/benchmarking/macrobenchmark-metrics">Macrobenchmark metrics</a></li>
 <li><a href="https://developer.android.com/topic/performance/tracing">Overview of system tracing</a>, <a href="https://perfetto.dev/docs/">Perfetto documentation</a>, <a href="https://developer.android.com/topic/performance/jankstats">JankStats</a></li>
 <li><a href="https://developer.android.com/topic/performance/baselineprofiles/overview">Baseline Profiles overview</a> та <a href="https://developer.android.com/topic/performance/appstartup/analysis-optimization">App startup analysis and optimization</a> (повний scope у Stage 25)</li>
+</ul>
+</div></details>
+
+<details class="major-section" data-key="dependency-injection-android" data-title="Dependency injection на Android" id="dependency-injection-android" open=""><summary class="major-summary"><span class="major-title">Dependency injection на Android</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<h2 id="stage17-uk-objective">Learning objective<a aria-label="Посилання на розділ: Learning objective" class="heading-anchor" href="#stage17-uk-objective">#</a></h2>
+<p>Після етапу ви маєте розрізняти dependency inversion, dependency injection і service locator; спроєктувати constructor injection та composition root вручну або через Dagger/Hilt; пояснити generated graph, bindings, scopes і Android lifecycle topology; діагностувати missing/duplicate binding, scope mismatch, cycle та generated-code build failure; обрати test seam, runtime parameter і migration path. Тут не повторюється layered architecture зі Stage 13 чи ViewModel mechanics зі Stage 15: фокус — object graph, ownership і lifetime.</p>
+
+<h2 id="stage17-uk-mental-model">Senior mental model<a aria-label="Посилання на розділ: Senior mental model" class="heading-anchor" href="#stage17-uk-mental-model">#</a></h2>
+<blockquote><p><strong>DI — це спосіб зібрати object graph на boundary, а не архітектура.</strong> Dependency inversion — policy: high-level code не має залежати від volatile implementation details. Dependency injection — mechanism: caller/composition root передає dependency об’єкту. Service locator — hidden pull: object сам запитує глобальний registry; це не DI, бо dependency не видно в constructor/API.</p></blockquote>
+<ul>
+<li>Constructor injection — default choice: dependencies explicit, instance valid після construction, pure unit test створює SUT без container.</li>
+<li>Manual DI достатня для невеликого/stable graph: один composition root створює objects і володіє cleanup. Framework окупається при graph scale, Android entry points, variants і repeated lifetime wiring.</li>
+<li>Interfaces корисні на справжніх volatility/ownership seams; interfaces do not decouple components that change together. Wrapper-per-class лише збільшує graph.</li>
+<li>DI не створює architectural separation або testability автоматично: hidden I/O, global state і broad interfaces лишаються coupled навіть у красивому graph.</li>
+</ul>
+<table><thead><tr><th>Підхід</th><th>Сильна сторона</th><th>Ціна/коли ні</th></tr></thead><tbody>
+<tr><td>Manual DI</td><td>Transparent Kotlin, minimal build/tooling cost, easy debugging.</td><td>Boilerplate і ручне lifecycle/variant wiring ростуть із graph.</td></tr>
+<tr><td>Dagger/Hilt</td><td>Compile-time graph validation, generated wiring; Hilt дає Android lifecycle components.</td><td>Codegen/build complexity, annotation model і generated error traces.</td></tr>
+<tr><td>Koin (optional trade-off)</td><td>Runtime DSL, швидкий incremental adoption.</td><td>Інша validation/debugging model: частина wiring failures проявляється runtime; оцінюйте current version, startup і tooling власним benchmark, без blanket claims.</td></tr>
+</tbody></table>
+
+<h2 id="stage17-uk-graph-internals">Graph, Dagger internals та ownership<a aria-label="Посилання на розділ: Graph and generated internals" class="heading-anchor" href="#stage17-uk-graph-internals">#</a></h2>
+<pre><code class="language-text">composition root / generated component
+  request CheckoutViewModel
+    → CheckoutViewModel_Factory
+      → Provider&lt;PlaceOrder&gt;
+      → PlaceOrder_Factory
+        → qualified PaymentGateway binding
+          → @Provides SDK factory
+
+key = type + optional qualifier
+binding = construction rule
+component instance = graph owner/cache boundary
+scope = reuse rule inside compatible component lifetime</code></pre>
+<p>Dagger читає <code>@Inject</code> constructors і modules, валідовує reachable binding graph та генерує components, generated factories і Provider wiring; reflection-based runtime lookup не є його основною model. Unscoped binding зазвичай створюється на кожний request; scoped binding кешується component instance. Component entry point — explicit provision/injection API, а не permission для business code ходити в locator.</p>
+<p><code>Lazy&lt;T&gt;</code> memoizes перший <code>T</code> для цього injected Lazy; <code>Provider&lt;T&gt;</code> дозволяє запросити value пізніше/повторно згідно binding scope. Lazy/Provider break eager construction but can hide cycles; redesign bidirectional responsibility або introduce event/callback boundary замість default Lazy patch.</p>
+
+<h2 id="stage17-uk-lifecycle-topology">Hilt component/lifecycle topology<a aria-label="Посилання на розділ: Hilt lifecycle topology" class="heading-anchor" href="#stage17-uk-lifecycle-topology">#</a></h2>
+<table><thead><tr><th>Generated component</th><th>Android owner/lifetime</th><th>Compatible scope</th></tr></thead><tbody>
+<tr><td><code>SingletonComponent</code></td><td><code>Application</code> component instance, process lifetime</td><td><code>@Singleton</code></td></tr>
+<tr><td><code>ActivityRetainedComponent</code></td><td>Одна logical Activity across configuration changes</td><td><code>@ActivityRetainedScoped</code></td></tr>
+<tr><td><code>ViewModelComponent</code></td><td>Один Hilt ViewModel instance</td><td><code>@ViewModelScoped</code></td></tr>
+<tr><td><code>ActivityComponent</code></td><td>Конкретний Activity instance</td><td><code>@ActivityScoped</code></td></tr>
+<tr><td><code>FragmentComponent</code></td><td>Конкретний Fragment instance</td><td><code>@FragmentScoped</code></td></tr>
+<tr><td><code>ViewComponent</code>/<code>ViewWithFragmentComponent</code></td><td>Конкретний injected View; optional Fragment bindings</td><td><code>@ViewScoped</code></td></tr>
+<tr><td><code>ServiceComponent</code></td><td>Конкретний Service instance</td><td><code>@ServiceScoped</code></td></tr>
+</tbody></table>
+<p>Hilt hierarchy дозволяє child бачити ancestor bindings, але не навпаки. Component lifetime і scoped object lifetime пов’язані: scoped instance живе, доки живе component instance, якщо зовнішня reference не leak-ить його довше. Scope annotation controls graph reuse/lifetime, not thread safety or durability. Short-lived object/context у long-lived binding створює captive dependency і leak; application dependency у short-lived object зазвичай безпечніша direction.</p>
+<p><code>@Singleton</code> singleton є один на generated component/process instance, не cross-process і не durable global singleton. Multi-process app має окремі graphs; process death стирає memory. Mutable singleton потребує synchronization/serialization і чіткої consistency model: scope не дає thread safety.</p>
+
+<h2 id="stage17-uk-bindings">Constructor injection, modules, qualifiers<a aria-label="Посилання на розділ: Constructor injection modules and qualifiers" class="heading-anchor" href="#stage17-uk-bindings">#</a></h2>
+<pre><code class="language-kotlin">class PlaceOrder @Inject constructor(
+    private val orders: Orders,
+    @IoDispatcher private val io: CoroutineDispatcher,
+)
+
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class OrdersBindings {
+    @Binds abstract fun bindOrders(impl: SqlOrders): Orders
+}
+
+@Module
+@InstallIn(SingletonComponent::class)
+object SdkModule {
+    @Provides @Singleton
+    fun paymentSdk(@ApplicationContext context: Context): PaymentSdk =
+        PaymentSdk.create(context)
+}</code></pre>
+<ul>
+<li><code>@Inject constructor</code> для типу, який ви контролюєте; graph бачить dependencies прямо. Не додавайте interface лише заради Dagger.</li>
+<li><code>@Binds</code> — abstract alias implementation→API без custom construction; <code>@Provides</code> — factory logic, third-party type, builder або runtime-derived value. Provider method має залишатися deterministic щодо declared inputs.</li>
+<li>Qualifier є частиною key. Використовуйте semantic qualifier (<code>@IoDispatcher</code>, <code>@AuthenticatedClient</code>), а не fragile string; якщо маєте qualified і unqualified instances одного type, перевірте кожний injection site.</li>
+</ul>
+
+<h2 id="stage17-uk-advanced-bindings">Multibindings, optional та deferred access<a aria-label="Посилання на розділ: Advanced bindings" class="heading-anchor" href="#stage17-uk-advanced-bindings">#</a></h2>
+<ul>
+<li>Set/map multibinding агрегує plugins/handlers з різних modules без central switch. Map key має бути stable і unique; duplicate contribution — graph error або semantic conflict, а iteration order не повинен бути business contract.</li>
+<li>Optional binding моделює capability/default відсутність краще за nullable locator. Optional availability може відрізнятися між parent/subcomponent graphs.</li>
+<li>Inject <code>Provider&lt;T&gt;</code> для repeated/on-demand access і <code>Lazy&lt;T&gt;</code> для deferred memoized access; це construction controls, не lifecycle cancellation і не автоматичний background work.</li>
+<li>Cycles сигналізують змішан ownership/responsibility. Розірвіть цикл через command/event interface, split state owner або higher-level coordinator; Lazy як default лише відсуває failure.</li>
+</ul>
+
+<h2 id="stage17-uk-viewmodel-compose">Hilt ViewModel, SavedStateHandle та Compose<a aria-label="Посилання на розділ: Hilt ViewModel SavedStateHandle and Compose" class="heading-anchor" href="#stage17-uk-viewmodel-compose">#</a></h2>
+<p><code>@HiltViewModel</code> + <code>@Inject constructor</code> дає ViewModel dependencies через <code>ViewModelComponent</code>; default binding <code>SavedStateHandle</code> належить конкретному ViewModel creation context. Hilt ViewModel scope слідує за ViewModel instance, а не navigation destination магічно: owner/store/back-stack entry, key і navigation scoping API визначають reuse. SavedStateHandle — small restorable state/arguments, не object store і не durable repository.</p>
+<p>У Compose отримуйте Hilt ViewModel через supported AndroidX/Hilt navigation integration на screen boundary і передавайте state/actions вниз. Не викликайте generated component/entry point з leaf composables. Hilt entry points потрібні для framework-created або non-Hilt-owned boundary, яку не можна constructor-inject; вони мають бути вузькі й не перетворюватися на service locator.</p>
+
+<h2 id="stage17-uk-modules">Gradle/feature modules та graph ownership<a aria-label="Посилання на розділ: Module graph ownership" class="heading-anchor" href="#stage17-uk-modules">#</a></h2>
+<p>Graph ownership має слідувати deploy/lifetime boundary, а не просто package tree. Feature/API module експонує мінімальний contract або factory; app/composition module обирає implementation. Hilt code generation має бачити transitive modules у app compilation; dynamic feature або інша compilation boundary може потребувати explicit Dagger component dependencies. Plain Dagger subcomponents успадковують parent graph і lifecycle ownership; component dependencies споживають лише exposed dependency API. Це mechanics composition, не повтор Stage 13 про layer/module taxonomy.</p>
+<ul>
+<li>Не експортуйте concrete generated types між Gradle modules; стабільні API contracts мають бути source-level.</li>
+<li>Уникайте mega-module, що знає всі features, і reverse dependency лише щоб встановити binding. Multibindings або feature-owned factory можуть зменшити central coupling.</li>
+<li>Scope name без спільного component owner не створює shared instance; одна annotation на unrelated components — не bridge.</li>
+</ul>
+
+<h2 id="stage17-uk-testing">Testing seams та production wiring<a aria-label="Посилання на розділ: Testing seams" class="heading-anchor" href="#stage17-uk-testing">#</a></h2>
+<ul>
+<li>Constructor-injected class тестуйте напряму з fake dependencies; Dagger/Hilt не потрібні в більшості unit tests. Саме explicit constructor seam зменшує DI-framework testing.</li>
+<li>Окремо майте graph/component smoke test для production bindings і Android integration test. Pure unit tests доводять behavior, не wiring.</li>
+<li>Hilt tests можуть замінювати module через test module replacement/<code>@TestInstallIn</code>, видаляти production module через <code>@UninstallModules</code> або давати per-test binding; generated test components ізолюють graph.</li>
+<li>Test module replacement does not prove production wiring: replacement навмисно обходить production provider/qualifier/config. Залиште хоча б production graph build/smoke path.</li>
+</ul>
+
+<h2 id="stage17-uk-runtime-assisted">Runtime parameters та assisted injection<a aria-label="Посилання на розділ: Runtime parameters and assisted injection" class="heading-anchor" href="#stage17-uk-runtime-assisted">#</a></h2>
+<p>Graph-owned stable dependencies і runtime value — різні inputs. Order ID, parsed deep link або open file не повинні ставати global binding. Передайте їх method/factory parameter; коли generated factory має поєднати runtime args з injected dependencies, застосуйте supported assisted injection pattern. Для ViewModel звіряйте current Hilt assisted APIs/version; часто navigation arguments через SavedStateHandle простіші, якщо value restorable. Не scope-іть object лише щоб “донести” parameter.</p>
+
+<h2 id="stage17-uk-startup-resources">Startup, eager work та external resources<a aria-label="Посилання на розділ: Startup and resources" class="heading-anchor" href="#stage17-uk-startup-resources">#</a></h2>
+<ul>
+<li>Побудова graph не означає створення всіх objects, але entry-point request може transitively зробити eager constructors/providers. Constructors не мають запускати network, disk чи coroutine side effects.</li>
+<li>Lazy/Provider відкладають construction, але first-use latency лишається. Eager initialization має explicit startup owner, ordering, failure/timeout policy і measurement; не ховайте її в singleton constructor.</li>
+<li>Third-party SDK обгорніть adapter/factory: explicit application Context, credentials/config validation, init/shutdown, callback/thread policy. Auto-closeable resource потребує owner, який реально викличе close; DI scope сам cleanup не виконує.</li>
+</ul>
+
+<h2 id="stage17-uk-guarantees">Guarantees vs explicit non-guarantees<a aria-label="Посилання на розділ: Guarantees and non guarantees" class="heading-anchor" href="#stage17-uk-guarantees">#</a></h2>
+<table><thead><tr><th>Що дає</th><th>Чого не гарантує</th></tr></thead><tbody>
+<tr><td>Explicit constructor dependency.</td><td>DI does not create architectural separation or testability automatically.</td></tr>
+<tr><td>Interface може визначити replaceable contract.</td><td>Interfaces do not decouple components that change together.</td></tr>
+<tr><td>Scope reuse у compatible component.</td><td>Scope annotation controls graph reuse/lifetime, not thread safety or durability.</td></tr>
+<tr><td><code>@ViewModelScoped</code> reuse у ViewModelComponent.</td><td>Hilt ViewModel scope follows the ViewModel instance, not a navigation destination by magic.</td></tr>
+<tr><td><code>@Singleton</code> reuse у SingletonComponent.</td><td>A singleton is per generated component/process instance, not a cross-process or durable global singleton.</td></tr>
+<tr><td>Deferred creation.</td><td>Lazy/Provider break eager construction but can hide cycles.</td></tr>
+<tr><td>Dagger type/key reachability validation.</td><td>Compile-time graph validation does not validate runtime business configuration.</td></tr>
+<tr><td>Test graph override.</td><td>Test module replacement does not prove production wiring.</td></tr>
+</tbody></table>
+
+<h2 id="stage17-uk-version-sensitive">Version/build-sensitive behavior<a aria-label="Посилання на розділ: Version and build sensitive behavior" class="heading-anchor" href="#stage17-uk-version-sensitive">#</a></h2>
+<ul>
+<li>Hilt/Dagger, Android Gradle Plugin, Kotlin, Compose navigation integration та KSP plugin мають сумісну version matrix. Pin versions, читайте current release notes і не копіюйте старий Gradle DSL.</li>
+<li>KSP аналізує Kotlin symbols без Java stubs; KAPT генерує stubs і запускає Java annotation processing. Processor підтримка KSP є library/version-specific. Module-by-module migration може тимчасово тримати KSP/KAPT разом; не мігруйте processor, що не підтримує KSP.</li>
+<li>Generated source paths, aggregating options, error wording і assisted/ViewModel APIs version-sensitive. Не залежте від generated class names у production API.</li>
+<li>Build performance міряйте Gradle Build Scan/profile: clean vs incremental, processor task, cacheability та invalidation fan-out. “KSP завжди швидший” не є project-specific proof.</li>
+</ul>
+
+<h2 id="stage17-uk-decision-framework">Decision framework<a aria-label="Посилання на розділ: Decision framework" class="heading-anchor" href="#stage17-uk-decision-framework">#</a></h2>
+<ol>
+<li>Намалюйте graph roots, owners, runtime parameters і cleanup; позначте Android-created entry points.</li>
+<li>Зробіть constructor injection default; factory для runtime args; narrow interface лише на real seam.</li>
+<li>Якщо graph малий/stable — manual composition root. Якщо Android entry points, variants і graph scale домінують — Hilt; plain Dagger для custom component topology.</li>
+<li>Виберіть shortest valid scope; перевірте, що кожна dependency живе не коротше consumer і не захоплює UI owner.</li>
+<li>Визначте eager/lazy policy, thread safety, startup budget, resource close owner і failure behavior.</li>
+<li>Розділіть behavior tests, graph validation та production wiring smoke; виміряйте build impact.</li>
+</ol>
+
+<h2 id="stage17-uk-tradeoffs">Trade-offs та failure modes<a aria-label="Посилання на розділ: Trade offs and failure modes" class="heading-anchor" href="#stage17-uk-tradeoffs">#</a></h2>
+<ul>
+<li>Over-scoping дає stale shared state/leak; under-scoping — duplicate connection/cache/work. Captive dependency: long-lived singleton тримає Activity/Fragment/View або short-lived collaborator.</li>
+<li>Mutable singleton race: одна instance не означає serialized access, atomic compound operation чи process durability.</li>
+<li>Locator/entry-point creep приховує dependencies; giant constructor може чесно показати, що class має забагато responsibilities — не маскуйте його locator-ом.</li>
+<li>Duplicate/missing qualifier, wrong <code>@InstallIn</code>, inaccessible binding across feature compilation, або scope mismatch ламають graph; runtime config/credentials можуть зламатися після успішної compilation.</li>
+<li>Cycle через repositories/managers часто означає двосторонній ownership; Lazy лікує construction timing, не design.</li>
+</ul>
+
+<h2 id="stage17-uk-production-scenario">Production migration scenario: locator → Hilt<a aria-label="Посилання на розділ: Production migration scenario" class="heading-anchor" href="#stage17-uk-production-scenario">#</a></h2>
+<p><strong>Before.</strong> <code>AppServices.get()</code> повертає mutable auth, Retrofit, database і analytics; ViewModels pull dependencies, Activity передається singleton SDK, tests mutate global registry.</p>
+<p><strong>Seam first.</strong> Вводимо constructors для use cases/repositories і manual composition root, adapter для third-party SDK з application Context, factory для session runtime value. Existing locator тимчасово делегує новому graph лише на legacy boundary; new code не читає locator.</p>
+<p><strong>Incremental Hilt.</strong> Додаємо <code>@HiltAndroidApp</code>, по одному Android entry point; переносимо constructible classes на <code>@Inject</code>, interface aliases на <code>@Binds</code>, SDK builders на qualified <code>@Provides</code>. Auth state лишається thread-safe application owner, Activity callbacks — short-lived adapter. Feature API не експортує generated types.</p>
+<p><strong>Verify/remove.</strong> Pure unit tests створюють constructors з fakes; production graph smoke створює real component з safe config; instrumentation перевіряє ViewModel owner/recreation. Startup trace та Gradle profile ловлять regressions. Після останнього consumer видаляємо locator і global test reset.</p>
+
+<h2 id="stage17-uk-review-trap">Code-review/debug trap<a aria-label="Посилання на розділ: Code review and debug trap" class="heading-anchor" href="#stage17-uk-review-trap">#</a></h2>
+<pre><code class="language-kotlin">@Singleton
+class CheckoutManager @Inject constructor(
+    private val activity: Activity,
+    private val payment: Lazy&lt;PaymentManager&gt;,
+) { var currentOrder: Order? = null }
+
+class PaymentManager @Inject constructor(
+    private val checkout: Provider&lt;CheckoutManager&gt;,
+)</code></pre>
+<p>Trap: process component захопив Activity, mutable state не thread-safe/durable, і Lazy/Provider приховали cycle. Debug: почніть з першої Dagger error path і binding key (type + qualifier), знайдіть requesting entry point, component/<code>@InstallIn</code>, scope та shortest→longest lifetime chain; inspect generated factory лише щоб підтвердити wiring. Fix: coordinator owns order per flow/ViewModel, payment залежить від narrow command/port, SDK отримує application Context; не додавайте ще один scope чи Lazy.</p>
+
+<h2 id="stage17-uk-observability">Graph observability та diagnostics<a aria-label="Посилання на розділ: Graph observability and diagnostics" class="heading-anchor" href="#stage17-uk-observability">#</a></h2>
+<ul>
+<li>Missing binding: читайте повний dependency trace від entry point; звірте exact generic, qualifier, visibility, module inclusion і variant. Duplicate binding: знайдіть усі contributors, не suppress.</li>
+<li>Scope error: намалюйте component hierarchy і requested/scoped owner. Generated <code>*_Factory</code>/<code>*Component</code> — evidence, але не stable API; clean build лише після перевірки version/cache inputs.</li>
+<li>Log graph-safe events: SDK init duration/result, first-use latency, component owner IDs у debug, без secrets/PII. Додайте startup trace sections і crash metadata з app/library versions.</li>
+<li>Compile-time graph validation does not validate runtime business configuration: окремо validate base URL, credentials, manifest metadata, remote flags і multi-process behavior.</li>
+</ul>
+
+<h2 id="stage17-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice questions and answers" class="heading-anchor" href="#stage17-uk-likely-qa">#</a></h2>
+<p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
+<ol>
+<li><strong>Dependency inversion, DI чи service locator?</strong> Inversion — dependency policy; DI — dependency передає caller; locator — object приховано pull-ить її з registry і тому не є DI.</li>
+<li><strong>Чому constructor injection default?</strong> API explicit, object valid одразу, immutable dependencies і framework-free unit tests; factory потрібна для runtime args.</li>
+<li><strong>Коли manual DI достатня?</strong> Малий/stable graph з кількома roots і простими lifetimes; composition root лишається явним і testable.</li>
+<li><strong>Що генерує Dagger?</strong> Factories/providers і component implementation, що зв’язує keys та перевіряє reachable graph compile-time.</li>
+<li><strong><code>@Binds</code> чи <code>@Provides</code>?</strong> Binds для alias implementation→API; Provides для custom construction/third-party builder/value.</li>
+<li><strong>Що означає scope?</strong> Reuse у compatible component instance/lifetime; не thread safety, persistence або cross-process singleton.</li>
+<li><strong>ActivityRetained vs ViewModel?</strong> ActivityRetained ділиться між ViewModels однієї retained Activity; ViewModelScoped — лише всередині одного ViewModelComponent.</li>
+<li><strong>Provider vs Lazy?</strong> Provider дає on-demand/repeated requests за scope semantics; Lazy memoizes first value локально. Обидва можуть маскувати cycle.</li>
+<li><strong>Як тестувати DI?</strong> Behavior напряму через constructors/fakes; окремо production graph smoke та мінімальні Hilt Android integration tests.</li>
+<li><strong>Як дебажити missing binding?</strong> Від entry point пройти dependency trace, exact type+qualifier, module visibility/<code>@InstallIn</code>, variant і generated factory.</li>
+</ol>
+
+<h2 id="stage17-uk-followups">4 senior follow-ups з відповідями<a aria-label="Посилання на розділ: 4 senior follow ups" class="heading-anchor" href="#stage17-uk-followups">#</a></h2>
+<ol>
+<li><strong>Singleton хоче Activity.</strong> Це lifetime inversion/captive dependency; передайте application-safe adapter або short-lived callback у method, не Activity у singleton.</li>
+<li><strong>Dynamic feature не бачить app Hilt binding.</strong> Це compilation/graph visibility boundary; expose narrow dependency API і використайте documented component dependency pattern, а не reverse module dependency.</li>
+<li><strong>KSP migration погіршила build.</strong> Перевірте compatible processor versions, mixed KAPT/KSP tasks, clean vs incremental profile, aggregating invalidation і cache; не робіть висновок з одного clean build.</li>
+<li><strong>Production crash при валідному graph.</strong> Перевірте runtime configuration, manifest/process, SDK initialization і first-use failures: compile-time types не доводять business config.</li>
+</ol>
+
+<h2 id="stage17-uk-self-check">4 unanswered self-checks<a aria-label="Посилання на розділ: 4 unanswered self checks" class="heading-anchor" href="#stage17-uk-self-check">#</a></h2>
+<ol>
+<li>Намалюйте component і object lifetime кожної dependency checkout flow; де можливий captive dependency?</li>
+<li>Які bindings справді потребують interface/qualifier/scope, а які є accidental abstraction?</li>
+<li>Який test доводить behavior, який — production wiring, і що лишається runtime-only configuration risk?</li>
+<li>Де first-use latency, cleanup і thread-safety contracts для SDK, cache та session state?</li>
+</ol>
+
+<h2 id="stage17-uk-english-skeletons">Interview-ready English answer skeletons<a aria-label="Посилання на розділ: Interview ready English answer skeletons" class="heading-anchor" href="#stage17-uk-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you design and debug dependency injection on Android?</em></p>
+<h3 id="stage17-uk-answer-30">~30-second answer<a aria-label="Посилання на розділ: 30 second answer" class="heading-anchor" href="#stage17-uk-answer-30">#</a></h3>
+<blockquote><p>I treat DI as object-graph assembly, not architecture. Constructor injection is my default, with a composition root owning creation and cleanup. Manual DI is enough for a small stable graph; Dagger adds compile-time generated wiring, and Hilt maps components to Android lifecycles. I choose the shortest valid scope, keep runtime values in factories, and test classes directly with fakes plus a separate production-graph smoke test. A scope controls reuse, not thread safety or persistence, and Provider or Lazy should not hide a design cycle.</p></blockquote>
+<h3 id="stage17-uk-answer-2min">~2-minute answer<a aria-label="Посилання на розділ: 2 minute answer" class="heading-anchor" href="#stage17-uk-answer-2min">#</a></h3>
+<blockquote><p>I first separate dependency inversion, dependency injection, and service location. Inversion is the policy that stable behavior should not depend directly on volatile details. Injection means the composition root supplies dependencies; a locator hides them behind global lookup. I default to constructor injection because it produces valid objects and framework-free unit-test seams.</p><p>For a small graph I use manual DI. At scale, Dagger validates reachable type-plus-qualifier keys and generates factories, providers, and component implementations. Hilt standardizes roots for Singleton, activity-retained, ViewModel, activity, fragment, view, and service lifetimes. I scope only when instance sharing is required and ensure a long-lived object never captures a shorter-lived Android owner. Singleton means one per component and process, not thread safety, persistence, or cross-process identity.</p><p>I use @Inject for owned constructible types, @Binds for aliases, @Provides for third-party construction, qualifiers for same-type semantics, and multibindings for plugin sets/maps. Provider and Lazy defer access but are not my default cycle breaker. Runtime values use factory or assisted inputs; ViewModel SavedStateHandle is for small restorable values, and ViewModel scope follows the actual owner and instance.</p><p>Finally, I keep constructors free of eager I/O, give SDK resources explicit init/close owners, profile KSP/KAPT and generated tasks with pinned versions, and debug errors from the requesting entry point through the full binding trace. Unit tests use fakes directly; Hilt replacement tests cover test graphs, while a separate production graph smoke test catches real wiring. Compile-time validation still cannot validate credentials, flags, or other runtime business configuration.</p></blockquote>
+
+<h2 id="stage17-uk-sources">Офіційні джерела<a aria-label="Посилання на розділ: Офіційні джерела" class="heading-anchor" href="#stage17-uk-sources">#</a></h2>
+<ul>
+<li><a href="https://developer.android.com/training/dependency-injection">Dependency injection on Android</a>, <a href="https://developer.android.com/training/dependency-injection/manual">Manual dependency injection</a>, <a href="https://developer.android.com/training/dependency-injection/hilt-android">Dependency injection with Hilt</a></li>
+<li><a href="https://developer.android.com/training/dependency-injection/hilt-jetpack">Hilt with Jetpack libraries</a>, <a href="https://developer.android.com/training/dependency-injection/hilt-testing">Hilt testing guide</a>, <a href="https://developer.android.com/training/dependency-injection/hilt-multi-module">Hilt in multi-module apps</a></li>
+<li><a href="https://dagger.dev/dev-guide/">Dagger developer guide</a>, <a href="https://dagger.dev/dev-guide/subcomponents.html">Subcomponents</a>, <a href="https://dagger.dev/dev-guide/multibindings.html">Multibindings</a>, <a href="https://dagger.dev/dev-guide/assisted-injection.html">Assisted injection</a></li>
+<li><a href="https://developer.android.com/build/migrate-to-ksp">Migrate from kapt to KSP</a>, <a href="https://kotlinlang.org/docs/ksp-overview.html">Kotlin Symbol Processing overview</a>, <a href="https://kotlinlang.org/docs/kapt.html">kapt compiler plugin</a></li>
+<li><a href="https://docs.gradle.org/current/userguide/performance.html">Improving Gradle build performance</a> та <a href="https://docs.gradle.org/current/userguide/build_scans.html">Gradle Build Scans</a></li>
 </ul>
 </div></details>
 
@@ -12156,6 +12385,229 @@ fun Feed(state: FeedState, listState: LazyListState) {
 <li><a href="https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview">Macrobenchmark overview</a>, <a href="https://developer.android.com/topic/performance/benchmarking/microbenchmark-overview">Microbenchmark overview</a>, <a href="https://developer.android.com/topic/performance/benchmarking/macrobenchmark-metrics">Macrobenchmark metrics</a></li>
 <li><a href="https://developer.android.com/topic/performance/tracing">Overview of system tracing</a>, <a href="https://perfetto.dev/docs/">Perfetto documentation</a>, <a href="https://developer.android.com/topic/performance/jankstats">JankStats</a></li>
 <li><a href="https://developer.android.com/topic/performance/baselineprofiles/overview">Baseline Profiles overview</a> and <a href="https://developer.android.com/topic/performance/appstartup/analysis-optimization">App startup analysis and optimization</a> (full scope in Stage 25)</li>
+</ul>
+</div></details>
+
+<details class="major-section" data-key="dependency-injection-android" data-title="Dependency injection on Android" id="en-dependency-injection-android" open=""><summary class="major-summary"><span class="major-title">Dependency injection on Android</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<h2 id="en-stage17-objective">Learning objective<a aria-label="Link to section: Learning objective" class="heading-anchor" href="#en-stage17-objective">#</a></h2>
+<p>After this stage, you should distinguish dependency inversion, dependency injection, and service locator; design constructor injection and a composition root manually or with Dagger/Hilt; explain generated graphs, bindings, scopes, and Android lifecycle topology; diagnose missing or duplicate bindings, scope mismatch, cycles, and generated-code build failures; and choose testing seams, runtime parameters, and an incremental migration path. This does not repeat Stage 13 layering or Stage 15 ViewModel mechanics: the focus is object-graph ownership and lifetime.</p>
+
+<h2 id="en-stage17-mental-model">Senior mental model<a aria-label="Link to section: Senior mental model" class="heading-anchor" href="#en-stage17-mental-model">#</a></h2>
+<blockquote><p><strong>DI assembles an object graph at a boundary; it is not architecture.</strong> Dependency inversion is a policy: high-level behavior should not depend directly on volatile implementation details. Dependency injection is a mechanism: a caller or composition root supplies a dependency. A service locator is hidden pull: an object asks a global registry, so it is not DI because the dependency is absent from its constructor/API.</p></blockquote>
+<ul>
+<li>Constructor injection is the default choice: dependencies are explicit, the object is valid after construction, and a unit test creates the SUT without a container.</li>
+<li>Manual DI is sufficient for a small, stable graph: one composition root creates objects and owns cleanup. A framework earns its cost when graph scale, Android entry points, variants, and repeated lifetime wiring dominate.</li>
+<li>Interfaces belong at real volatility or ownership seams; interfaces do not decouple components that change together. A wrapper for every class only enlarges the graph.</li>
+<li>DI does not create architectural separation or testability automatically: hidden I/O, global state, and broad contracts remain coupled inside a neatly generated graph.</li>
+</ul>
+<table><thead><tr><th>Approach</th><th>Strength</th><th>Cost / poor fit</th></tr></thead><tbody>
+<tr><td>Manual DI</td><td>Transparent Kotlin, minimal build/tooling cost, direct debugging.</td><td>Boilerplate and manual lifecycle/variant wiring grow with the graph.</td></tr>
+<tr><td>Dagger/Hilt</td><td>Compile-time graph validation and generated wiring; Hilt supplies Android lifecycle components.</td><td>Code generation, build integration, annotation model, and generated error traces.</td></tr>
+<tr><td>Koin (optional trade-off)</td><td>Runtime DSL and straightforward incremental adoption.</td><td>A different validation/debugging model where some wiring failures occur at runtime; assess the current version, startup, and tooling in your own project without blanket claims.</td></tr>
+</tbody></table>
+
+<h2 id="en-stage17-graph-internals">Graph, Dagger internals, and ownership<a aria-label="Link to section: Graph and generated internals" class="heading-anchor" href="#en-stage17-graph-internals">#</a></h2>
+<pre><code class="language-text">composition root / generated component
+  request CheckoutViewModel
+    → CheckoutViewModel_Factory
+      → Provider&lt;PlaceOrder&gt;
+      → PlaceOrder_Factory
+        → qualified PaymentGateway binding
+          → @Provides SDK factory
+
+key = type + optional qualifier
+binding = construction rule
+component instance = graph owner/cache boundary
+scope = reuse rule inside compatible component lifetime</code></pre>
+<p>Dagger reads <code>@Inject</code> constructors and modules, validates the reachable binding graph, then emits components, generated factories, and Provider wiring; reflection-based runtime lookup is not its core model. An unscoped binding is normally created per request, while a scoped binding is cached by a component instance. A component entry point is an explicit provision/injection boundary, not permission for business code to use a locator.</p>
+<p><code>Lazy&lt;T&gt;</code> memoizes the first <code>T</code> for that injected Lazy; <code>Provider&lt;T&gt;</code> requests a value later or repeatedly according to binding scope. Lazy/Provider break eager construction but can hide cycles; redesign bidirectional responsibility or add an event/callback boundary instead of defaulting to Lazy.</p>
+
+<h2 id="en-stage17-lifecycle-topology">Hilt component/lifecycle topology<a aria-label="Link to section: Hilt lifecycle topology" class="heading-anchor" href="#en-stage17-lifecycle-topology">#</a></h2>
+<table><thead><tr><th>Generated component</th><th>Android owner/lifetime</th><th>Compatible scope</th></tr></thead><tbody>
+<tr><td><code>SingletonComponent</code></td><td><code>Application</code> component instance; process lifetime</td><td><code>@Singleton</code></td></tr>
+<tr><td><code>ActivityRetainedComponent</code></td><td>One logical Activity across configuration changes</td><td><code>@ActivityRetainedScoped</code></td></tr>
+<tr><td><code>ViewModelComponent</code></td><td>One Hilt ViewModel instance</td><td><code>@ViewModelScoped</code></td></tr>
+<tr><td><code>ActivityComponent</code></td><td>One concrete Activity instance</td><td><code>@ActivityScoped</code></td></tr>
+<tr><td><code>FragmentComponent</code></td><td>One concrete Fragment instance</td><td><code>@FragmentScoped</code></td></tr>
+<tr><td><code>ViewComponent</code>/<code>ViewWithFragmentComponent</code></td><td>One injected View, optionally with Fragment bindings</td><td><code>@ViewScoped</code></td></tr>
+<tr><td><code>ServiceComponent</code></td><td>One Service instance</td><td><code>@ServiceScoped</code></td></tr>
+</tbody></table>
+<p>In Hilt, a child can see ancestor bindings, not the reverse. Component lifetime and scoped-object lifetime are connected: a scoped instance lives while its component instance lives unless an outside reference leaks it longer. Scope annotation controls graph reuse/lifetime, not thread safety or durability. A short-lived context/object captured by a long-lived binding is a captive dependency and likely leak; an application dependency consumed by a short-lived object is usually the safe direction.</p>
+<p>An <code>@Singleton</code> singleton is per generated component/process instance, not a cross-process or durable global singleton. Every app process has a separate graph, and process death removes memory. A mutable singleton still needs synchronization or serialization and an explicit consistency model: scope does not provide thread safety.</p>
+
+<h2 id="en-stage17-bindings">Constructor injection, modules, and qualifiers<a aria-label="Link to section: Constructor injection modules and qualifiers" class="heading-anchor" href="#en-stage17-bindings">#</a></h2>
+<pre><code class="language-kotlin">class PlaceOrder @Inject constructor(
+    private val orders: Orders,
+    @IoDispatcher private val io: CoroutineDispatcher,
+)
+
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class OrdersBindings {
+    @Binds abstract fun bindOrders(impl: SqlOrders): Orders
+}
+
+@Module
+@InstallIn(SingletonComponent::class)
+object SdkModule {
+    @Provides @Singleton
+    fun paymentSdk(@ApplicationContext context: Context): PaymentSdk =
+        PaymentSdk.create(context)
+}</code></pre>
+<ul>
+<li>Use an <code>@Inject constructor</code> for an owned constructible type; the graph sees dependencies directly. Do not introduce an interface solely for Dagger.</li>
+<li><code>@Binds</code> is an abstract implementation-to-API alias with no custom construction; <code>@Provides</code> handles factory logic, third-party types, builders, or derived values. A provider method should be deterministic with respect to declared inputs.</li>
+<li>A qualifier is part of the binding key. Prefer a semantic qualifier such as <code>@IoDispatcher</code> or <code>@AuthenticatedClient</code> over a fragile string, and audit every injection site when qualified and unqualified instances coexist.</li>
+</ul>
+
+<h2 id="en-stage17-advanced-bindings">Multibindings, optional bindings, and deferred access<a aria-label="Link to section: Advanced bindings" class="heading-anchor" href="#en-stage17-advanced-bindings">#</a></h2>
+<ul>
+<li>Set/map multibinding aggregates plugins or handlers from separate modules without a central switch. Map keys must be stable and unique; contribution iteration order must not become a business contract.</li>
+<li>An optional binding models an absent capability/default more clearly than a nullable locator. Availability may differ between parent and subcomponent graphs.</li>
+<li>Inject <code>Provider&lt;T&gt;</code> for repeated/on-demand requests and <code>Lazy&lt;T&gt;</code> for deferred memoized access. These control construction, not lifecycle cancellation or automatic background execution.</li>
+<li>A cycle signals confused ownership/responsibility. Break it with a command/event interface, split state owner, or higher-level coordinator; Lazy as a default only postpones the failure.</li>
+</ul>
+
+<h2 id="en-stage17-viewmodel-compose">Hilt ViewModel, SavedStateHandle, and Compose<a aria-label="Link to section: Hilt ViewModel SavedStateHandle and Compose" class="heading-anchor" href="#en-stage17-viewmodel-compose">#</a></h2>
+<p><code>@HiltViewModel</code> with an <code>@Inject constructor</code> supplies ViewModel dependencies from <code>ViewModelComponent</code>; the default <code>SavedStateHandle</code> binding belongs to that ViewModel creation context. Hilt ViewModel scope follows the ViewModel instance, not a navigation destination by magic: the owner/store/back-stack entry, key, and navigation scoping API determine reuse. SavedStateHandle is for small restorable state/arguments, not an object store or durable repository.</p>
+<p>In Compose, obtain a Hilt ViewModel through the supported AndroidX/Hilt navigation integration at a screen boundary, then pass state and actions down. Do not query a generated component/entry point in leaf composables. Hilt entry points exist for a framework-created or non-Hilt-owned boundary that cannot use constructor injection; keep them narrow so they do not become a service locator.</p>
+
+<h2 id="en-stage17-modules">Gradle/feature modules and graph ownership<a aria-label="Link to section: Module graph ownership" class="heading-anchor" href="#en-stage17-modules">#</a></h2>
+<p>Graph ownership should follow deployment and lifetime boundaries rather than merely the package tree. A feature/API module exposes a minimal contract or factory; the app/composition module selects the implementation. Hilt code generation must see transitive modules in app compilation; a dynamic feature or separate compilation boundary can require explicit Dagger component dependencies. Plain Dagger subcomponents inherit a parent graph and lifecycle ownership; component dependencies consume only an exposed dependency API. These are composition mechanics, not a repeat of Stage 13 layer/module taxonomy.</p>
+<ul>
+<li>Do not expose concrete generated types between Gradle modules; stable API contracts should remain source-level.</li>
+<li>Avoid a mega-module that knows every feature or a reverse dependency added only to install one binding. Multibindings or a feature-owned factory can reduce central coupling.</li>
+<li>Sharing a scope annotation without sharing a component owner does not share an instance; the annotation is not a bridge between unrelated components.</li>
+</ul>
+
+<h2 id="en-stage17-testing">Testing seams and production wiring<a aria-label="Link to section: Testing seams" class="heading-anchor" href="#en-stage17-testing">#</a></h2>
+<ul>
+<li>Test a constructor-injected class directly with fake dependencies; most unit tests need no Dagger/Hilt. This explicit constructor seam is why constructor injection reduces DI-framework testing.</li>
+<li>Separately keep a graph/component smoke test for production bindings and an Android integration test. Pure unit tests prove behavior, not wiring.</li>
+<li>Hilt tests can use test module replacement with <code>@TestInstallIn</code>, remove a production module via <code>@UninstallModules</code>, or contribute a per-test binding; generated test components isolate the graph.</li>
+<li>Test module replacement does not prove production wiring: the replacement deliberately bypasses the production provider, qualifier, and configuration. Retain a production graph build/smoke path.</li>
+</ul>
+
+<h2 id="en-stage17-runtime-assisted">Runtime parameters and assisted injection<a aria-label="Link to section: Runtime parameters and assisted injection" class="heading-anchor" href="#en-stage17-runtime-assisted">#</a></h2>
+<p>Graph-owned stable dependencies and runtime values are different inputs. An order ID, parsed deep link, or opened file should not become a global binding. Pass it as a method/factory parameter; when a generated factory must combine runtime arguments with injected dependencies, use a supported assisted injection pattern. For a ViewModel, verify current Hilt assisted APIs and versions; navigation arguments through SavedStateHandle are often simpler when the value is restorable. Never add a scope merely to transport a parameter.</p>
+
+<h2 id="en-stage17-startup-resources">Startup, eager work, and external resources<a aria-label="Link to section: Startup and resources" class="heading-anchor" href="#en-stage17-startup-resources">#</a></h2>
+<ul>
+<li>Building a graph does not instantiate every object, but an entry-point request can transitively run eager constructors/providers. Constructors should not start network, disk, or coroutine side effects.</li>
+<li>Lazy/Provider defer construction but retain first-use latency. Eager initialization needs an explicit startup owner, ordering, failure/timeout policy, and measurement; do not hide it in a singleton constructor.</li>
+<li>Wrap a third-party SDK with an adapter/factory: explicit application Context, credential/config validation, init/shutdown, and callback/thread policy. An AutoCloseable resource needs an owner that calls close; a DI scope does not perform cleanup by itself.</li>
+</ul>
+
+<h2 id="en-stage17-guarantees">Guarantees vs explicit non-guarantees<a aria-label="Link to section: Guarantees and non guarantees" class="heading-anchor" href="#en-stage17-guarantees">#</a></h2>
+<table><thead><tr><th>What it provides</th><th>What it does not guarantee</th></tr></thead><tbody>
+<tr><td>An explicit constructor dependency.</td><td>DI does not create architectural separation or testability automatically.</td></tr>
+<tr><td>An interface can define a replaceable contract.</td><td>Interfaces do not decouple components that change together.</td></tr>
+<tr><td>Scope reuse inside a compatible component.</td><td>Scope annotation controls graph reuse/lifetime, not thread safety or durability.</td></tr>
+<tr><td><code>@ViewModelScoped</code> reuse in a ViewModelComponent.</td><td>Hilt ViewModel scope follows the ViewModel instance, not a navigation destination by magic.</td></tr>
+<tr><td><code>@Singleton</code> reuse in SingletonComponent.</td><td>A singleton is per generated component/process instance, not a cross-process or durable global singleton.</td></tr>
+<tr><td>Deferred construction.</td><td>Lazy/Provider break eager construction but can hide cycles.</td></tr>
+<tr><td>Dagger validates type/key reachability.</td><td>Compile-time graph validation does not validate runtime business configuration.</td></tr>
+<tr><td>A replaced test graph.</td><td>Test module replacement does not prove production wiring.</td></tr>
+</tbody></table>
+
+<h2 id="en-stage17-version-sensitive">Version/build-sensitive behavior<a aria-label="Link to section: Version and build sensitive behavior" class="heading-anchor" href="#en-stage17-version-sensitive">#</a></h2>
+<ul>
+<li>Hilt/Dagger, Android Gradle Plugin, Kotlin, Compose navigation integration, and the KSP plugin form a compatibility matrix. Pin versions, read current release notes, and do not copy old Gradle DSL blindly.</li>
+<li>KSP analyzes Kotlin symbols without Java stubs; KAPT generates stubs and runs Java annotation processing. Processor support for KSP is library/version-specific. A module-by-module migration can temporarily run KSP/KAPT together; do not migrate an unsupported processor.</li>
+<li>Generated source paths, aggregating options, error wording, and assisted/ViewModel APIs are version-sensitive. Never make generated class names part of a production API.</li>
+<li>Measure build performance with a Gradle Build Scan/profile: clean versus incremental, processor task time, cacheability, and invalidation fan-out. “KSP is always faster” is not project-specific evidence.</li>
+</ul>
+
+<h2 id="en-stage17-decision-framework">Decision framework<a aria-label="Link to section: Decision framework" class="heading-anchor" href="#en-stage17-decision-framework">#</a></h2>
+<ol>
+<li>Draw graph roots, owners, runtime parameters, and cleanup; mark Android-created entry points.</li>
+<li>Make constructor injection the default, use a factory for runtime arguments, and add a narrow interface only at a real seam.</li>
+<li>For a small stable graph, use a manual composition root. When Android entry points, variants, and graph scale dominate, choose Hilt; use plain Dagger for custom component topology.</li>
+<li>Choose the shortest valid scope; verify that each dependency lives at least as long as its consumer without capturing a UI owner.</li>
+<li>Define eager/lazy policy, thread safety, startup budget, resource-close owner, and failure behavior.</li>
+<li>Separate behavior tests, graph validation, and production-wiring smoke tests; measure build impact.</li>
+</ol>
+
+<h2 id="en-stage17-tradeoffs">Trade-offs and failure modes<a aria-label="Link to section: Trade offs and failure modes" class="heading-anchor" href="#en-stage17-tradeoffs">#</a></h2>
+<ul>
+<li>Over-scoping causes stale shared state or leaks; under-scoping duplicates a connection, cache, or work. A classic captive dependency is a singleton holding an Activity, Fragment, View, or other short-lived collaborator.</li>
+<li>A mutable singleton can race: one instance does not mean serialized access, atomic compound operations, or process durability.</li>
+<li>Locator/entry-point creep hides dependencies. A large constructor may accurately reveal too many responsibilities; do not hide that signal with a locator.</li>
+<li>A duplicate/missing qualifier, wrong <code>@InstallIn</code>, inaccessible feature binding, or scope mismatch breaks the graph; credentials and other runtime configuration can still fail after successful compilation.</li>
+<li>A repository/manager cycle usually means bidirectional ownership. Lazy changes construction timing, not the design.</li>
+</ul>
+
+<h2 id="en-stage17-production-scenario">Production migration scenario: locator to Hilt<a aria-label="Link to section: Production migration scenario" class="heading-anchor" href="#en-stage17-production-scenario">#</a></h2>
+<p><strong>Before.</strong> <code>AppServices.get()</code> returns mutable auth, Retrofit, a database, and analytics; ViewModels pull dependencies, a singleton SDK receives an Activity, and tests mutate the global registry.</p>
+<p><strong>Seam first.</strong> Add constructors to use cases/repositories and a manual composition root, wrap the third-party SDK with an application-Context adapter, and use a factory for a session runtime value. The old locator temporarily delegates to the new graph only at the legacy boundary; new code never reads it.</p>
+<p><strong>Incremental Hilt.</strong> Add <code>@HiltAndroidApp</code> and migrate one Android entry point at a time. Move constructible types to <code>@Inject</code>, implementation aliases to <code>@Binds</code>, and SDK builders to qualified <code>@Provides</code>. Auth state gets a thread-safe application owner; Activity callbacks remain short-lived adapters. Feature APIs expose no generated types.</p>
+<p><strong>Verify and remove.</strong> Pure unit tests instantiate constructors with fakes; a production graph smoke test creates the real component with safe configuration; instrumentation verifies ViewModel ownership/recreation. Startup traces and a Gradle profile catch regressions. Remove the locator and global test reset after the final consumer migrates.</p>
+
+<h2 id="en-stage17-review-trap">Code-review/debug trap<a aria-label="Link to section: Code review and debug trap" class="heading-anchor" href="#en-stage17-review-trap">#</a></h2>
+<pre><code class="language-kotlin">@Singleton
+class CheckoutManager @Inject constructor(
+    private val activity: Activity,
+    private val payment: Lazy&lt;PaymentManager&gt;,
+) { var currentOrder: Order? = null }
+
+class PaymentManager @Inject constructor(
+    private val checkout: Provider&lt;CheckoutManager&gt;,
+)</code></pre>
+<p>Trap: the process component captured an Activity, mutable state is neither thread-safe nor durable, and Lazy/Provider hid a cycle. Debug from the first Dagger error path and binding key (type plus qualifier): locate the requesting entry point, component/<code>@InstallIn</code>, scope, and shortest-to-longest lifetime chain; inspect a generated factory only to confirm wiring. Fix it by giving a flow/ViewModel coordinator ownership of the order, making payment depend on a narrow command/port, and giving the SDK application Context—not by adding another scope or Lazy.</p>
+
+<h2 id="en-stage17-observability">Graph observability and diagnostics<a aria-label="Link to section: Graph observability and diagnostics" class="heading-anchor" href="#en-stage17-observability">#</a></h2>
+<ul>
+<li>For a missing binding, read the full dependency trace from the entry point and check exact generic type, qualifier, visibility, module inclusion, and variant. For a duplicate binding, find every contributor rather than suppressing the error.</li>
+<li>For a scope error, draw the component hierarchy and requested/scoped owner. Generated <code>*_Factory</code>/<code>*Component</code> code is evidence, not a stable API; run a clean build only after checking version/cache inputs.</li>
+<li>Log graph-safe events: SDK initialization duration/result, first-use latency, and component-owner IDs in debug builds, with no secrets or PII. Add startup trace sections and crash metadata for app/library versions.</li>
+<li>Compile-time graph validation does not validate runtime business configuration: separately validate base URLs, credentials, manifest metadata, remote flags, and multi-process behavior.</li>
+</ul>
+
+<h2 id="en-stage17-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice questions and answers" class="heading-anchor" href="#en-stage17-likely-qa">#</a></h2>
+<p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
+<ol>
+<li><strong>Dependency inversion, DI, or service locator?</strong> Inversion is the dependency policy; DI means the caller supplies a dependency; a locator hides a pull from a registry and is not DI.</li>
+<li><strong>Why default to constructor injection?</strong> It makes the API explicit, creates valid objects immediately, supports immutable dependencies, and enables framework-free unit tests; use a factory for runtime arguments.</li>
+<li><strong>When is manual DI sufficient?</strong> A small, stable graph with a few roots and simple lifetimes, where an explicit composition root stays readable and testable.</li>
+<li><strong>What does Dagger generate?</strong> Factories/providers and a component implementation that connects keys and validates the reachable graph at compile time.</li>
+<li><strong><code>@Binds</code> or <code>@Provides</code>?</strong> Binds for an implementation-to-API alias; Provides for custom construction, a third-party builder, or a derived value.</li>
+<li><strong>What does a scope mean?</strong> Reuse in a compatible component instance/lifetime—not thread safety, persistence, or cross-process identity.</li>
+<li><strong>ActivityRetained versus ViewModel?</strong> ActivityRetained can be shared by ViewModels of one retained Activity; ViewModelScoped is shared only inside one ViewModelComponent.</li>
+<li><strong>Provider versus Lazy?</strong> Provider performs on-demand/repeated requests under scope rules; Lazy locally memoizes its first value. Both can hide a cycle.</li>
+<li><strong>How do you test DI?</strong> Test behavior directly through constructors/fakes, then separately smoke-test the production graph and minimal Hilt Android integration.</li>
+<li><strong>How do you debug a missing binding?</strong> Walk the trace from the entry point and verify exact type plus qualifier, module visibility/<code>@InstallIn</code>, variant, and generated factory.</li>
+</ol>
+
+<h2 id="en-stage17-followups">4 senior follow-ups with answers<a aria-label="Link to section: 4 senior follow ups" class="heading-anchor" href="#en-stage17-followups">#</a></h2>
+<ol>
+<li><strong>A singleton requests an Activity.</strong> That is lifetime inversion/a captive dependency. Supply an application-safe adapter or pass a short-lived callback to a method, not an Activity to the singleton.</li>
+<li><strong>A dynamic feature cannot see an app Hilt binding.</strong> Treat it as a compilation/graph visibility boundary: expose a narrow dependency API and use the documented component-dependency pattern, not a reverse module dependency.</li>
+<li><strong>A KSP migration made builds slower.</strong> Check compatible processor versions, mixed KAPT/KSP tasks, clean versus incremental profiles, aggregating invalidation, and caches; one clean build proves little.</li>
+<li><strong>Production crashes despite a valid graph.</strong> Inspect runtime configuration, manifest/process state, SDK initialization, and first-use failures; compile-time types do not prove business configuration.</li>
+</ol>
+
+<h2 id="en-stage17-self-check">4 unanswered self-checks<a aria-label="Link to section: 4 unanswered self checks" class="heading-anchor" href="#en-stage17-self-check">#</a></h2>
+<ol>
+<li>Draw every component and object lifetime in a checkout flow; where can a captive dependency arise?</li>
+<li>Which bindings truly need an interface, qualifier, or scope, and which are accidental abstraction?</li>
+<li>Which test proves behavior, which proves production wiring, and what remains a runtime-only configuration risk?</li>
+<li>Where are first-use latency, cleanup, and thread-safety contracts for the SDK, cache, and session state?</li>
+</ol>
+
+<h2 id="en-stage17-english-skeletons">Interview-ready English answer skeletons<a aria-label="Link to section: Interview ready English answer skeletons" class="heading-anchor" href="#en-stage17-english-skeletons">#</a></h2>
+<p><strong>Question:</strong> <em>How do you design and debug dependency injection on Android?</em></p>
+<h3 id="en-stage17-answer-30">~30-second answer<a aria-label="Link to section: 30 second answer" class="heading-anchor" href="#en-stage17-answer-30">#</a></h3>
+<blockquote><p>I treat DI as object-graph assembly, not architecture. Constructor injection is my default, with a composition root owning creation and cleanup. Manual DI is enough for a small stable graph; Dagger adds compile-time generated wiring, and Hilt maps components to Android lifecycles. I choose the shortest valid scope, keep runtime values in factories, and test classes directly with fakes plus a separate production-graph smoke test. A scope controls reuse, not thread safety or persistence, and Provider or Lazy should not hide a design cycle.</p></blockquote>
+<h3 id="en-stage17-answer-2min">~2-minute answer<a aria-label="Link to section: 2 minute answer" class="heading-anchor" href="#en-stage17-answer-2min">#</a></h3>
+<blockquote><p>I first separate dependency inversion, dependency injection, and service location. Inversion is the policy that stable behavior should not depend directly on volatile details. Injection means the composition root supplies dependencies; a locator hides them behind global lookup. I default to constructor injection because it produces valid objects and framework-free unit-test seams.</p><p>For a small graph I use manual DI. At scale, Dagger validates reachable type-plus-qualifier keys and generates factories, providers, and component implementations. Hilt standardizes roots for Singleton, activity-retained, ViewModel, activity, fragment, view, and service lifetimes. I scope only when instance sharing is required and ensure a long-lived object never captures a shorter-lived Android owner. Singleton means one per component and process, not thread safety, persistence, or cross-process identity.</p><p>I use @Inject for owned constructible types, @Binds for aliases, @Provides for third-party construction, qualifiers for same-type semantics, and multibindings for plugin sets/maps. Provider and Lazy defer access but are not my default cycle breaker. Runtime values use factory or assisted inputs; ViewModel SavedStateHandle is for small restorable values, and ViewModel scope follows the actual owner and instance.</p><p>Finally, I keep constructors free of eager I/O, give SDK resources explicit init/close owners, profile KSP/KAPT and generated tasks with pinned versions, and debug errors from the requesting entry point through the full binding trace. Unit tests use fakes directly; Hilt replacement tests cover test graphs, while a separate production graph smoke test catches real wiring. Compile-time validation still cannot validate credentials, flags, or other runtime business configuration.</p></blockquote>
+
+<h2 id="en-stage17-sources">Official references<a aria-label="Link to section: Official references" class="heading-anchor" href="#en-stage17-sources">#</a></h2>
+<ul>
+<li><a href="https://developer.android.com/training/dependency-injection">Dependency injection on Android</a>, <a href="https://developer.android.com/training/dependency-injection/manual">Manual dependency injection</a>, <a href="https://developer.android.com/training/dependency-injection/hilt-android">Dependency injection with Hilt</a></li>
+<li><a href="https://developer.android.com/training/dependency-injection/hilt-jetpack">Hilt with Jetpack libraries</a>, <a href="https://developer.android.com/training/dependency-injection/hilt-testing">Hilt testing guide</a>, <a href="https://developer.android.com/training/dependency-injection/hilt-multi-module">Hilt in multi-module apps</a></li>
+<li><a href="https://dagger.dev/dev-guide/">Dagger developer guide</a>, <a href="https://dagger.dev/dev-guide/subcomponents.html">Subcomponents</a>, <a href="https://dagger.dev/dev-guide/multibindings.html">Multibindings</a>, <a href="https://dagger.dev/dev-guide/assisted-injection.html">Assisted injection</a></li>
+<li><a href="https://developer.android.com/build/migrate-to-ksp">Migrate from kapt to KSP</a>, <a href="https://kotlinlang.org/docs/ksp-overview.html">Kotlin Symbol Processing overview</a>, <a href="https://kotlinlang.org/docs/kapt.html">kapt compiler plugin</a></li>
+<li><a href="https://docs.gradle.org/current/userguide/performance.html">Improving Gradle build performance</a> and <a href="https://docs.gradle.org/current/userguide/build_scans.html">Gradle Build Scans</a></li>
 </ul>
 </div></details>
 
