@@ -40,6 +40,7 @@ STAGE26_KEY = "build-release-delivery-engineering"
 STAGE27_KEY = "system-design-offline-first-commerce-news-feed"
 STAGE28_KEY = "system-design-chat-real-time-updates"
 STAGE29_KEY = "system-design-payments-orders"
+STAGE30_KEY = "system-design-auth-analytics-feature-flags"
 
 
 def validate_html(path: Path) -> list[str]:
@@ -100,6 +101,7 @@ def validate_index_structure() -> list[str]:
         (18, STAGE18_KEY), (19, STAGE19_KEY), (20, STAGE20_KEY), (21, STAGE21_KEY),
         (22, STAGE22_KEY), (23, STAGE23_KEY), (24, STAGE24_KEY), (25, STAGE25_KEY),
         (26, STAGE26_KEY), (27, STAGE27_KEY), (28, STAGE28_KEY), (29, STAGE29_KEY),
+        (30, STAGE30_KEY),
     ):
         expected_stage_ids = (stage_key, f"en-{stage_key}")
         if content.count(f'data-key="{stage_key}"') != 2:
@@ -148,12 +150,13 @@ def validate_index_structure() -> list[str]:
             f'{prefix}{STAGE27_KEY}',
             f'{prefix}{STAGE28_KEY}',
             f'{prefix}{STAGE29_KEY}',
+            f'{prefix}{STAGE30_KEY}',
             f'{prefix}kotlin-for-android',
         )
         positions = [content.find(f'id="{value}"') for value in ordered_ids]
         if -1 in positions or positions != sorted(positions):
             errors.append(
-                f"index.html: {prefix or 'uk-'}Stages 2–29 must follow Stage 1 and precede Kotlin for Android"
+                f"index.html: {prefix or 'uk-'}Stages 2–30 must follow Stage 1 and precede Kotlin for Android"
             )
 
         stage5_id = f"{prefix}{STAGE5_KEY}"
@@ -181,6 +184,7 @@ def validate_index_structure() -> list[str]:
         stage27_id = f"{prefix}{STAGE27_KEY}"
         stage28_id = f"{prefix}{STAGE28_KEY}"
         stage29_id = f"{prefix}{STAGE29_KEY}"
+        stage30_id = f"{prefix}{STAGE30_KEY}"
         major_ids = re.findall(
             r'<details\s+class="major-section"[^>]*\bid="([^"]+)"',
             content,
@@ -212,6 +216,7 @@ def validate_index_structure() -> list[str]:
             or stage27_id not in major_ids
             or stage28_id not in major_ids
             or stage29_id not in major_ids
+            or stage30_id not in major_ids
             or major_ids.index(stage6_id) != major_ids.index(stage5_id) + 1
             or major_ids.index(stage7_id) != major_ids.index(stage6_id) + 1
             or major_ids.index(stage8_id) != major_ids.index(stage7_id) + 1
@@ -236,6 +241,7 @@ def validate_index_structure() -> list[str]:
             or major_ids.index(stage27_id) != major_ids.index(stage26_id) + 1
             or major_ids.index(stage28_id) != major_ids.index(stage27_id) + 1
             or major_ids.index(stage29_id) != major_ids.index(stage28_id) + 1
+            or major_ids.index(stage30_id) != major_ids.index(stage29_id) + 1
         ):
             errors.append(
                 f"index.html: {stage6_id!r} must immediately follow {stage5_id!r}, "
@@ -261,7 +267,8 @@ def validate_index_structure() -> list[str]:
                 f"{stage26_id!r} must immediately follow {stage25_id!r}, and "
                 f"{stage27_id!r} must immediately follow {stage26_id!r}, and "
                 f"{stage28_id!r} must immediately follow {stage27_id!r}, and "
-                f"{stage29_id!r} must immediately follow {stage28_id!r}"
+                f"{stage29_id!r} must immediately follow {stage28_id!r}, and "
+                f"{stage30_id!r} must immediately follow {stage29_id!r}"
             )
 
         toc_adjacency = re.search(
@@ -523,6 +530,16 @@ def validate_index_structure() -> list[str]:
         if not stage29_toc_adjacency:
             errors.append(
                 f"index.html: TOC link {stage29_id!r} must be immediately after {stage28_id!r}"
+            )
+
+        stage30_toc_adjacency = re.search(
+            rf'<li class="toc-major">\s*<a data-target="{re.escape(stage29_id)}"[^>]*>.*?</a>\s*'
+            rf'</li>\s*<li class="toc-major">\s*<a data-target="{re.escape(stage30_id)}"[^>]*>',
+            content, re.S,
+        )
+        if not stage30_toc_adjacency:
+            errors.append(
+                f"index.html: TOC link {stage30_id!r} must be immediately after {stage29_id!r}"
             )
 
     stage4_contracts = (
@@ -2417,6 +2434,80 @@ def validate_index_structure() -> list[str]:
                 labelled = len(re.findall(r"<li>\s*<strong>Q:", match.group(1), re.S))
                 if labelled != expected:
                     errors.append(f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}")
+
+    stage30_contracts = (
+        "objective", "requirements-ownership", "architecture", "auth-model", "auth-session",
+        "auth-storage", "analytics-design", "analytics-pipeline", "flags-design", "flags-rollout",
+        "integration-sequences", "failure-matrix", "guarantees", "api-version-guidance",
+        "decisions-tradeoffs", "observability-testing", "incident", "review-trap", "likely-qa",
+        "followups", "self-check", "english-skeletons", "answer-30", "answer-2min", "sources",
+    )
+    for prefix in ("stage30-uk-", "en-stage30-"):
+        for suffix in stage30_contracts:
+            stage_id = f"{prefix}{suffix}"
+            if ids.count(stage_id) != 1:
+                errors.append(f"index.html: expected exactly one Stage 30 contract id {stage_id!r}")
+
+    stage30_sections: dict[str, str] = {}
+    for stage_id in (STAGE30_KEY, f"en-{STAGE30_KEY}"):
+        match = re.search(
+            rf'<details\s+class="major-section"[^>]*\bid="{re.escape(stage_id)}"[^>]*>(.*?)</div></details>',
+            content, re.I | re.S,
+        )
+        section = match.group(1) if match else ""
+        stage30_sections[stage_id] = section
+        if not match:
+            errors.append(f"index.html: unable to isolate Stage 30 section {stage_id!r}")
+
+    stage30_markers = (
+        "identity", "authentication", "authorization", "session", "account", "device", "OAuth 2", "OIDC",
+        "Authorization Code", "PKCE", "external user-agent", "redirect", "App Link", "state", "nonce",
+        "code_verifier", "access token", "refresh token", "short-lived", "rotation", "reuse detection",
+        "single-flight", "401", "403", "retry", "clock skew", "revocation", "multi-account", "offline",
+        "Biometric", "Credential Manager", "passkeys", "Keystore", "client secret", "audience", "scope",
+        "schema registry", "required", "optional", "source timestamp", "ingestion timestamp", "pseudonymous",
+        "consent", "data minimization", "retention", "deletion", "PII", "allowlist", "denylist", "batch",
+        "backoff", "jitter", "at-least-once", "sampling", "quota", "backpressure", "duplicate", "out of order",
+        "observability", "exposure", "data-quality", "typed registry", "owner", "purpose", "default", "expiry",
+        "build-time", "runtime", "last-known-good", "fetch", "activate", "min-fetch", "real-time",
+        "targeting", "deterministic bucketing", "sticky", "contamination", "kill switch", "dependency",
+        "invariant", "staged rollout", "guardrail", "circuit breaker", "flag debt", "control-plane",
+        "data-plane", "anonymous", "process death", "account switch", "logout", "consent withdrawal",
+        "CI green does not prove privacy/compliance",
+    )
+    stage30_language_markers = {
+        STAGE30_KEY: (
+            "Це likely practice questions, не підтверджений і не гарантований список співбесіди.",
+            "PKCE does not replace redirect/state/nonce/issuer/audience/scope/server validation.",
+            "Logout cannot guarantee immediate invalidation without server support",
+            "Analytics delivery, order and exactly-once are not guaranteed",
+            "Remote Config fetch success does not imply activation or valid business invariants",
+            "Deterministic bucketing does not guarantee statistically valid experiments.",
+        ),
+        f"en-{STAGE30_KEY}": (
+            "These are likely practice questions, not a confirmed or guaranteed interview list.",
+            "PKCE does not replace redirect/state/nonce/issuer/audience/scope/server validation.",
+            "Logout cannot guarantee immediate invalidation without server support",
+            "Analytics delivery, order, and exactly-once are not guaranteed",
+            "Remote Config fetch success does not imply activation or valid business invariants",
+            "Deterministic bucketing does not guarantee statistically valid experiments.",
+        ),
+    }
+    for stage_id, section in stage30_sections.items():
+        for marker in (*stage30_markers, *stage30_language_markers[stage_id]):
+            if marker.lower() not in section.lower():
+                errors.append(f"index.html: Stage 30 section {stage_id!r} is missing focused marker {marker!r}")
+
+    for prefix in ("stage30-uk-", "en-stage30-"):
+        for suffix, expected in (("likely-qa", 10), ("followups", 4), ("self-check", 4)):
+            match = re.search(rf'id="{re.escape(prefix + suffix)}".*?</h2>.*?<ol>(.*?)</ol>', content, re.S)
+            count = len(re.findall(r"<li>", match.group(1))) if match else 0
+            if count != expected:
+                errors.append(f"index.html: {prefix + suffix!r} must contain exactly {expected} list items; found {count}")
+            if suffix == "likely-qa" and match:
+                labelled = len(re.findall(r"<li>\s*<strong>Q:", match.group(1), re.S))
+                if labelled != expected:
+                    errors.append(f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}")
     return errors
 
 
@@ -2434,7 +2525,7 @@ def main() -> int:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
-    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–29 navigation/contracts, and baseline checksum are valid.")
+    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–30 navigation/contracts, and baseline checksum are valid.")
     return 0
 
 
