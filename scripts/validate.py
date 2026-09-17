@@ -42,6 +42,7 @@ STAGE28_KEY = "system-design-chat-real-time-updates"
 STAGE29_KEY = "system-design-payments-orders"
 STAGE30_KEY = "system-design-auth-analytics-feature-flags"
 STAGE31_KEY = "migration-design-live-android-product"
+STAGE32_KEY = "senior-engineering-practice"
 
 
 def validate_html(path: Path) -> list[str]:
@@ -102,7 +103,7 @@ def validate_index_structure() -> list[str]:
         (18, STAGE18_KEY), (19, STAGE19_KEY), (20, STAGE20_KEY), (21, STAGE21_KEY),
         (22, STAGE22_KEY), (23, STAGE23_KEY), (24, STAGE24_KEY), (25, STAGE25_KEY),
         (26, STAGE26_KEY), (27, STAGE27_KEY), (28, STAGE28_KEY), (29, STAGE29_KEY),
-        (30, STAGE30_KEY), (31, STAGE31_KEY),
+        (30, STAGE30_KEY), (31, STAGE31_KEY), (32, STAGE32_KEY),
     ):
         expected_stage_ids = (stage_key, f"en-{stage_key}")
         if content.count(f'data-key="{stage_key}"') != 2:
@@ -153,12 +154,13 @@ def validate_index_structure() -> list[str]:
             f'{prefix}{STAGE29_KEY}',
             f'{prefix}{STAGE30_KEY}',
             f'{prefix}{STAGE31_KEY}',
+            f'{prefix}{STAGE32_KEY}',
             f'{prefix}kotlin-for-android',
         )
         positions = [content.find(f'id="{value}"') for value in ordered_ids]
         if -1 in positions or positions != sorted(positions):
             errors.append(
-                f"index.html: {prefix or 'uk-'}Stages 2–31 must follow Stage 1 and precede Kotlin for Android"
+                f"index.html: {prefix or 'uk-'}Stages 2–32 must follow Stage 1 and precede Kotlin for Android"
             )
 
         stage5_id = f"{prefix}{STAGE5_KEY}"
@@ -188,6 +190,7 @@ def validate_index_structure() -> list[str]:
         stage29_id = f"{prefix}{STAGE29_KEY}"
         stage30_id = f"{prefix}{STAGE30_KEY}"
         stage31_id = f"{prefix}{STAGE31_KEY}"
+        stage32_id = f"{prefix}{STAGE32_KEY}"
         major_ids = re.findall(
             r'<details\s+class="major-section"[^>]*\bid="([^"]+)"',
             content,
@@ -221,6 +224,8 @@ def validate_index_structure() -> list[str]:
             or stage29_id not in major_ids
             or stage30_id not in major_ids
             or stage31_id not in major_ids
+            or stage32_id not in major_ids
+            or f"{prefix}kotlin-for-android" not in major_ids
             or major_ids.index(stage6_id) != major_ids.index(stage5_id) + 1
             or major_ids.index(stage7_id) != major_ids.index(stage6_id) + 1
             or major_ids.index(stage8_id) != major_ids.index(stage7_id) + 1
@@ -247,6 +252,8 @@ def validate_index_structure() -> list[str]:
             or major_ids.index(stage29_id) != major_ids.index(stage28_id) + 1
             or major_ids.index(stage30_id) != major_ids.index(stage29_id) + 1
             or major_ids.index(stage31_id) != major_ids.index(stage30_id) + 1
+            or major_ids.index(stage32_id) != major_ids.index(stage31_id) + 1
+            or major_ids.index(f"{prefix}kotlin-for-android") != major_ids.index(stage32_id) + 1
         ):
             errors.append(
                 f"index.html: {stage6_id!r} must immediately follow {stage5_id!r}, "
@@ -274,7 +281,8 @@ def validate_index_structure() -> list[str]:
                 f"{stage28_id!r} must immediately follow {stage27_id!r}, and "
                 f"{stage29_id!r} must immediately follow {stage28_id!r}, and "
                 f"{stage30_id!r} must immediately follow {stage29_id!r}, and "
-                f"{stage31_id!r} must immediately follow {stage30_id!r}"
+                f"{stage31_id!r} must immediately follow {stage30_id!r}, and "
+                f"final Stage 32 {stage32_id!r} must immediately follow {stage31_id!r} and precede Kotlin for Android"
             )
 
         toc_adjacency = re.search(
@@ -556,6 +564,17 @@ def validate_index_structure() -> list[str]:
         if not stage31_toc_adjacency:
             errors.append(
                 f"index.html: TOC link {stage31_id!r} must be immediately after {stage30_id!r}"
+            )
+
+        stage32_toc_adjacency = re.search(
+            rf'<li class="toc-major">\s*<a data-target="{re.escape(stage31_id)}"[^>]*>.*?</a>\s*'
+            rf'</li>\s*<li class="toc-major">\s*<a data-target="{re.escape(stage32_id)}"[^>]*>.*?</a>\s*'
+            rf'</li>\s*<li class="toc-major">\s*<a data-target="{re.escape(prefix + "kotlin-for-android")}"[^>]*>',
+            content, re.S,
+        )
+        if not stage32_toc_adjacency:
+            errors.append(
+                f"index.html: final TOC link {stage32_id!r} must be immediately after {stage31_id!r} and before Kotlin for Android"
             )
 
     stage4_contracts = (
@@ -2599,6 +2618,95 @@ def validate_index_structure() -> list[str]:
                 labelled = len(re.findall(r"<li>\s*<strong>Q:", match.group(1), re.S))
                 if labelled != expected:
                     errors.append(f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}")
+
+    stage32_contracts = (
+        "objective-scope", "operating-model", "code-review", "review-template", "mentorship",
+        "mentorship-template", "decisions", "adr-template", "stakeholders", "stakeholder-template",
+        "tradeoffs-prioritization", "debt-register", "tradeoff-template", "delivery-ownership",
+        "interview-evidence", "story-inventory", "anti-patterns", "scenario", "review-trap",
+        "guarantees", "decision-framework", "self-assessment", "likely-qa", "followups",
+        "self-check", "english-skeletons", "answer-30", "answer-2min", "sources",
+    )
+    for prefix in ("stage32-uk-", "en-stage32-"):
+        for suffix in stage32_contracts:
+            stage_id = f"{prefix}{suffix}"
+            if ids.count(stage_id) != 1:
+                errors.append(f"index.html: expected exactly one Stage 32 contract id {stage_id!r}")
+
+    stage32_sections: dict[str, str] = {}
+    for stage_id in (STAGE32_KEY, f"en-{STAGE32_KEY}"):
+        match = re.search(
+            rf'<details\s+class="major-section"[^>]*\bid="{re.escape(stage_id)}"[^>]*>(.*?)</div></details>',
+            content, re.I | re.S,
+        )
+        section = match.group(1) if match else ""
+        stage32_sections[stage_id] = section
+        if not match:
+            errors.append(f"index.html: unable to isolate Stage 32 section {stage_id!r}")
+
+    stage32_markers = (
+        "ambiguity", "technical", "system/team outcomes",
+        "sustainable pace", "escalat", "over-engineering", "Senior", "Lead", "Staff",
+        "organization-dependent", "correctness", "security", "maintainability", "learning",
+        "risk", "small", "reviewable", "author", "reviewer", "evidence", "tests", "BLOCKING",
+        "NON-BLOCKING", "QUESTION", "SUGGESTION", "NIT", "rubber stamp", "architecture-by-comment",
+        "approval", "latency", "pairing", "Socratic", "direct instruction", "scaffold", "feedback",
+        "behavior", "impact", "next action", "psychological safety", "delegation", "sponsorship",
+        "mentorship", "bottleneck", "two-way door", "one-way door", "decision owner", "deadline",
+        "options", "constraints", "trade-offs", "assumptions", "confidence", "dissent",
+        "disagree-and-commit", "spike", "expiry", "revisit", "ADR", "RFC", "outcome luck",
+        "decision-makers", "affected groups", "business", "reliability", "cost", "delivery",
+        "recommendation", "uncertainty", "scope", "dependencies", "bad news", "product", "backend",
+        "QA", "design", "async", "meeting", "urgency", "reversibility", "cost of delay", "effort range",
+        "debt taxonomy", "debt register", "incident", "compliance",
+        "standardization", "autonomy", "patch", "root fix", "capacity", "residual risk",
+        "vertical slices", "pre-mortem", "risk register", "observability", "rollout", "rollback",
+        "post-release", "postmortem", "blameless", "accountability", "STAR", "CARL",
+        "individual contribution", "verified", "metrics", "honest gap", "story inventory",
+        "self-assessment", "30-second answer", "2-minute answer",
+        "Code review and CI cannot prove correctness, security, or production safety",
+        "Psychological safety does not mean avoiding direct feedback or lowering standards",
+        "Mentoring does not guarantee immediate performance", "Delegation does not remove accountability",
+        "A blameless postmortem does not mean no standards or ownership",
+        "Estimates are uncertainty ranges, not promises", "Metrics can be gamed; activity is not impact",
+        "Feature flags and staged rollout limit exposure but do not prove safety or instantly roll back irreversible state",
+        "A technically optimal solution can be wrong under product or organizational constraints",
+        "STAR structure cannot substitute for genuine evidence",
+    )
+    stage32_language_markers = {
+        STAGE32_KEY: (
+            "фінальний етап цього гайда", "немає етапів 33–35",
+            "впливати без формальної влади", "Build vs buy",
+            "Це likely practice questions, не підтверджений і не гарантований список співбесіди.",
+        ),
+        f"en-{STAGE32_KEY}": (
+            "final stage of this guide", "There are no Stages 33–35",
+            "influence without authority", "Build versus buy",
+            "These are likely practice questions, not a confirmed or guaranteed interview list.",
+        ),
+    }
+    for stage_id, section in stage32_sections.items():
+        for marker in (*stage32_markers, *stage32_language_markers[stage_id]):
+            if marker.lower() not in section.lower():
+                errors.append(f"index.html: Stage 32 section {stage_id!r} is missing focused marker {marker!r}")
+
+    for prefix in ("stage32-uk-", "en-stage32-"):
+        for suffix, expected in (("likely-qa", 10), ("followups", 4), ("self-check", 4)):
+            match = re.search(rf'id="{re.escape(prefix + suffix)}".*?</h2>.*?<ol>(.*?)</ol>', content, re.S)
+            count = len(re.findall(r"<li>", match.group(1))) if match else 0
+            if count != expected:
+                errors.append(f"index.html: {prefix + suffix!r} must contain exactly {expected} list items; found {count}")
+            if suffix == "likely-qa" and match:
+                labelled = len(re.findall(r"<li>\s*<strong>Q:", match.group(1), re.S))
+                if labelled != expected:
+                    errors.append(f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}")
+
+    forbidden_later_stage_entries = re.findall(
+        r'<(?:a|details)\b[^>]*(?:data-target|data-key|id)="(?:en-)?(?:stage[-_]?3[3-5]|stage3[3-5]-)[^"]*"',
+        content, re.I,
+    )
+    if forbidden_later_stage_entries:
+        errors.append("index.html: final Stage 32 must not be followed by Stage 33–35 guide/TOC entries")
     return errors
 
 
@@ -2616,7 +2724,7 @@ def main() -> int:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
-    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–31 navigation/contracts, and baseline checksum are valid.")
+    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–32 navigation/contracts, final-stage boundary, and baseline checksum are valid.")
     return 0
 
 
