@@ -39,6 +39,7 @@ STAGE25_KEY = "startup-rendering-performance"
 STAGE26_KEY = "build-release-delivery-engineering"
 STAGE27_KEY = "system-design-offline-first-commerce-news-feed"
 STAGE28_KEY = "system-design-chat-real-time-updates"
+STAGE29_KEY = "system-design-payments-orders"
 
 
 def validate_html(path: Path) -> list[str]:
@@ -98,7 +99,7 @@ def validate_index_structure() -> list[str]:
         (14, STAGE14_KEY), (15, STAGE15_KEY), (16, STAGE16_KEY), (17, STAGE17_KEY),
         (18, STAGE18_KEY), (19, STAGE19_KEY), (20, STAGE20_KEY), (21, STAGE21_KEY),
         (22, STAGE22_KEY), (23, STAGE23_KEY), (24, STAGE24_KEY), (25, STAGE25_KEY),
-        (26, STAGE26_KEY), (27, STAGE27_KEY), (28, STAGE28_KEY),
+        (26, STAGE26_KEY), (27, STAGE27_KEY), (28, STAGE28_KEY), (29, STAGE29_KEY),
     ):
         expected_stage_ids = (stage_key, f"en-{stage_key}")
         if content.count(f'data-key="{stage_key}"') != 2:
@@ -146,12 +147,13 @@ def validate_index_structure() -> list[str]:
             f'{prefix}{STAGE26_KEY}',
             f'{prefix}{STAGE27_KEY}',
             f'{prefix}{STAGE28_KEY}',
+            f'{prefix}{STAGE29_KEY}',
             f'{prefix}kotlin-for-android',
         )
         positions = [content.find(f'id="{value}"') for value in ordered_ids]
         if -1 in positions or positions != sorted(positions):
             errors.append(
-                f"index.html: {prefix or 'uk-'}Stages 2–28 must follow Stage 1 and precede Kotlin for Android"
+                f"index.html: {prefix or 'uk-'}Stages 2–29 must follow Stage 1 and precede Kotlin for Android"
             )
 
         stage5_id = f"{prefix}{STAGE5_KEY}"
@@ -178,6 +180,7 @@ def validate_index_structure() -> list[str]:
         stage26_id = f"{prefix}{STAGE26_KEY}"
         stage27_id = f"{prefix}{STAGE27_KEY}"
         stage28_id = f"{prefix}{STAGE28_KEY}"
+        stage29_id = f"{prefix}{STAGE29_KEY}"
         major_ids = re.findall(
             r'<details\s+class="major-section"[^>]*\bid="([^"]+)"',
             content,
@@ -208,6 +211,7 @@ def validate_index_structure() -> list[str]:
             or stage26_id not in major_ids
             or stage27_id not in major_ids
             or stage28_id not in major_ids
+            or stage29_id not in major_ids
             or major_ids.index(stage6_id) != major_ids.index(stage5_id) + 1
             or major_ids.index(stage7_id) != major_ids.index(stage6_id) + 1
             or major_ids.index(stage8_id) != major_ids.index(stage7_id) + 1
@@ -231,6 +235,7 @@ def validate_index_structure() -> list[str]:
             or major_ids.index(stage26_id) != major_ids.index(stage25_id) + 1
             or major_ids.index(stage27_id) != major_ids.index(stage26_id) + 1
             or major_ids.index(stage28_id) != major_ids.index(stage27_id) + 1
+            or major_ids.index(stage29_id) != major_ids.index(stage28_id) + 1
         ):
             errors.append(
                 f"index.html: {stage6_id!r} must immediately follow {stage5_id!r}, "
@@ -255,7 +260,8 @@ def validate_index_structure() -> list[str]:
                 f"{stage25_id!r} must immediately follow {stage24_id!r}, and "
                 f"{stage26_id!r} must immediately follow {stage25_id!r}, and "
                 f"{stage27_id!r} must immediately follow {stage26_id!r}, and "
-                f"{stage28_id!r} must immediately follow {stage27_id!r}"
+                f"{stage28_id!r} must immediately follow {stage27_id!r}, and "
+                f"{stage29_id!r} must immediately follow {stage28_id!r}"
             )
 
         toc_adjacency = re.search(
@@ -507,6 +513,16 @@ def validate_index_structure() -> list[str]:
         if not stage28_toc_adjacency:
             errors.append(
                 f"index.html: TOC link {stage28_id!r} must be immediately after {stage27_id!r}"
+            )
+
+        stage29_toc_adjacency = re.search(
+            rf'<li class="toc-major">\s*<a data-target="{re.escape(stage28_id)}"[^>]*>.*?</a>\s*'
+            rf'</li>\s*<li class="toc-major">\s*<a data-target="{re.escape(stage29_id)}"[^>]*>',
+            content, re.S,
+        )
+        if not stage29_toc_adjacency:
+            errors.append(
+                f"index.html: TOC link {stage29_id!r} must be immediately after {stage28_id!r}"
             )
 
     stage4_contracts = (
@@ -2333,6 +2349,74 @@ def validate_index_structure() -> list[str]:
                 labelled = len(re.findall(r"<li>\s*<strong>Q:", match.group(1), re.S))
                 if labelled != expected:
                     errors.append(f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}")
+
+    stage29_contracts = (
+        "objective", "mental-model", "requirements", "boundaries", "architecture", "data-model",
+        "order-state-machine", "payment-state-machine", "checkout-sequence", "recovery", "idempotency",
+        "webhooks", "atomicity-inventory", "offline-security", "observability", "testing",
+        "failure-matrix", "guarantees", "decision-framework", "tradeoffs", "incident", "review-trap",
+        "likely-qa", "followups", "self-check", "english-skeletons", "answer-30", "answer-2min", "sources",
+    )
+    for prefix in ("stage29-uk-", "en-stage29-"):
+        for suffix in stage29_contracts:
+            stage_id = f"{prefix}{suffix}"
+            if ids.count(stage_id) != 1:
+                errors.append(f"index.html: expected exactly one Stage 29 contract id {stage_id!r}")
+
+    stage29_sections: dict[str, str] = {}
+    for stage_id in (STAGE29_KEY, f"en-{STAGE29_KEY}"):
+        match = re.search(
+            rf'<details\s+class="major-section"[^>]*\bid="{re.escape(stage_id)}"[^>]*>(.*?)</div></details>',
+            content, re.I | re.S,
+        )
+        section = match.group(1) if match else ""
+        stage29_sections[stage_id] = section
+        if not match:
+            errors.append(f"index.html: unable to isolate Stage 29 section {stage_id!r}")
+
+    stage29_markers = (
+        "cart", "checkout", "order", "payment", "fulfillment", "refund", "digital", "physical", "service",
+        "Play Billing", "backend verification", "acknowledgement", "PCI", "tokenization", "hosted", "PAN", "CVV",
+        "TLS", "Keystore", "minorUnits", "currency", "rounding", "binary floating point", "state machine",
+        "terminal", "nonterminal", "reason code", "state-machine version", "authorization", "capture", "partial",
+        "decline", "cancellation", "expiry", "void", "dispute", "chargeback", "settlement", "idempotency",
+        "payload fingerprint", "scope", "TTL", "UUID", "ambiguous", "process death", "3DS", "deep link",
+        "return URL", "replay", "tamper", "webhook", "signature", "event ID", "out-of-order", "missing",
+        "inbox", "ledger", "monotonic", "polling", "reconciliation", "Room transaction", "distributed transaction",
+        "saga", "compensation", "outbox", "inventory reservation", "oversell", "promotion", "tax", "shipping",
+        "immutable", "offline", "WorkManager", "correlation ID", "redact", "audit", "PII", "fake provider",
+        "sandbox", "migration", "property", "invariant", "Exactly-once", "provisional", "clock/client timestamps",
+        "obfuscation/encryption", "Stage 30",
+    )
+    stage29_language_markers = {
+        STAGE29_KEY: (
+            "Це likely practice questions, не підтверджений і не гарантований список співбесіди.",
+            "Payment UI success is not durable order confirmation",
+            "webhook receipt is not necessarily settlement",
+            "WorkManager is not an exact scheduler and should not own silent payment retries",
+        ),
+        f"en-{STAGE29_KEY}": (
+            "These are likely practice questions, not a confirmed or guaranteed interview list.",
+            "Payment UI success is not durable order confirmation",
+            "webhook receipt is not necessarily settlement",
+            "WorkManager is not an exact scheduler and should not own silent payment retries",
+        ),
+    }
+    for stage_id, section in stage29_sections.items():
+        for marker in (*stage29_markers, *stage29_language_markers[stage_id]):
+            if marker.lower() not in section.lower():
+                errors.append(f"index.html: Stage 29 section {stage_id!r} is missing focused marker {marker!r}")
+
+    for prefix in ("stage29-uk-", "en-stage29-"):
+        for suffix, expected in (("likely-qa", 10), ("followups", 4), ("self-check", 4)):
+            match = re.search(rf'id="{re.escape(prefix + suffix)}".*?</h2>.*?<ol>(.*?)</ol>', content, re.S)
+            count = len(re.findall(r"<li>", match.group(1))) if match else 0
+            if count != expected:
+                errors.append(f"index.html: {prefix + suffix!r} must contain exactly {expected} list items; found {count}")
+            if suffix == "likely-qa" and match:
+                labelled = len(re.findall(r"<li>\s*<strong>Q:", match.group(1), re.S))
+                if labelled != expected:
+                    errors.append(f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}")
     return errors
 
 
@@ -2350,7 +2434,7 @@ def main() -> int:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
-    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–28 navigation/contracts, and baseline checksum are valid.")
+    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–29 navigation/contracts, and baseline checksum are valid.")
     return 0
 
 
