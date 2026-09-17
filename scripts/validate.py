@@ -41,6 +41,7 @@ STAGE27_KEY = "system-design-offline-first-commerce-news-feed"
 STAGE28_KEY = "system-design-chat-real-time-updates"
 STAGE29_KEY = "system-design-payments-orders"
 STAGE30_KEY = "system-design-auth-analytics-feature-flags"
+STAGE31_KEY = "migration-design-live-android-product"
 
 
 def validate_html(path: Path) -> list[str]:
@@ -101,7 +102,7 @@ def validate_index_structure() -> list[str]:
         (18, STAGE18_KEY), (19, STAGE19_KEY), (20, STAGE20_KEY), (21, STAGE21_KEY),
         (22, STAGE22_KEY), (23, STAGE23_KEY), (24, STAGE24_KEY), (25, STAGE25_KEY),
         (26, STAGE26_KEY), (27, STAGE27_KEY), (28, STAGE28_KEY), (29, STAGE29_KEY),
-        (30, STAGE30_KEY),
+        (30, STAGE30_KEY), (31, STAGE31_KEY),
     ):
         expected_stage_ids = (stage_key, f"en-{stage_key}")
         if content.count(f'data-key="{stage_key}"') != 2:
@@ -151,12 +152,13 @@ def validate_index_structure() -> list[str]:
             f'{prefix}{STAGE28_KEY}',
             f'{prefix}{STAGE29_KEY}',
             f'{prefix}{STAGE30_KEY}',
+            f'{prefix}{STAGE31_KEY}',
             f'{prefix}kotlin-for-android',
         )
         positions = [content.find(f'id="{value}"') for value in ordered_ids]
         if -1 in positions or positions != sorted(positions):
             errors.append(
-                f"index.html: {prefix or 'uk-'}Stages 2–30 must follow Stage 1 and precede Kotlin for Android"
+                f"index.html: {prefix or 'uk-'}Stages 2–31 must follow Stage 1 and precede Kotlin for Android"
             )
 
         stage5_id = f"{prefix}{STAGE5_KEY}"
@@ -185,6 +187,7 @@ def validate_index_structure() -> list[str]:
         stage28_id = f"{prefix}{STAGE28_KEY}"
         stage29_id = f"{prefix}{STAGE29_KEY}"
         stage30_id = f"{prefix}{STAGE30_KEY}"
+        stage31_id = f"{prefix}{STAGE31_KEY}"
         major_ids = re.findall(
             r'<details\s+class="major-section"[^>]*\bid="([^"]+)"',
             content,
@@ -217,6 +220,7 @@ def validate_index_structure() -> list[str]:
             or stage28_id not in major_ids
             or stage29_id not in major_ids
             or stage30_id not in major_ids
+            or stage31_id not in major_ids
             or major_ids.index(stage6_id) != major_ids.index(stage5_id) + 1
             or major_ids.index(stage7_id) != major_ids.index(stage6_id) + 1
             or major_ids.index(stage8_id) != major_ids.index(stage7_id) + 1
@@ -242,6 +246,7 @@ def validate_index_structure() -> list[str]:
             or major_ids.index(stage28_id) != major_ids.index(stage27_id) + 1
             or major_ids.index(stage29_id) != major_ids.index(stage28_id) + 1
             or major_ids.index(stage30_id) != major_ids.index(stage29_id) + 1
+            or major_ids.index(stage31_id) != major_ids.index(stage30_id) + 1
         ):
             errors.append(
                 f"index.html: {stage6_id!r} must immediately follow {stage5_id!r}, "
@@ -268,7 +273,8 @@ def validate_index_structure() -> list[str]:
                 f"{stage27_id!r} must immediately follow {stage26_id!r}, and "
                 f"{stage28_id!r} must immediately follow {stage27_id!r}, and "
                 f"{stage29_id!r} must immediately follow {stage28_id!r}, and "
-                f"{stage30_id!r} must immediately follow {stage29_id!r}"
+                f"{stage30_id!r} must immediately follow {stage29_id!r}, and "
+                f"{stage31_id!r} must immediately follow {stage30_id!r}"
             )
 
         toc_adjacency = re.search(
@@ -540,6 +546,16 @@ def validate_index_structure() -> list[str]:
         if not stage30_toc_adjacency:
             errors.append(
                 f"index.html: TOC link {stage30_id!r} must be immediately after {stage29_id!r}"
+            )
+
+        stage31_toc_adjacency = re.search(
+            rf'<li class="toc-major">\s*<a data-target="{re.escape(stage30_id)}"[^>]*>.*?</a>\s*'
+            rf'</li>\s*<li class="toc-major">\s*<a data-target="{re.escape(stage31_id)}"[^>]*>',
+            content, re.S,
+        )
+        if not stage31_toc_adjacency:
+            errors.append(
+                f"index.html: TOC link {stage31_id!r} must be immediately after {stage30_id!r}"
             )
 
     stage4_contracts = (
@@ -2508,6 +2524,81 @@ def validate_index_structure() -> list[str]:
                 labelled = len(re.findall(r"<li>\s*<strong>Q:", match.group(1), re.S))
                 if labelled != expected:
                     errors.append(f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}")
+
+    stage31_contracts = (
+        "objective-discovery", "strategy", "control-plane", "topology", "slice-template",
+        "xml-compose", "compose-state-nav", "compose-parity", "rx-inventory", "rx-semantics",
+        "modularization", "compatibility-version", "safe-delivery", "vertical-sequence", "risk-matrix",
+        "guarantees", "decision-framework", "tradeoffs", "observability-testing", "incident",
+        "review-trap", "likely-qa", "followups", "self-check", "english-skeletons",
+        "answer-30", "answer-2min", "sources",
+    )
+    for prefix in ("stage31-uk-", "en-stage31-"):
+        for suffix in stage31_contracts:
+            stage_id = f"{prefix}{suffix}"
+            if ids.count(stage_id) != 1:
+                errors.append(f"index.html: expected exactly one Stage 31 contract id {stage_id!r}")
+
+    stage31_sections: dict[str, str] = {}
+    for stage_id in (STAGE31_KEY, f"en-{STAGE31_KEY}"):
+        match = re.search(
+            rf'<details\s+class="major-section"[^>]*\bid="{re.escape(stage_id)}"[^>]*>(.*?)</div></details>',
+            content, re.I | re.S,
+        )
+        section = match.group(1) if match else ""
+        stage31_sections[stage_id] = section
+        if not match:
+            errors.append(f"index.html: unable to isolate Stage 31 section {stage_id!r}")
+
+    stage31_markers = (
+        "business", "pain/cost", "dependency/build graph", "runtime behavior", "ownership", "release cadence",
+        "critical flows", "compatibility constraints", "unsupported assumptions", "success", "stop", "big bang",
+        "branch by abstraction", "strangler", "vertical slices", "opportunistic", "RFC/ADR", "target", "interim",
+        "dependency", "migration map", "owner", "risk tier", "quality gates", "telemetry", "budget", "deprecation",
+        "checkpoint", "rollback", "roll-forward", "ComposeView", "ViewCompositionStrategy", "LifecycleOwner",
+        "AndroidView", "AndroidViewBinding", "plain UI", "one state owner", "rememberSaveable", "SavedStateHandle",
+        "Fragment", "navigation", "theme", "accessibility", "focus", "IME", "insets", "RecyclerView", "lazy list",
+        "Baseline Profiles", "screenshot", "Preview", "disposal", "leak", "Single", "Maybe", "Completable",
+        "Observable", "Flowable", "cold", "hot", "null", "error", "Disposable", "cooperative", "CoroutineContext",
+        "flowOn", "exception transparency", "retry", "backpressure", "combine", "merge", "flatMapLatest",
+        "StateFlow", "SharedFlow", "Channel", "repeatOnLifecycle", "callbackFlow", "awaitClose", "one authoritative",
+        "structured concurrency", "runTest", "TestCoroutineScheduler", "package cleanup", "source", "Gradle module",
+        "dynamic feature", "cohesion", "public API", "composition root", "DI", "resources", "data", "cycles",
+        "common", "clean", "incremental", "CI", "binary", "source", "resource compatibility", "version catalogs",
+        "convention plugins", "characterization", "golden", "contract", "dark", "shadow", "feature flag",
+        "staged rollout", "canary", "crash/ANR", "jank", "expand", "migrate", "contract", "dual-read", "dual-write",
+        "reconciliation", "old-client", "cleanup", "risk register", "failure matrix", "version-sensitive",
+        "There is no safe universal 1:1 operator mapping", "mixed Rx/coroutine boundary",
+        "Compiling interop does not prove lifecycle/state/accessibility parity",
+        "Compose does not inherently make UI faster", "Flow is not drop-in Rx and StateFlow is not an event log",
+        "Cancellation is cooperative", "repeatOnLifecycle stops/restarts collection but does not fix wrong upstream scope/sharing",
+        "Feature flags do not roll back incompatible persisted data",
+        "Staged rollout limits blast radius but doesn't prove safety or instantly remove installed versions",
+        "Tests and CI green do not prove production parity",
+        "Modularization does not automatically speed builds or enforce ownership",
+        "Shadow traffic can create side effects/privacy/cost", "Dual-write has no atomic cross-system guarantee",
+        "Rollback must be designed before rollout",
+        "Migration complete means legacy dependencies/bridges/flags are removed and outcomes verified, not merely new code added",
+    )
+    stage31_language_markers = {
+        STAGE31_KEY: ("Це likely practice questions, не підтверджений і не гарантований список співбесіди.",),
+        f"en-{STAGE31_KEY}": ("These are likely practice questions, not a confirmed or guaranteed interview list.",),
+    }
+    for stage_id, section in stage31_sections.items():
+        for marker in (*stage31_markers, *stage31_language_markers[stage_id]):
+            if marker.lower() not in section.lower():
+                errors.append(f"index.html: Stage 31 section {stage_id!r} is missing focused marker {marker!r}")
+
+    for prefix in ("stage31-uk-", "en-stage31-"):
+        for suffix, expected in (("likely-qa", 10), ("followups", 4), ("self-check", 4)):
+            match = re.search(rf'id="{re.escape(prefix + suffix)}".*?</h2>.*?<ol>(.*?)</ol>', content, re.S)
+            count = len(re.findall(r"<li>", match.group(1))) if match else 0
+            if count != expected:
+                errors.append(f"index.html: {prefix + suffix!r} must contain exactly {expected} list items; found {count}")
+            if suffix == "likely-qa" and match:
+                labelled = len(re.findall(r"<li>\s*<strong>Q:", match.group(1), re.S))
+                if labelled != expected:
+                    errors.append(f"index.html: {prefix + suffix!r} must contain exactly {expected} labelled Q&A items; found {labelled}")
     return errors
 
 
@@ -2525,7 +2616,7 @@ def main() -> int:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
-    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–30 navigation/contracts, and baseline checksum are valid.")
+    print("Validation passed: HTML basics, unique/resolved anchors, Stage 2–31 navigation/contracts, and baseline checksum are valid.")
     return 0
 
 
