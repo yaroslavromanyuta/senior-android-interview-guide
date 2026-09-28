@@ -588,17 +588,6 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </ol>
 </li>
 <li class="toc-major">
-<a data-target="flow" href="#flow">Flow</a>
-<ol class="toc-children">
-<li><a data-target="cold-flow-vs-hot-flow" href="#cold-flow-vs-hot-flow">Cold Flow vs Hot Flow</a></li>
-<li><a data-target="stateflow-vs-sharedflow-vs-channel" href="#stateflow-vs-sharedflow-vs-channel">StateFlow vs SharedFlow vs Channel</a></li>
-<li><a data-target="callbackflow-channelflow" href="#callbackflow-channelflow">callbackFlow / channelFlow</a></li>
-<li><a data-target="flowon-collect-vs-collectlatest" href="#flowon-collect-vs-collectlatest">flowOn, collect vs collectLatest</a></li>
-<li><a data-target="sharingstarted" href="#sharingstarted">sharingStarted</a></li>
-<li><a data-target="flow-підсумок" href="#flow-підсумок">Flow — підсумок</a></li>
-</ol>
-</li>
-<li class="toc-major">
 <a data-target="jetpack-compose" href="#jetpack-compose">Jetpack Compose</a>
 <ol class="toc-children">
 <li><a data-target="recomposition" href="#recomposition">Recomposition</a></li>
@@ -693,10 +682,10 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <li><a data-target="pattern-5-talk-about-ownership-lifecycle" href="#pattern-5-talk-about-ownership-lifecycle">Pattern 5: Talk about ownership/lifecycle</a></li>
 </ol>
 </li>
-<li class="toc-major"><a data-target="senior-deep-dive-follow-up-answers" href="#senior-deep-dive-follow-up-answers">Senior Deep Dive + відповіді на Follow-up питання</a>
-<ol class="toc-children">
-<li><a data-target="senior-deep-dive-follow-up-answers" href="#senior-deep-dive-follow-up-answers">Expanded Senior explanations</a></li>
-</ol></li><li class="toc-major">
+<li class="toc-major">
+<a data-target="senior-deep-dive-follow-up-answers" href="#senior-deep-dive-follow-up-answers">Senior Deep Dive + відповіді на Follow-up питання</a>
+</li>
+<li class="toc-major">
 <a data-target="senior-edge-cases" href="#senior-edge-cases">Senior Edge Cases: банк production-пасток</a>
 <ol class="toc-children">
 <li><a data-target="edge-case-token-refresh" href="#edge-case-token-refresh">Token refresh: кілька 401 одночасно</a></li>
@@ -935,14 +924,6 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </ol>
 </li>
 <li class="toc-major">
-<a data-target="en-flow" href="#en-flow">Flow</a>
-<ol class="toc-children">
-<li><a data-target="en-cold-flow-vs-hot-flow" href="#en-cold-flow-vs-hot-flow">Cold Flow vs Hot Flow</a></li>
-<li><a data-target="en-collect-vs-collectlatest" href="#en-collect-vs-collectlatest">collect vs collectLatest</a></li>
-<li><a data-target="en-testing-flow" href="#en-testing-flow">Testing Flow</a></li>
-</ol>
-</li>
-<li class="toc-major">
 <a data-target="en-jetpack-compose" href="#en-jetpack-compose">Jetpack Compose</a>
 <ol class="toc-children">
 <li><a data-target="en-state-hoisting" href="#en-state-hoisting">State hoisting</a></li>
@@ -987,10 +968,10 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <li><a data-target="en-designing-navigation-architecture" href="#en-designing-navigation-architecture">Designing navigation architecture</a></li>
 </ol>
 </li>
-<li class="toc-major"><a data-target="en-senior-deep-dive-follow-up-answers" href="#en-senior-deep-dive-follow-up-answers">Senior Deep Dive + Follow-up Answers</a>
-<ol class="toc-children">
-<li><a data-target="en-senior-deep-dive-follow-up-answers" href="#en-senior-deep-dive-follow-up-answers">Expanded Senior explanations</a></li>
-</ol></li><li class="toc-major">
+<li class="toc-major">
+<a data-target="en-senior-deep-dive-follow-up-answers" href="#en-senior-deep-dive-follow-up-answers">Senior Deep Dive + Follow-up Answers</a>
+</li>
+<li class="toc-major">
 <a data-target="en-senior-edge-cases" href="#en-senior-edge-cases">Senior Edge Cases: a bank of production traps</a>
 <ol class="toc-children">
 <li><a data-target="en-edge-case-token-refresh" href="#en-edge-case-token-refresh">Token refresh: several 401s</a></li>
@@ -2833,6 +2814,8 @@ suspend fun consume(session: Session) {
 <li>Sequential означає, що без explicit concurrency/buffer emitter чекає обробки value downstream. Це natural suspension, але не Reactive Streams demand/protocol guarantee.</li>
 <li>Cancellation collector coroutine скасовує collection і cooperative upstream; blocking callback або CPU loop все одно потребує власного cancellation/cleanup design.</li>
 <li>Cold <code>Flow</code> відрізняється від hot <code>StateFlow</code>/<code>SharedFlow</code> та point-to-point <code>Channel</code>: він не має shared lifetime, replay/cache або event ownership за замовчуванням.</li>
+<li>Типові застосування: cold Flow — declarative data pipelines (database query, network request, transformations); hot Flow — UI state, app-wide connection state, location updates, shared stream.</li>
+<li><strong>Чому Room Flow вважається cold?</strong> Кожен колектор запускає власний запит, і потік не працює без підписника. Емісії тригеряться інвалідацією таблиці — тому переемісія можлива навіть без зміни саме ваших рядків (звідси <code>distinctUntilChanged</code> після мапінгу).</li>
 </ul>
 
 <h2 id="stage9-uk-internals">Internals / operator pipeline<a aria-label="Посилання на розділ: Internals operator pipeline" class="heading-anchor" href="#stage9-uk-internals">#</a></h2>
@@ -2889,6 +2872,7 @@ labels.collect { render(it) }                  // terminal, cancellable suspensi
 <li><code>buffer(capacity)</code> lets producer and consumer run concurrently up to capacity. It changes suspension/timing and memory use, but with default overflow does not intentionally discard values.</li>
 <li><code>conflate()</code> keeps the most recent value while consumer is busy: emitter is not suspended by that slow collector and intermediate <strong>values are dropped</strong>. Appropriate for replaceable state/progress, not audit events or payments.</li>
 <li><code>collectLatest</code>, <code>mapLatest</code> and <code>transformLatest</code> cancel prior <strong>work</strong> when new input arrives. Cancellation is cooperative; non-cancellable blocking work may continue and side effects are not rolled back.</li>
+<li><code>collectLatest</code> доречний для search, rendering latest state, image loading — там, де stale result не потрібен; небезпечний, якщо кожен emission має бути оброблений (analytics, payment steps).</li>
 <li>Use “backpressure” only informally for producer/consumer rate mismatch and suspension/buffering policy. Kotlin Flow can interoperate with Reactive Streams, but ordinary Flow code should not claim Reactive Streams request accounting, delivery, or exactly-once guarantees.</li>
 </ul>
 
@@ -2906,6 +2890,33 @@ labels.collect { render(it) }                  // terminal, cancellable suspensi
 <li><code>callbackFlow</code> requires cleanup: use <code>awaitClose { unregister(...) }</code>. Registration, callbacks, cancellation and unregistration can race; external API unregister must be safe from any required context/thread and ideally idempotent.</li>
 <li>Handle registration failure before/around <code>awaitClose</code>, and do not assume one callback maps to one collector delivery. Buffer overflow, cancellation and downstream policy can reject or drop values.</li>
 </ul>
+
+<p>Типові callback-джерела для <code>callbackFlow</code>: location updates, Firebase listeners, Bluetooth callbacks, connectivity callbacks. Android-приклад connectivity:</p>
+<pre><code class="language-kotlin">class NetworkMonitor @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
+    fun observeConnectivity(): Flow&lt;Boolean&gt; = callbackFlow {
+        val connectivityManager =
+            context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                trySend(true)
+            }
+
+            override fun onLost(network: Network) {
+                trySend(false)
+            }
+        }
+
+        connectivityManager.registerDefaultNetworkCallback(callback)
+
+        awaitClose {
+            connectivityManager.unregisterNetworkCallback(callback)
+        }
+    }.distinctUntilChanged()
+}
+</code></pre>
 
 <h3 id="stage9-uk-lifecycle">Android lifecycle and Compose collection<a aria-label="Посилання на розділ: Android lifecycle and Compose collection" class="heading-anchor" href="#stage9-uk-lifecycle">#</a></h3>
 <pre><code class="language-kotlin">viewLifecycleOwner.lifecycleScope.launch {
@@ -3092,6 +3103,7 @@ Cold upstream ── stateIn/shareIn(ownerScope, started, replay/initial) ──
 <li><code>stateIn</code> перетворює cold upstream на shared <code>StateFlow</code> з initial/latest value; <code>shareIn</code> — на <code>SharedFlow</code> із заданим replay. Sharing coroutine належить переданому scope, тому scope має відповідати lifetime даних.</li>
 <li><code>Eagerly</code> starts immediately; values beyond replay можуть бути втрачені до subscribers. <code>Lazily</code> starts on first subscriber and never stops. <code>WhileSubscribed</code> starts/stops із subscribers, тому upstream може restart-нути і повторити I/O або side effects.</li>
 <li><code>WhileSubscribed(stopTimeoutMillis, replayExpirationMillis)</code> може відкласти stop і reset cache; expiration resets <code>shareIn</code> replay cache або <code>stateIn</code> до original initial value. Defaults/version-specific overloads треба перевіряти у resolved API.</li>
+<li>Чому <code>stateIn(..., WhileSubscribed(5_000), ...)</code> — стандартний компроміс у ViewModel: database/network observation не тримається активним назавжди (hot stream без споживача витрачає ресурси й батарею), але upstream не перезапускається при кожній короткій паузі — rotation або navigation transition; у фоні upstream засинає. Timeout 0 дає зайві restarts.</li>
 <li>Normal upstream completion не завершує subscribers; sharing coroutine живе за strategy і може restart-нути з WhileSubscribed. Upstream exception terminates sharing coroutine та обробляється owner scope, не автоматично collectors; materialize/catch/retry до boundary за contract.</li>
 </ul>
 
@@ -3178,6 +3190,42 @@ orders.stateIn(GlobalScope)                                       // wrong lifet
 <li><code>stateIn</code>/<code>shareIn</code>: count upstream starts/stops, test stop timeout and replay expiration around exact virtual-time boundaries, assert WhileSubscribed restart and scope cancellation.</li>
 <li>Channel: each capacity, competing receivers, close versus cancel, failed send/receive and <code>onUndeliveredElement</code>. Add lifecycle/recreation/process-restoration integration tests and real-thread stress tests; virtual time is not a proof of thread ordering.</li>
 </ul>
+
+<h2 id="stage10-uk-practice-notes">Практичні нотатки<a aria-label="Посилання на розділ: Практичні нотатки" class="heading-anchor" href="#stage10-uk-practice-notes">#</a></h2>
+<h3>Коли event краще перетворити на state?</h3>
+<p>Коли наслідок має тривале представлення: «показати діалог» — це насправді стан «діалог відкритий» до явного закриття. Подіями лишаються миттєві best-effort речі без тривалості: toast, haptic; важливу навігацію з ViewModel краще моделювати як state з ack.</p>
+<h3>Lifecycle-aware збір best-effort events у Compose</h3>
+<p>Збір <code>SharedFlow&lt;LoginEvent&gt;</code> з ViewModel у route-composable: state — через <code>collectAsStateWithLifecycle</code>, events — у <code>LaunchedEffect(lifecycleOwner)</code> + <code>repeatOnLifecycle(STARTED)</code>, щоб не обробляти їх поза видимим UI. Це не прибирає втрату при <code>replay = 0</code> (див. trade-offs вище).</p>
+<pre><code class="language-kotlin">@Composable
+fun LoginRoute(
+    viewModel: LoginViewModel,
+    navController: NavController,
+    snackbarHostState: SnackbarHostState
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            viewModel.events.collect { event -&gt;
+                when (event) {
+                    LoginEvent.NavigateToHome -&gt; navController.navigate("home")
+                    is LoginEvent.ShowSnackbar -&gt; snackbarHostState.showSnackbar(event.message)
+                }
+            }
+        }
+    }
+
+    LoginScreen(
+        state = uiState,
+        onLoginClick = viewModel::onLoginClicked
+    )
+}
+</code></pre>
+<h3>Коротке формулювання для співбесіди</h3>
+<blockquote>
+<p>Я починаю з delivery semantics: state чи signal, cold чи hot, replay чи no replay, чи можна втратити emission. Для screen state використовую <code>StateFlow</code>. Для shared broadcast — <code>SharedFlow</code>. Для one-shot UI actions спочатку перевіряю, чи це не latent state, який краще змоделювати в UI state.</p>
+</blockquote>
 
 <h2 id="stage10-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice Q and A" class="heading-anchor" href="#stage10-uk-likely-qa">#</a></h2>
 <p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
@@ -3361,6 +3409,7 @@ exception propagation, memory use, and duplicate-side-effect risk.</code></pre>
 <li>Broad <code>catch { emit(emptyList()) }</code> hides incidents and converts programmer bugs to plausible empty UI. Broad infinite retry amplifies outages and battery/network use.</li>
 <li>Sharing prevents duplicate active subscriptions but wrong scope leaks work; short stop timeout thrashes, long timeout retains resources; replay can expose stale memory state.</li>
 <li>Lifecycle re-collection plus retry plus sharing restart can multiply side effects. Observe starts, attempts, cancellations and operation IDs rather than only final UI.</li>
+<li>Підсумок: Flow на Senior-рівні — це про stream semantics: cold/hot, state/events, cancellation, backpressure, lifecycle, sharing, error handling. Найчастіші провали: неправильні one-shot events, duplicate network calls через cold flows, broad retry, misuse <code>collectLatest</code>, hardcoded dispatchers і відсутність deterministic tests.</li>
 </ul>
 
 <h2 id="stage11-uk-production-scenario">Production scenario: offline-first search screen<a aria-label="Посилання на розділ: Production scenario offline first search" class="heading-anchor" href="#stage11-uk-production-scenario">#</a></h2>
@@ -6317,81 +6366,6 @@ class ProductViewModelTest {
 <hr/>
 <h2 id="coroutines-and-concurrency-підсумок">Coroutines and Concurrency — підсумок<a aria-label="Посилання на розділ: Coroutines and Concurrency — підсумок" class="heading-anchor" href="#coroutines-and-concurrency-підсумок">#</a></h2>
 <p>На Senior Android interview Coroutines — одна з найважливіших тем. Недостатньо сказати “launch запускає, async повертає результат”. Треба пояснити structured concurrency, lifecycle ownership, cancellation, exception propagation, partial failure, dispatcher strategy і testing. Найсильніша відповідь завжди прив’язує concurrency design до business semantics.</p>
-</div></details><details class="major-section" data-key="flow" data-title="Flow" id="flow" open=""><summary class="major-summary"><span class="major-title">Flow</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
-<p><strong>Детальніше:</strong> <a href="#kotlin-flow-foundations">Kotlin Flow: foundations, operators та Android lifecycle</a>, <a href="#kotlin-hot-flows-ui-state-events">StateFlow, SharedFlow, Channel та Android UI state/events</a>, <a href="#advanced-kotlin-flow-production">Advanced Kotlin Flow у production</a>; збір events у Compose — <a href="#stage15-uk-review-trap">Compose effects: code-review trap</a>. Нижче — лише доповнення, яких немає в цих етапах.</p>
-<h2 id="cold-flow-vs-hot-flow">Cold Flow vs Hot Flow<a aria-label="Посилання на розділ: Cold Flow vs Hot Flow" class="heading-anchor" href="#cold-flow-vs-hot-flow">#</a></h2>
-<p>Типові застосування: cold Flow — declarative data pipelines (database query, network request, transformations); hot Flow — UI state, app-wide connection state, location updates, shared stream.</p>
-<p><strong>Чому Room Flow вважається cold?</strong><br/>
-Кожен колектор запускає власний запит, і потік не працює без підписника. Емісії тригеряться інвалідацією таблиці — тому переемісія можлива навіть без зміни саме ваших рядків (звідси <code>distinctUntilChanged</code> після мапінгу).</p>
-<hr/>
-<h2 id="stateflow-vs-sharedflow-vs-channel">StateFlow vs SharedFlow vs Channel<a aria-label="Посилання на розділ: StateFlow vs SharedFlow vs Channel" class="heading-anchor" href="#stateflow-vs-sharedflow-vs-channel">#</a></h2>
-<p><strong>Коли event краще перетворити на state?</strong><br/>
-Коли наслідок має тривале представлення: «показати діалог» — це насправді стан «діалог відкритий» до явного закриття. Подіями лишаються миттєві best-effort речі без тривалості: toast, haptic; важливу навігацію з ViewModel краще моделювати як state з ack.</p>
-<p>Lifecycle-aware збір best-effort events (<code>SharedFlow&lt;LoginEvent&gt;</code> з ViewModel) у Compose:</p>
-<pre><code class="language-kotlin">@Composable
-fun LoginRoute(
-    viewModel: LoginViewModel,
-    navController: NavController,
-    snackbarHostState: SnackbarHostState
-) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val lifecycleOwner = LocalLifecycleOwner.current
-
-    LaunchedEffect(lifecycleOwner) {
-        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            viewModel.events.collect { event -&gt;
-                when (event) {
-                    LoginEvent.NavigateToHome -&gt; navController.navigate("home")
-                    is LoginEvent.ShowSnackbar -&gt; snackbarHostState.showSnackbar(event.message)
-                }
-            }
-        }
-    }
-
-    LoginScreen(
-        state = uiState,
-        onLoginClick = viewModel::onLoginClicked
-    )
-}
-</code></pre>
-<p><strong>Симптом <code>replay = 0</code>:</strong> емісія за відсутності підписника губиться назавжди — класична причина «кнопка не спрацювала» під час recreation. Див. <a href="#edge-case-sharedflow-overflow">edge case «SharedFlow: replay, buffer і втрачені події»</a>.</p>
-<hr/>
-<h2 id="callbackflow-channelflow">callbackFlow / channelFlow<a aria-label="Посилання на розділ: callbackFlow / channelFlow" class="heading-anchor" href="#callbackflow-channelflow">#</a></h2>
-<p>Типові callback-джерела для <code>callbackFlow</code>: location updates, Firebase listeners, Bluetooth callbacks, connectivity callbacks. Android-приклад connectivity:</p>
-<pre><code class="language-kotlin">class NetworkMonitor @Inject constructor(
-    @ApplicationContext private val context: Context
-) {
-    fun observeConnectivity(): Flow&lt;Boolean&gt; = callbackFlow {
-        val connectivityManager =
-            context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-
-        val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                trySend(true)
-            }
-
-            override fun onLost(network: Network) {
-                trySend(false)
-            }
-        }
-
-        connectivityManager.registerDefaultNetworkCallback(callback)
-
-        awaitClose {
-            connectivityManager.unregisterNetworkCallback(callback)
-        }
-    }.distinctUntilChanged()
-}
-</code></pre>
-<hr/>
-<h2 id="flowon-collect-vs-collectlatest">flowOn, collect vs collectLatest<a aria-label="Посилання на розділ: flowOn, collect vs collectLatest" class="heading-anchor" href="#flowon-collect-vs-collectlatest">#</a></h2>
-<p><code>collectLatest</code> доречний для search, rendering latest state, image loading — там, де stale result не потрібен; небезпечний, якщо кожен emission має бути оброблений (analytics, payment steps).</p>
-<hr/>
-<h2 id="sharingstarted">sharingStarted<a aria-label="Посилання на розділ: sharingStarted" class="heading-anchor" href="#sharingstarted">#</a></h2>
-<p>Чому <code>stateIn(..., WhileSubscribed(5_000), ...)</code> — стандартний компроміс у ViewModel: database/network observation не тримається активним назавжди (hot stream без споживача витрачає ресурси й батарею), але upstream не перезапускається при кожній короткій паузі — rotation або navigation transition; у фоні upstream засинає. Timeout 0 дає зайві restarts.</p>
-<hr/>
-<h2 id="flow-підсумок">Flow — підсумок<a aria-label="Посилання на розділ: Flow — підсумок" class="heading-anchor" href="#flow-підсумок">#</a></h2>
-<p>Flow на Senior-рівні — це про stream semantics: cold/hot, state/events, cancellation, backpressure, lifecycle, sharing, error handling. Найчастіші провали: неправильні one-shot events, duplicate network calls через cold flows, broad retry, misuse <code>collectLatest</code>, hardcoded dispatchers і відсутність deterministic tests.</p>
 </div></details><details class="major-section" data-key="jetpack-compose" data-title="Jetpack Compose" id="jetpack-compose" open=""><summary class="major-summary"><span class="major-title">Jetpack Compose</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
 <p><strong>Детальніше:</strong> <a href="#jetpack-compose-runtime-state">Jetpack Compose runtime та state</a>, <a href="#compose-effects-navigation-viewmodel">Compose effects, navigation та ViewModel integration</a>, <a href="#jetpack-compose-performance">Jetpack Compose performance</a>. Нижче — лише короткі відповіді для співбесіди та практичні нюанси, яких немає в цих етапах.</p>
 <h2 id="recomposition">Recomposition<a aria-label="Посилання на розділ: Recomposition" class="heading-anchor" href="#recomposition">#</a></h2>
@@ -9529,6 +9503,7 @@ suspend fun consume(session: Session) {
 <li>Sequential means that without an explicit concurrency or buffer boundary, the emitter waits for downstream handling. This is natural suspension, not a promise of Reactive Streams demand accounting.</li>
 <li>Cancelling the collector coroutine cancels collection and cooperative upstream work. A blocking callback or CPU loop still needs its own cancellation and cleanup design.</li>
 <li>Cold <code>Flow</code> differs from hot <code>StateFlow</code>/<code>SharedFlow</code> and a point-to-point <code>Channel</code>: it has no shared lifetime, replay/cache, or event ownership by default.</li>
+<li>Room queries are often cold flows: each collector runs its own query and nothing runs without a subscriber. Emissions are triggered by table invalidation, so a re-emission can happen even if your rows did not change (hence <code>distinctUntilChanged</code> after mapping).</li>
 </ul>
 
 <h2 id="en-stage9-internals">Internals / operator pipeline<a aria-label="Link to section: Internals operator pipeline" class="heading-anchor" href="#en-stage9-internals">#</a></h2>
@@ -9585,6 +9560,7 @@ labels.collect { render(it) }                  // terminal, cancellable suspensi
 <li><code>buffer(capacity)</code> lets producer and consumer run concurrently up to capacity. It changes suspension, timing, and memory use, but with default overflow it does not intentionally discard values.</li>
 <li><code>conflate()</code> keeps the most recent value while the consumer is busy: the emitter is not suspended by that slow collector and intermediate <strong>values are dropped</strong>. This fits replaceable state or progress, not audit events or payments.</li>
 <li><code>collectLatest</code>, <code>mapLatest</code>, and <code>transformLatest</code> cancel prior <strong>work</strong> when a new input arrives. Cancellation is cooperative; non-cancellable blocking work may continue, and side effects are not rolled back.</li>
+<li>Typical <code>collectLatest</code> uses: search results, image loading, or UI rendering where only the latest value matters.</li>
 <li>Use “backpressure” only informally for producer/consumer rate mismatch and suspension or buffering policy. Kotlin Flow can interoperate with Reactive Streams, but ordinary Flow code should not claim Reactive Streams request accounting, delivery, or exactly-once guarantees.</li>
 </ul>
 
@@ -9874,6 +9850,17 @@ orders.stateIn(GlobalScope)                                       // wrong lifet
 <li><code>stateIn</code>/<code>shareIn</code>: count upstream starts/stops, test stop timeout and replay expiration around exact virtual-time boundaries, and assert WhileSubscribed restart and owner-scope cancellation.</li>
 <li>Channel: test every capacity, competing receivers, close versus cancel, failed send/receive, and <code>onUndeliveredElement</code>. Add lifecycle, recreation, and process-restoration integration tests plus real-thread stress tests; virtual time is not proof of thread ordering.</li>
 </ul>
+
+<p>Turbine (third-party) gives deterministic ordered assertions on a <code>StateFlow</code>-backed UI state under <code>runTest</code> virtual time:</p>
+<pre><code class="language-kotlin">@Test
+fun `emits loading then content`() = runTest {
+    viewModel.uiState.test {
+        assertEquals(UiState.Loading, awaitItem())
+        assertEquals(UiState.Content(items), awaitItem())
+        cancelAndIgnoreRemainingEvents()
+    }
+}
+</code></pre>
 
 <h2 id="en-stage10-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice Q and A" class="heading-anchor" href="#en-stage10-likely-qa">#</a></h2>
 <p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
@@ -12548,23 +12535,6 @@ Result (verified metrics only) → learning/revisit trigger
 <h2 id="en-structured-concurrency">Structured concurrency<a aria-label="Link to section: Structured concurrency" class="heading-anchor" href="#en-structured-concurrency">#</a></h2>
 <h3 id="en-interview-wording-5">Interview wording<a aria-label="Link to section: Interview wording" class="heading-anchor" href="#en-interview-wording-5">#</a></h3>
 <p>“I design coroutine ownership explicitly. UI work belongs to <code>viewModelScope</code> or lifecycle scopes; domain suspend functions do not launch unowned background work. If a parent operation is cancelled, its children should normally be cancelled too.”</p>
-</div></details><details class="major-section" data-key="flow" data-title="Flow" id="en-flow" open=""><summary class="major-summary"><span class="major-title">Flow</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
-<p><strong>More detail:</strong> <a href="#en-kotlin-flow-foundations">Kotlin Flow: foundations, operators, and Android lifecycle</a>, <a href="#en-kotlin-hot-flows-ui-state-events">StateFlow, SharedFlow, Channel, and Android UI state/events</a>, <a href="#en-advanced-kotlin-flow-production">Advanced Kotlin Flow in production</a>, <a href="#en-senior-android-testing-strategy">Senior Android testing strategy</a>. Only notes not covered there remain below.</p>
-<h2 id="en-cold-flow-vs-hot-flow">Cold Flow vs Hot Flow<a aria-label="Link to section: Cold Flow vs Hot Flow" class="heading-anchor" href="#en-cold-flow-vs-hot-flow">#</a></h2>
-<p>Room queries are often cold flows.</p>
-<h2 id="en-collect-vs-collectlatest"><code>collect</code> vs <code>collectLatest</code><a aria-label="Link to section: collect vs collectLatest" class="heading-anchor" href="#en-collect-vs-collectlatest">#</a></h2>
-<p>Typical <code>collectLatest</code> uses: search results, image loading, or UI rendering where only the latest value matters.</p>
-<h2 id="en-testing-flow">Testing Flow<a aria-label="Link to section: Testing Flow" class="heading-anchor" href="#en-testing-flow">#</a></h2>
-<p>Use Turbine for deterministic Flow assertions and <code>runTest</code> for virtual time.</p>
-<pre><code class="language-kotlin">@Test
-fun `emits loading then content`() = runTest {
-    viewModel.uiState.test {
-        assertEquals(UiState.Loading, awaitItem())
-        assertEquals(UiState.Content(items), awaitItem())
-        cancelAndIgnoreRemainingEvents()
-    }
-}
-</code></pre>
 </div></details><details class="major-section" data-key="jetpack-compose" data-title="Jetpack Compose" id="en-jetpack-compose" open=""><summary class="major-summary"><span class="major-title">Jetpack Compose</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
 <p><strong>More detail:</strong> <a href="#en-jetpack-compose-runtime-state">Jetpack Compose runtime and state</a>, <a href="#en-compose-effects-navigation-viewmodel">Compose effects, navigation, and ViewModel integration</a>, <a href="#en-jetpack-compose-performance">Jetpack Compose performance</a>. Only a short interview line not phrased the same way in those stages is kept below.</p>
 <h2 id="en-state-hoisting">State hoisting<a aria-label="Link to section: State hoisting" class="heading-anchor" href="#en-state-hoisting">#</a></h2>
