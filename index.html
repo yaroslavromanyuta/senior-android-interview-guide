@@ -4023,7 +4023,7 @@ Risk: feature A ↔ feature B cycle; shared module with unbounded fan-out</code>
 <ul>
 <li>AGP/Gradle/Kotlin compatibility, variant APIs, namespace, non-transitive/non-final R, test fixtures, configuration cache і Kotlin compiler behavior змінюються. Pin toolchains, читайте release notes й перевіряйте resolved graph.</li>
 <li><code>api</code>/<code>implementation</code> semantics залежать від applied library plugins і public signatures; перевіряйте dependency reports/ABI, а не назву configuration у вакуумі.</li>
-<li>Dynamic delivery залежить від Android App Bundle, Play/installer, device/API, delivery conditions і Play Core API version; тестуйте install/uninstall/failure paths.</li>
+<li>Dynamic delivery залежить від Android App Bundle, Play/installer, device/API, delivery conditions і версії Play Feature Delivery library; тестуйте install/uninstall/failure paths.</li>
 <li>Build-performance твердження валідні лише для конкретного graph, hardware, cache, daemon, CI та edit scenario. Зберігайте baseline до/після migration.</li>
 </ul>
 
@@ -4857,7 +4857,7 @@ object SdkModule {
 
 <h2 id="stage17-uk-viewmodel-compose">Hilt ViewModel, SavedStateHandle та Compose<a aria-label="Посилання на розділ: Hilt ViewModel SavedStateHandle and Compose" class="heading-anchor" href="#stage17-uk-viewmodel-compose">#</a></h2>
 <p><code>@HiltViewModel</code> + <code>@Inject constructor</code> дає ViewModel dependencies через <code>ViewModelComponent</code>; default binding <code>SavedStateHandle</code> належить конкретному ViewModel creation context. Hilt ViewModel scope слідує за ViewModel instance, а не navigation destination магічно: owner/store/back-stack entry, key і navigation scoping API визначають reuse. SavedStateHandle — small restorable state/arguments, не object store і не durable repository.</p>
-<p>У Compose отримуйте Hilt ViewModel через supported AndroidX/Hilt navigation integration на screen boundary і передавайте state/actions вниз. Не викликайте generated component/entry point з leaf composables. Hilt entry points потрібні для framework-created або non-Hilt-owned boundary, яку не можна constructor-inject; вони мають бути вузькі й не перетворюватися на service locator.</p>
+<p>У Compose отримуйте Hilt ViewModel через <code>hiltViewModel()</code> з <code>androidx.hilt:hilt-lifecycle-viewmodel-compose</code> (Hilt 1.3.0+; працює з Navigation і без неї, всередині NavHost scope-иться до back-stack entry) на screen boundary і передавайте state/actions вниз. Не викликайте generated component/entry point з leaf composables. Hilt entry points потрібні для framework-created або non-Hilt-owned boundary, яку не можна constructor-inject; вони мають бути вузькі й не перетворюватися на service locator.</p>
 
 <h2 id="stage17-uk-modules">Gradle/feature modules та graph ownership<a aria-label="Посилання на розділ: Module graph ownership" class="heading-anchor" href="#stage17-uk-modules">#</a></h2>
 <p>Graph ownership має слідувати deploy/lifetime boundary, а не просто package tree. Feature/API module експонує мінімальний contract або factory; app/composition module обирає implementation. Hilt code generation має бачити transitive modules у app compilation; dynamic feature або інша compilation boundary може потребувати explicit Dagger component dependencies. Plain Dagger subcomponents успадковують parent graph і lifecycle ownership; component dependencies споживають лише exposed dependency API. Це mechanics composition, не повтор Stage 13 про layer/module taxonomy.</p>
@@ -4940,7 +4940,7 @@ class CheckoutManager @Inject constructor(
 class PaymentManager @Inject constructor(
     private val checkout: Provider&lt;CheckoutManager&gt;,
 )</code></pre>
-<p>Trap: process component захопив Activity, mutable state не thread-safe/durable, і Lazy/Provider приховали cycle. Debug: почніть з першої Dagger error path і binding key (type + qualifier), знайдіть requesting entry point, component/<code>@InstallIn</code>, scope та shortest→longest lifetime chain; inspect generated factory лише щоб підтвердити wiring. Fix: coordinator owns order per flow/ViewModel, payment залежить від narrow command/port, SDK отримує application Context; не додавайте ще один scope чи Lazy.</p>
+<p>Trap: у Hilt це навіть не скомпілюється — <code>Activity</code> є default binding лише в <code>ActivityComponent</code>, тож <code>SingletonComponent</code> дає <code>[Dagger/MissingBinding]</code>. Реальний leak — коли Activity/Fragment/View потрапляє в long-lived object через setter/method/callback, third-party SDK або manual Dagger graph (<code>@BindsInstance</code> у app component). Також mutable state не thread-safe/durable, і Lazy/Provider приховали cycle. Debug: почніть з першої Dagger error path і binding key (type + qualifier), знайдіть requesting entry point, component/<code>@InstallIn</code>, scope та shortest→longest lifetime chain; inspect generated factory лише щоб підтвердити wiring. Fix: coordinator owns order per flow/ViewModel, payment залежить від narrow command/port, SDK отримує application Context; не додавайте ще один scope чи Lazy.</p>
 
 <h2 id="stage17-uk-observability">Graph observability та diagnostics<a aria-label="Посилання на розділ: Graph observability and diagnostics" class="heading-anchor" href="#stage17-uk-observability">#</a></h2>
 <ul>
@@ -7766,7 +7766,7 @@ class MealsViewModel @Inject constructor(
 ) : ViewModel() {
 
     val uiState: StateFlow&lt;MealsUiState&gt; = observeMeals()
-        .map { meals -&gt; MealsUiState.Content(meals.map { it.toUiModel() }) }
+        .map&lt;List&lt;Meal&gt;, MealsUiState&gt; { meals -&gt; MealsUiState.Content(meals.map { it.toUiModel() }) }
         .catch { emit(MealsUiState.Error) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MealsUiState.Loading)
 
@@ -7940,6 +7940,7 @@ DTO повторює форму API: nullable-поля, snake_case, версію
 <h3 id="production-приклад-offline-first">Production приклад: offline-first<a aria-label="Посилання на розділ: Production приклад: offline-first" class="heading-anchor" href="#production-приклад-offline-first">#</a></h3>
 <pre><code class="language-kotlin">class OfflineFirstProductRepository @Inject constructor(
     private val api: ProductApi,
+    private val db: AppDatabase,
     private val dao: ProductDao,
     @IoDispatcher private val io: CoroutineDispatcher
 ) : ProductRepository {
@@ -7951,7 +7952,7 @@ DTO повторює форму API: nullable-поля, snake_case, версію
 
     override suspend fun refreshProducts() = withContext(io) {
         val remote = api.getProducts()
-        dao.withTransaction {
+        db.withTransaction {
             dao.deleteAll()
             dao.insertAll(remote.map { it.toEntity() })
         }
@@ -8067,7 +8068,7 @@ core не залежить від feature
 <p><strong>Де тримати domain models?</strong><br/>
 У core:model / core:domain — нижче за всі фічі, без Android-залежностей. Тоді фічі діляться типами без залежностей одна від одної.</p>
 <p><strong>Як Hilt працює у multi-module project?</strong><br/>
-Модулі декларують свої @Module/@InstallIn у себе; Hilt агрегує їх у компоненти на рівні app через транзитивний compile classpath. Фічам не треба знати одна про одну — лише app бачить усе.</p>
+Модулі декларують свої @Module/@InstallIn у себе; Hilt Gradle plugin (aggregating task, default з 2.40) агрегує всі Hilt modules та entry points з транзитивних залежностей app, включно з <code>implementation</code>, і генерує компоненти на рівні app — <code>api</code> для цього не потрібен. Фічам не треба знати одна про одну — лише app бачить усе.</p>
 <p><strong>Як уникнути core dumping ground?</strong><br/>
 Правила: core:common без бізнес-логіки, тематичні core:* замість одного «common», бюджет на розмір/залежності, регулярний розпил, гейт на code review «чому це не у фічі?». Деталі — System Design сценарій №9.</p>
 <hr/>
@@ -13127,7 +13128,7 @@ Risk: feature A ↔ feature B cycle; shared module with unbounded fan-out</code>
 </tbody></table>
 
 <h2 id="en-stage13-version-sensitive">Version/build-sensitive behavior<a aria-label="Link to section: Version and build sensitive behavior" class="heading-anchor" href="#en-stage13-version-sensitive">#</a></h2>
-<ul><li>AGP/Gradle/Kotlin compatibility, variant APIs, namespace, non-transitive/non-final R, test fixtures, configuration cache, and compiler behavior evolve. Pin toolchains, read release notes, and inspect the resolved graph.</li><li><code>api</code>/<code>implementation</code> behavior depends on the applied library plugins and public signatures. Verify dependency reports and ABI rather than reasoning from a configuration name alone.</li><li>Dynamic delivery depends on App Bundles, Play/installer behavior, device/API, delivery conditions, and Play Core version. Test install, cancellation, failure, update, and unavailable states.</li><li>A build-performance claim is valid only for its graph, hardware, cache, daemon, CI, and edit scenario. Keep before/after baselines.</li></ul>
+<ul><li>AGP/Gradle/Kotlin compatibility, variant APIs, namespace, non-transitive/non-final R, test fixtures, configuration cache, and compiler behavior evolve. Pin toolchains, read release notes, and inspect the resolved graph.</li><li><code>api</code>/<code>implementation</code> behavior depends on the applied library plugins and public signatures. Verify dependency reports and ABI rather than reasoning from a configuration name alone.</li><li>Dynamic delivery depends on App Bundles, Play/installer behavior, device/API, delivery conditions, and the Play Feature Delivery library version. Test install, cancellation, failure, update, and unavailable states.</li><li>A build-performance claim is valid only for its graph, hardware, cache, daemon, CI, and edit scenario. Keep before/after baselines.</li></ul>
 
 <h2 id="en-stage13-decision-framework">Decision framework<a aria-label="Link to section: Decision framework" class="heading-anchor" href="#en-stage13-decision-framework">#</a></h2>
 <ol><li>Draw the current package/project graph, owners, cycles, fan-in/fan-out, and change hotspots.</li><li>For a candidate boundary, name the policy, volatile mechanism, contract owner, allowed direction, and crossing data/errors.</li><li>Score independent change/team/reuse/test/build/delivery benefit against mapping, API versioning, variants, resources, navigation, and DI wiring cost.</li><li>Try the cheapest enforcement: package-by-feature, <code>internal</code>, lint, or an architecture test. Create a Gradle module when a compile/build/ownership boundary is needed.</li><li>Record a fitness rule and before/after metrics; merge or remove a boundary whose cost exceeds its benefit.</li></ol>
@@ -13925,7 +13926,7 @@ object SdkModule {
 
 <h2 id="en-stage17-viewmodel-compose">Hilt ViewModel, SavedStateHandle, and Compose<a aria-label="Link to section: Hilt ViewModel SavedStateHandle and Compose" class="heading-anchor" href="#en-stage17-viewmodel-compose">#</a></h2>
 <p><code>@HiltViewModel</code> with an <code>@Inject constructor</code> supplies ViewModel dependencies from <code>ViewModelComponent</code>; the default <code>SavedStateHandle</code> binding belongs to that ViewModel creation context. Hilt ViewModel scope follows the ViewModel instance, not a navigation destination by magic: the owner/store/back-stack entry, key, and navigation scoping API determine reuse. SavedStateHandle is for small restorable state/arguments, not an object store or durable repository.</p>
-<p>In Compose, obtain a Hilt ViewModel through the supported AndroidX/Hilt navigation integration at a screen boundary, then pass state and actions down. Do not query a generated component/entry point in leaf composables. Hilt entry points exist for a framework-created or non-Hilt-owned boundary that cannot use constructor injection; keep them narrow so they do not become a service locator.</p>
+<p>In Compose, obtain a Hilt ViewModel with <code>hiltViewModel()</code> from <code>androidx.hilt:hilt-lifecycle-viewmodel-compose</code> (Hilt 1.3.0+; it works with or without Navigation and, inside a NavHost, scopes to the back-stack entry) at a screen boundary, then pass state and actions down. Do not query a generated component/entry point in leaf composables. Hilt entry points exist for a framework-created or non-Hilt-owned boundary that cannot use constructor injection; keep them narrow so they do not become a service locator.</p>
 
 <h2 id="en-stage17-modules">Gradle/feature modules and graph ownership<a aria-label="Link to section: Module graph ownership" class="heading-anchor" href="#en-stage17-modules">#</a></h2>
 <p>Graph ownership should follow deployment and lifetime boundaries rather than merely the package tree. A feature/API module exposes a minimal contract or factory; the app/composition module selects the implementation. Hilt code generation must see transitive modules in app compilation; a dynamic feature or separate compilation boundary can require explicit Dagger component dependencies. Plain Dagger subcomponents inherit a parent graph and lifecycle ownership; component dependencies consume only an exposed dependency API. These are composition mechanics, not a repeat of Stage 13 layer/module taxonomy.</p>
@@ -14008,7 +14009,7 @@ class CheckoutManager @Inject constructor(
 class PaymentManager @Inject constructor(
     private val checkout: Provider&lt;CheckoutManager&gt;,
 )</code></pre>
-<p>Trap: the process component captured an Activity, mutable state is neither thread-safe nor durable, and Lazy/Provider hid a cycle. Debug from the first Dagger error path and binding key (type plus qualifier): locate the requesting entry point, component/<code>@InstallIn</code>, scope, and shortest-to-longest lifetime chain; inspect a generated factory only to confirm wiring. Fix it by giving a flow/ViewModel coordinator ownership of the order, making payment depend on a narrow command/port, and giving the SDK application Context—not by adding another scope or Lazy.</p>
+<p>Trap: in Hilt this does not even compile—<code>Activity</code> is a default binding only in <code>ActivityComponent</code>, so <code>SingletonComponent</code> reports <code>[Dagger/MissingBinding]</code>. The real leak happens when an Activity/Fragment/View reaches a long-lived object through a setter, method, callback, third-party SDK, or a manual Dagger graph (<code>@BindsInstance</code> into an app component). Also, mutable state is neither thread-safe nor durable, and Lazy/Provider hid a cycle. Debug from the first Dagger error path and binding key (type plus qualifier): locate the requesting entry point, component/<code>@InstallIn</code>, scope, and shortest-to-longest lifetime chain; inspect a generated factory only to confirm wiring. Fix it by giving a flow/ViewModel coordinator ownership of the order, making payment depend on a narrow command/port, and giving the SDK application Context—not by adding another scope or Lazy.</p>
 
 <h2 id="en-stage17-observability">Graph observability and diagnostics<a aria-label="Link to section: Graph observability and diagnostics" class="heading-anchor" href="#en-stage17-observability">#</a></h2>
 <ul>
