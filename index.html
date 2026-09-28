@@ -558,9 +558,6 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </ol>
 </li>
 <li class="toc-major">
-<a data-target="senior-deep-dive-follow-up-answers" href="#senior-deep-dive-follow-up-answers">Senior Deep Dive + відповіді на Follow-up питання</a>
-</li>
-<li class="toc-major">
 <a data-target="senior-edge-cases" href="#senior-edge-cases">Senior Edge Cases: банк production-пасток</a>
 <ol class="toc-children">
 <li><a data-target="edge-case-token-refresh" href="#edge-case-token-refresh">Token refresh: кілька 401 одночасно</a></li>
@@ -575,15 +572,6 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <li><a data-target="edge-case-r8-keep-rules" href="#edge-case-r8-keep-rules">R8: рефлексія і keep rules</a></li>
 <li><a data-target="edge-case-pendingintent" href="#edge-case-pendingintent">PendingIntent: mutability</a></li>
 <li><a data-target="edge-case-deeplinks" href="#edge-case-deeplinks">Deep links: недовірений ввід</a></li>
-</ol>
-</li>
-<li class="toc-major">
-<a data-target="android-platform-deep-dive" href="#android-platform-deep-dive">Android Platform Deep Dive</a>
-<ol class="toc-children">
-<li><a data-target="scoped-storage" href="#scoped-storage">Scoped storage</a></li>
-<li><a data-target="notifications-deep-dive" href="#notifications-deep-dive">Notifications: channels, FGS</a></li>
-<li><a data-target="task-backstack-edge-cases" href="#task-backstack-edge-cases">Task, back stack, deep links</a></li>
-<li><a data-target="app-startup-baseline-profiles" href="#app-startup-baseline-profiles">App startup і Baseline Profiles</a></li>
 </ol>
 </li>
 <li class="toc-major">
@@ -728,9 +716,6 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="en-senior-engineering-practice" href="#en-senior-engineering-practice">Senior engineering practice — final guide stage</a>
 </li>
 <li class="toc-major">
-<a data-target="en-senior-deep-dive-follow-up-answers" href="#en-senior-deep-dive-follow-up-answers">Senior Deep Dive + Follow-up Answers</a>
-</li>
-<li class="toc-major">
 <a data-target="en-senior-edge-cases" href="#en-senior-edge-cases">Senior Edge Cases: a bank of production traps</a>
 <ol class="toc-children">
 <li><a data-target="en-edge-case-token-refresh" href="#en-edge-case-token-refresh">Token refresh: several 401s</a></li>
@@ -745,15 +730,6 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <li><a data-target="en-edge-case-r8-keep-rules" href="#en-edge-case-r8-keep-rules">R8: reflection, keep rules</a></li>
 <li><a data-target="en-edge-case-pendingintent" href="#en-edge-case-pendingintent">PendingIntent: mutability</a></li>
 <li><a data-target="en-edge-case-deeplinks" href="#en-edge-case-deeplinks">Deep links: untrusted input</a></li>
-</ol>
-</li>
-<li class="toc-major">
-<a data-target="en-android-platform-deep-dive" href="#en-android-platform-deep-dive">Android Platform Deep Dive</a>
-<ol class="toc-children">
-<li><a data-target="en-scoped-storage" href="#en-scoped-storage">Scoped storage</a></li>
-<li><a data-target="en-notifications-deep-dive" href="#en-notifications-deep-dive">Notifications: channels, FGS</a></li>
-<li><a data-target="en-task-backstack-edge-cases" href="#en-task-backstack-edge-cases">Task, back stack, deep links</a></li>
-<li><a data-target="en-app-startup-baseline-profiles" href="#en-app-startup-baseline-profiles">Startup and Baseline Profiles</a></li>
 </ol>
 </li>
 <li class="toc-major">
@@ -811,7 +787,7 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <ol>
 <li>Спочатку прочитай розділ повністю.</li>
 <li>Потім спробуй відповісти на кожне питання вголос за 1–2 хвилини.</li>
-<li>Після цього звірся з блоком “Як пояснити на співбесіді”.</li>
+<li>Після цього звірся з interview-ready відповідями (30 секунд / 2 хвилини) і блоком «Практичні нотатки» в кінці етапу.</li>
 <li>Для складних тем напиши маленький production-like приклад коду.</li>
 <li>Для кожної теми підготуй 1–2 приклади зі свого досвіду.</li>
 </ol>
@@ -6723,6 +6699,7 @@ Result (only verified metrics) → learning/revisit trigger
 
 </div></details><details class="major-section" data-key="senior-interview-answer-patterns" data-title="Senior Interview Answer Patterns" id="senior-interview-answer-patterns" open=""><summary class="major-summary"><span class="major-title">Senior Interview Answer Patterns</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
 <p><strong>Детальніше:</strong> <a href="#senior-engineering-practice">Senior engineering practice — фінальний етап</a> (decision framework, trade-off narrative), <a href="#kotlin-hot-flows-ui-state-events">StateFlow, SharedFlow, Channel</a>, <a href="#kotlin-coroutines-failures-supervision-testing">Kotlin Coroutines: failures, supervision</a>, <a href="#clean-architecture-android-modularization">Clean Architecture та modularization</a>.</p>
+<p>Ідея: Senior Android Developer має пояснювати не API, а <strong>ownership, lifecycle, failure semantics, testability, scalability та observability</strong>.</p>
 <h2 id="pattern-1-define-problem-trade-off-example">Pattern 1: Define -&gt; Problem -&gt; Trade-off -&gt; Example<a aria-label="Посилання на розділ: Pattern 1: Define -&gt; Problem -&gt; Trade-off -&gt; Example" class="heading-anchor" href="#pattern-1-define-problem-trade-off-example">#</a></h2>
 <p>Коли питають “що таке X”, не зупиняйся на definition.</p>
 <p>Приклад для <code>StateFlow</code>:</p>
@@ -6763,311 +6740,7 @@ Result (only verified metrics) → learning/revisit trigger
 <li>хто володіє navigation.</li>
 </ul>
 <hr/>
-</div></details><details class="major-section senior-expanded-section" data-key="senior-deep-dive-follow-up-answers" data-title="Senior Deep Dive + відповіді на Follow-up питання" id="senior-deep-dive-follow-up-answers" open="">
-<summary class="major-summary"><span class="major-title">Senior Deep Dive + відповіді на Follow-up питання</span><span class="major-meta">розгорнути / згорнути</span></summary>
-<div class="section-body senior-expanded-body"><p><strong>Детальніше:</strong> <a href="#android-process-lifecycle-state-restoration">Життєвий цикл процесу Android і відновлення стану</a>, <a href="#android-background-execution">Android background execution</a>, <a href="#kotlin-type-system-state-modeling">Kotlin: система типів і моделювання стану</a>, <a href="#kotlin-coroutines-foundations-internals">Kotlin Coroutines: foundations та internals</a>, <a href="#kotlin-coroutines-failures-supervision-testing">Kotlin Coroutines: failures, supervision, cleanup, testing</a>, <a href="#kotlin-hot-flows-ui-state-events">StateFlow, SharedFlow, Channel</a>, <a href="#advanced-kotlin-flow-production">Advanced Kotlin Flow у production</a>, <a href="#compose-effects-navigation-viewmodel">Compose effects, navigation та ViewModel</a>, <a href="#jetpack-compose-performance">Jetpack Compose performance</a>, <a href="#android-ui-architecture-state-modeling">Android UI architecture</a>, <a href="#clean-architecture-android-modularization">Clean Architecture та modularization</a>, <a href="#dependency-injection-android">Dependency injection на Android</a>, <a href="#senior-android-testing-strategy">Senior Android testing strategy</a>, <a href="#android-memory-threading">Android memory and threading</a>, <a href="#startup-rendering-performance">Startup and rendering performance</a>, <a href="#system-design-chat-real-time-updates">System design: chat</a>. Тут лишилися лише follow-up відповіді та приклади, яких немає в етапах.</p>
-<p>Ідея: Senior Android Developer має пояснювати не API, а <strong>ownership, lifecycle, failure semantics, testability, scalability та observability</strong>.</p>
-<hr/>
-<h2>Швидкий банк відповідей на Follow-up питання</h2>
-<h3>Activity і Fragment lifecycle</h3>
-<p><strong>Що зупиняти в <code>onPause</code>, а що в <code>onStop</code>?</strong><br/>
-В <code>onPause</code> — легкі foreground-only дії: camera preview, sensors, transient animations. В <code>onStop</code> — звільняти важчі UI ресурси, unregister receivers/listeners, зупиняти видимі updates.</p>
-<p><strong>Чому не можна використовувати non-default constructor для Fragment?</strong><br/>
-Default <code>FragmentFactory</code> перестворює Fragment рефлексією через no-arg constructor, тому аргументи треба передавати через <code>arguments</code>, Navigation args або SavedStateHandle. Dependencies через constructor можна передавати лише з custom <code>FragmentFactory</code> (<code>supportFragmentManager.fragmentFactory</code>, Fragment 1.1.0+).</p>
-<p><strong>Як share ViewModel між Fragment-ами?</strong><br/>
-Через <code>activityViewModels()</code> для Activity scope або <code>navGraphViewModels()</code> для navigation graph scope. Senior-відповідь має згадати, що scope треба вибирати за ownership: чи state належить всій Activity, чи конкретному flow.</p>
-<p><strong>Коли Application context не підходить?</strong><br/>
-Коли потрібен UI-bound context: showing dialog, inflating UI with Activity theme, starting activity for result, accessing window/token. Application context підходить для long-lived dependencies, але не для UI operations.</p>
-<h3>Coroutines</h3>
-<p><strong>Чим structured concurrency краща за callbacks?</strong><br/>
-Вона дає явний lifecycle, cancellation propagation, predictable failure behavior і readable sequential style для async code. Callbacks часто розмивають ownership і error handling.</p>
-<p><strong>Коли використовувати <code>awaitAll()</code>?</strong><br/>
-Коли є колекція <code>Deferred</code> і всі результати потрібні як одна операція. Якщо потрібні partial results, краще явно обробляти кожен async або використовувати supervisor semantics.</p>
-<h2>Lifecycle, configuration changes і process death</h2>
-<h3>Production приклад</h3>
-<pre><code class="language-kotlin">@HiltViewModel
-class ProductDetailsViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
-    private val repository: ProductsRepository
-) : ViewModel() {
-
-    private val productId: StateFlow&lt;String&gt; =
-        savedStateHandle.getStateFlow("productId", "")
-
-    val uiState: StateFlow&lt;ProductDetailsUiState&gt; = productId
-        .filter { it.isNotBlank() }
-        .flatMapLatest(repository::observeProduct)
-        .map&lt;Product, ProductDetailsUiState&gt; { product -&gt;
-            ProductDetailsUiState.Content(product)
-        }
-        .catch { emit(ProductDetailsUiState.Error(it.toUserMessage())) }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = ProductDetailsUiState.Loading
-        )
-}
-</code></pre>
-<p>Тут <code>SavedStateHandle</code> не зберігає весь <code>Product</code>. Він зберігає лише <code>productId</code>. Повний екран відновлюється через repository. Це краще для process death, тестованості, кешування і single source of truth.</p>
-<h3>Follow-up відповіді</h3>
-<h4>Коли <code>ViewModel</code> — це overkill?</h4>
-<p><code>ViewModel</code> не потрібен для локального, короткоживучого UI стану, який не має business semantics. Наприклад, expanded state одного accordion item, локальна анімація або тимчасове значення drag gesture не мають жити у <code>ViewModel</code>. Overuse ViewModel робить UI менш автономним, ускладнює preview/test setup і створює зайвий coupling.</p>
-<h4>Як відновити scroll position після process death?</h4>
-<p>Для простого Compose списку можна використати <code>rememberSaveable</code> з <code>LazyListState.Saver</code>. Але для production feed краще зберігати не лише pixel/index, а стабільний item key або paging anchor. Після reload дані можуть змінитися: item може зникнути, порядок може змінитися, pagination може не мати потрібної сторінки. Senior-відповідь має згадати fallback: якщо anchor item не знайдено — відкриваємо найближчу позицію або top.</p>
-<hr/>
-<h2>Services, BroadcastReceiver, background execution limits і WorkManager</h2>
-<p>Сильна відповідь на тему background work починається не з вибору API, а з класифікації задачі:</p>
-<table>
-<thead>
-<tr>
-<th>Семантика задачі</th>
-<th>Кращий інструмент</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Коротка робота, прив’язана до екрана</td>
-<td><code>viewModelScope</code> / <code>lifecycleScope</code></td>
-</tr>
-<tr>
-<td>Deferrable guaranteed background work</td>
-<td><code>WorkManager</code></td>
-</tr>
-<tr>
-<td>User-visible long-running operation</td>
-<td>Foreground Service</td>
-</tr>
-<tr>
-<td>Real-time stream поки відкритий екран</td>
-<td>lifecycle-aware coroutine/WebSocket owner</td>
-</tr>
-<tr>
-<td>System/event notification</td>
-<td>runtime/manifest <code>BroadcastReceiver</code>, але з урахуванням обмежень</td>
-</tr>
-</tbody>
-</table>
-<h3>Production приклад</h3>
-<pre><code class="language-kotlin">@HiltWorker
-class SyncOrdersWorker @AssistedInject constructor(
-    @Assisted appContext: Context,
-    @Assisted params: WorkerParameters,
-    private val repository: OrdersRepository
-) : CoroutineWorker(appContext, params) {
-
-    override suspend fun doWork(): Result {
-        return try {
-            repository.syncPendingOrders()
-            Result.success()
-        } catch (e: IOException) {
-            if (runAttemptCount &lt; 3) Result.retry() else Result.failure()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Result.failure()
-        }
-    }
-}
-</code></pre>
-<h3>Follow-up відповіді</h3>
-<h4>Як debuggable <code>WorkManager</code>?</h4>
-<p>Логувати work id, name, constraints, run attempt, result. Для локального debug — WorkManager inspector, logs, test driver. У production — analytics/observability навколо failure reason, retry count, network state, payload size. Senior має думати не тільки “як запустити”, а й “як зрозуміти, чому sync не відпрацював”.</p>
-<h4>Як інтегрувати WorkManager з Hilt?</h4>
-<p>Через Hilt Worker integration: <code>@HiltWorker</code>, <code>@AssistedInject</code>, <code>@Assisted</code> для <code>Context</code> і <code>WorkerParameters</code>, плюс <code>HiltWorkerFactory</code>, переданий через <code>Configuration.Provider</code> (з вимкненим default <code>WorkManagerInitializer</code>). Default <code>WorkerFactory</code> створює Worker рефлексією лише через constructor <code>(Context, WorkerParameters)</code>, тож Worker з додатковими dependencies без Hilt або custom <code>WorkerFactory</code> впаде з “Could not instantiate”. Не варто вручну діставати dependencies із singleton/service locator всередині Worker.</p>
-<hr/>
-<h2>Kotlin для Android: follow-up пастки</h2>
-<h4>Коли <code>lateinit</code> доречний?</h4>
-<p><code>lateinit</code> доречний там, де framework створює об’єкт і ти не можеш використати constructor injection: наприклад, деякі Android test rules або legacy Fragment field injection. У production-коді <code>lateinit</code> часто є запахом, якщо його можна замінити constructor injection або nullable-free initialization.</p>
-<h4>Чим небезпечний <code>lazy</code> в Android component?</h4>
-<p><code>lazy</code> прив’язує ініціалізацію до lifetime власника. Якщо власник живе довше, ніж залежність, можна отримати leak або stale reference. Наприклад, lazy adapter, який тримає старий Fragment view listener після <code>onDestroyView</code>, — потенційна проблема.</p>
-<h4>Коли extension function — code smell?</h4>
-<p>Коли вона приховує залежності, робить domain logic невидимою, створює “магічний framework” або конфліктує з discoverability. Extension functions добре підходять для small pure transformations, mapping, formatting, але погано — для логіки з IO, analytics, navigation або hidden dependencies.</p>
-<hr/>
-<h2>Coroutines: structured concurrency, cancellation, exceptions</h2>
-<h3>Production приклад: all-or-nothing паралельне завантаження</h3>
-<pre><code class="language-kotlin">suspend fun loadCheckoutScreen(
-    cartRepository: CartRepository,
-    paymentRepository: PaymentRepository
-): CheckoutData = coroutineScope {
-    val cart = async { cartRepository.getCart() }
-    val paymentMethods = async { paymentRepository.getPaymentMethods() }
-
-    CheckoutData(
-        cart = cart.await(),
-        paymentMethods = paymentMethods.await()
-    )
-}
-</code></pre>
-<p>Тут <code>coroutineScope</code> правильний, бо checkout screen не має сенсу без cart або payment methods. Якщо один запит падає, siblings скасовуються, а caller отримує exception.</p>
-<h3>Production приклад: незалежні блоки dashboard</h3>
-<pre><code class="language-kotlin">suspend fun loadDashboard(): DashboardUiModel = supervisorScope {
-    val profile = async { profileRepository.getProfile() }
-    val recommendations = async { recommendationsRepository.getRecommendations() }
-    val ads = async { adsRepository.getAds() }
-
-    DashboardUiModel(
-        profile = profile.await(),
-        recommendations = recommendations.await(),
-        ads = try {
-            ads.await()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            emptyList()
-        }
-    )
-}
-</code></pre>
-<p>Тут <code>supervisorScope</code> має сенс: failure <code>ads</code> не cancel-ить profile/recommendations, а помилка обробляється на <code>await()</code>. Із <code>coroutineScope</code> падіння ads скасувало б увесь dashboard. Якщо ж ловити помилку всередині самого <code>async</code>, child ніколи не падає, і тоді ізоляцію дає саме обробка, а не <code>supervisorScope</code>. Не обгортай suspend-виклики в голий <code>runCatching</code>: він ковтає <code>CancellationException</code>.</p>
-<h4>Коли application-wide scope виправданий?</h4>
-<p>Коли робота логічно переживає конкретний екран: app-level session observer, long-lived WebSocket manager, shared repository cache warmer, analytics event queue. Але такий scope має бути явно інжектований, логований, тестований і контрольовано cancel-итися при shutdown/logout, якщо це потрібно.</p>
-<hr/>
-<h2>Jetpack Compose: effects у коді</h2>
-<pre><code class="language-kotlin">@Composable
-fun CheckoutRoute(
-    viewModel: CheckoutViewModel,
-    snackbarHostState: SnackbarHostState,
-    onPaymentSuccess: () -&gt; Unit
-) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val latestOnPaymentSuccess by rememberUpdatedState(onPaymentSuccess)
-
-    LaunchedEffect(uiState.paymentCompleted) {
-        if (uiState.paymentCompleted) {
-            latestOnPaymentSuccess()
-            viewModel.onPaymentSuccessHandled()
-        }
-    }
-
-    LaunchedEffect(uiState.errorMessage) {
-        uiState.errorMessage?.let { message -&gt;
-            snackbarHostState.showSnackbar(message)
-            viewModel.onErrorShown()
-        }
-    }
-
-    CheckoutScreen(
-        state = uiState,
-        onAction = viewModel::onAction
-    )
-}
-</code></pre>
-<p><code>DisposableEffect</code> — для listener/observer, який треба гарантовано прибрати при зміні key або виході з composition (lifecycle observer, broadcast receiver, sensor listener, callback registration):</p>
-<pre><code class="language-kotlin">DisposableEffect(lifecycleOwner) {
-    val observer = LifecycleEventObserver { _, event -&gt;
-        if (event == Lifecycle.Event.ON_START) analytics.onScreenVisible()
-    }
-    lifecycleOwner.lifecycle.addObserver(observer)
-    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-}
-</code></pre>
-<hr/>
-<h2>Architecture + Testing: explicit UI state і його тест</h2>
-<pre><code class="language-kotlin">sealed interface FeedUiState {
-    data object Loading : FeedUiState
-    data class Content(
-        val items: List&lt;FeedItemUiModel&gt;,
-        val isRefreshing: Boolean
-    ) : FeedUiState
-    data class Error(val message: String) : FeedUiState
-}
-
-@HiltViewModel
-class FeedViewModel @Inject constructor(
-    observeFeed: ObserveFeedUseCase,
-    private val refreshFeed: RefreshFeedUseCase
-) : ViewModel() {
-
-    val uiState: StateFlow&lt;FeedUiState&gt; = observeFeed()
-        .map&lt;List&lt;Article&gt;, FeedUiState&gt; { articles -&gt;
-            FeedUiState.Content(
-                items = articles.map(Article::toUiModel),
-                isRefreshing = false
-            )
-        }
-        .onStart { emit(FeedUiState.Loading) }
-        .catch { emit(FeedUiState.Error(it.toUserMessage())) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FeedUiState.Loading)
-
-    fun onRefresh() {
-        viewModelScope.launch { refreshFeed() }
-    }
-}
-</code></pre>
-<h3>Production приклад: dispatcher provider</h3>
-<pre><code class="language-kotlin">interface AppDispatchers {
-    val io: CoroutineDispatcher
-    val default: CoroutineDispatcher
-    val main: CoroutineDispatcher
-}
-
-class DefaultAppDispatchers @Inject constructor() : AppDispatchers {
-    override val io = Dispatchers.IO
-    override val default = Dispatchers.Default
-    override val main = Dispatchers.Main
-}
-</code></pre>
-<h3>Production приклад: Flow test з Turbine</h3>
-<pre><code class="language-kotlin">@get:Rule
-val mainDispatcherRule = MainDispatcherRule() // Dispatchers.setMain(StandardTestDispatcher())
-
-@Test
-fun emitsLoadingThenContent() = runTest {
-    val repository = FakeArticlesRepository()
-    val viewModel = FeedViewModel(ObserveFeedUseCase(repository), RefreshFeedUseCase(repository))
-
-    viewModel.uiState.test {
-        assertEquals(FeedUiState.Loading, awaitItem())
-
-        repository.emitArticles(listOf(Article(id = "1", title = "Coroutines")))
-
-        val content = awaitItem() as FeedUiState.Content
-        assertEquals("Coroutines", content.items.first().title)
-    }
-}
-</code></pre>
-<hr/>
-<h2>Performance: ANR</h2>
-<p><strong>Що таке ANR?</strong> Main thread не відповідає достатньо довго: input dispatch, broadcast receiver, service start або content provider operation. Причина може бути не тільки явний <code>Thread.sleep</code>, а й lock contention, binder call, slow disk IO, heavy inflation, synchronous DB query.</p>
-<hr/>
-<h2>Android System Design: як відповідати Senior-рівнем</h2>
-<p>Для Android system design відповідай за такою структурою:</p>
-<ol>
-<li><strong>Requirements</strong>: online/offline, real-time, auth, sync, scale, UX expectations.</li>
-<li><strong>Data ownership</strong>: local DB vs network, single source of truth.</li>
-<li><strong>Read path</strong>: UI observes local/cache stream.</li>
-<li><strong>Write path</strong>: optimistic update, pending queue, retry, conflict resolution.</li>
-<li><strong>Background work</strong>: WorkManager/foreground service/realtime connection owner.</li>
-<li><strong>State modeling</strong>: ViewModel exposes immutable UI state.</li>
-<li><strong>Error handling</strong>: retryable vs non-retryable, user-facing vs technical.</li>
-<li><strong>Testing/observability</strong>: fakes, integration tests, sync logs, metrics.</li>
-</ol>
-<h4>Коли WebSocket має жити довше, ніж screen?</h4>
-<p>Якщо realtime connection потрібен для app-level presence, notifications, multi-screen updates або shared session. Але якщо stream потрібен тільки на одному screen, owner може бути screen-level. Senior має явно пояснити lifetime owner і battery/network trade-off.</p>
-<hr/>
-<h2>Готові короткі формулювання для співбесіди</h2>
-<h3>Coroutines</h3>
-<blockquote>
-<p>Я не вибираю coroutine API ізольовано. Я спочатку визначаю owner, cancellation path і failure semantics. Якщо підзадачі формують одну операцію — <code>coroutineScope</code>; якщо можуть падати незалежно — <code>supervisorScope</code>. Cancellation я не вважаю error path і не показую як помилку користувачу.</p>
-</blockquote>
-<h3>Flow</h3>
-<blockquote>
-<p>Я починаю з delivery semantics: state чи signal, cold чи hot, replay чи no replay, чи можна втратити emission. Для screen state використовую <code>StateFlow</code>. Для shared broadcast — <code>SharedFlow</code>. Для one-shot UI actions спочатку перевіряю, чи це не latent state, який краще змоделювати в UI state.</p>
-</blockquote>
-<h3>Compose</h3>
-<blockquote>
-<p>У Compose я тримаю composables side-effect free. State hoist-ю до правильного owner-а, effects запускаю через <code>LaunchedEffect</code>/<code>DisposableEffect</code> з правильними keys, а performance оптимізую після вимірювання, не через blind <code>remember</code>.</p>
-</blockquote>
-<h3>Architecture</h3>
-<blockquote>
-<p>Я описую architecture через boundaries і data flow. UI render-ить immutable state. ViewModel — state holder. Repository — single source of truth і boundary до data sources. Use cases додаю там, де вони зменшують складність або дають reuse, а не автоматично для кожного repository call.</p>
-</blockquote>
-<h3>Testing</h3>
-<blockquote>
-<p>Я роблю async код тестованим через dispatcher injection, fake repositories і deterministic Flow producers. У тестах перевіряю behavior/state transitions, а не випадкові implementation details.</p>
-</blockquote>
-</div>
-</details><details class="major-section" data-key="senior-edge-cases" data-title="Senior Edge Cases: банк production-пасток" id="senior-edge-cases" open=""><summary class="major-summary"><span class="major-title">Senior Edge Cases: банк production-пасток</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+</div></details><details class="major-section" data-key="senior-edge-cases" data-title="Senior Edge Cases: банк production-пасток" id="senior-edge-cases" open=""><summary class="major-summary"><span class="major-title">Senior Edge Cases: банк production-пасток</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
 <p><strong>Детальніше:</strong> <a href="#authentication-token-refresh-android-mobile-security">Authentication, token refresh та mobile security</a>, <a href="#advanced-kotlin-flow-production">Advanced Kotlin Flow у production</a>, <a href="#kotlin-hot-flows-ui-state-events">StateFlow, SharedFlow, Channel</a>, <a href="#jetpack-compose-performance">Jetpack Compose performance</a>, <a href="#android-process-lifecycle-state-restoration">Життєвий цикл процесу і відновлення стану</a>, <a href="#android-background-execution">Android background execution</a>, <a href="#local-persistence-sqlite-room-datastore">Local persistence: Room і DataStore</a>, <a href="#offline-first-architecture-paging-3">Offline-first і Paging 3</a>, <a href="#build-release-delivery-engineering">Build, release and delivery engineering</a>, <a href="#android-tasks-back-stack-deep-links-intents-pending-intent">Tasks, deep links, PendingIntent</a>, <a href="#kotlin-coroutines-failures-supervision-testing">Coroutines: failures, cleanup, testing</a>. Тут лишилися production-історії та деталі, яких немає в етапах; кейси про Compose stability, Paging LoadState і проковтнуту <code>CancellationException</code> повністю розібрані в етапах.</p>
 <p>Схема кейсу: проблема → чому виникає → що ламається в production → як діє Senior.</p>
 
@@ -7150,45 +6823,6 @@ fun emitsLoadingThenContent() = runTest {
 MockWebServer із кастомним <code>Dispatcher</code>, що маршрутизує за шляхом/заголовком (refresh-ендпоінт → новий токен, запити зі старим токеном → 401, з новим → 200), бо дефолтна FIFO-черга при конкурентних запитах недетермінована; запускаю N конкурентних запитів через <code>async</code> і assert-ом перевіряю, що на refresh-ендпоінт прийшов рівно один запит (рахую recorded requests за шляхом). Окремий тест — refresh повертає 401 і всі запити завершуються logout-сигналом рівно один раз.</p>
 <p><strong>Staff/Lead: як масштабувати ці знання на команду, а не тримати в голові одної людини?</strong><br/>
 Перетворюю кейси на інфраструктуру: lint-правила (заборона fragment.lifecycleScope для collect, заборона mutable PendingIntent без suppress-обґрунтування), базові класи/конвенції (єдиний TokenAuthenticator, єдиний LoadState-маппер), CI-перевірки (тест міграцій обов'язковий при зміні схеми, smoke на minified build), і ADR-документи, чому так. Знання, яке не закодоване в тулінг, губиться з ротацією людей.</p>
-</div></details><details class="major-section" data-key="platform-deep-dive" data-title="Android Platform Deep Dive: permissions, storage, notifications, startup" id="android-platform-deep-dive" open=""><summary class="major-summary"><span class="major-title">Android Platform Deep Dive: permissions, storage, notifications, startup</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
-<p><strong>Детальніше:</strong> <a href="#android-permissions-storage-notifications">Android permissions, storage і notifications крізь версії</a>, <a href="#android-background-execution">Android background execution</a>, <a href="#android-tasks-back-stack-deep-links-intents-pending-intent">Android tasks, back stack, deep links, intents та PendingIntent</a>, <a href="#startup-rendering-performance">Startup and rendering performance</a>. Нижче — лише практичні нюанси, яких немає в цих етапах.</p>
-
-<h2 id="scoped-storage">Scoped storage і робота з файлами<a aria-label="Посилання на розділ: Scoped storage" class="heading-anchor" href="#scoped-storage">#</a></h2>
-<p>Редагування чужих медіа в <code>MediaStore</code> — через consent-діалоги <code>createWriteRequest</code>. <code>MANAGE_EXTERNAL_STORAGE</code> — special access, який Play дозволяє лише застосункам, чия core-функція потребує широкого доступу до файлів (файлові менеджери, backup/restore, антивіруси, document management, on-device file search, міграція між девайсами), з декларацією в Play Console і review.</p>
-<p>Production-пастка: persistable URI permission має ліміт на кількість і зникає при переустановці — тому URI документів, збережені в Room, треба валідувати перед використанням, інакше <code>SecurityException</code> через місяці після того, як користувач вибрав файл.</p>
-
-<h2 id="notifications-deep-dive">Notifications: channels, permission, FGS<a aria-label="Посилання на розділ: Notifications" class="heading-anchor" href="#notifications-deep-dive">#</a></h2>
-<p>Media-session нотифікації взагалі не підпадають під <code>POST_NOTIFICATIONS</code>. Exemptions із заборони запуску FGS з фону (Android 12+): зокрема high-priority FCM, exact alarm, user interaction. Senior-висновок: «довгий фоновий процес» проєктується від обмежень — спочатку питаємо, чи це взагалі має бути FGS, чи WorkManager + expedited work, чи push-driven модель.</p>
-
-<h2 id="task-backstack-edge-cases">Task, back stack і deep links: edge cases<a aria-label="Посилання на розділ: Task back stack edge cases" class="heading-anchor" href="#task-backstack-edge-cases">#</a></h2>
-<ul>
-<li><strong>Deep link у глибокий екран:</strong> back має вести на логічного батька, а не закривати застосунок: synthetic back stack через TaskStackBuilder / <code>NavDeepLinkBuilder</code>; у Compose Navigation deep link сам будує стек за графом.</li>
-<li><strong>launchMode + taskAffinity:</strong> комбінації з <code>singleInstance</code>/<code>taskAffinity</code> створюють кілька тасків застосунку у Recents — користувач бачить «два застосунки».</li>
-<li><strong>Process death + back stack:</strong> система відтворює back stack, але кожна Activity отримує лише свій savedInstanceState — синглтони і статичні «шини даних» будуть порожні.</li>
-</ul>
-
-<h2 id="app-startup-baseline-profiles">App startup: TTID/TTFD, App Startup, Baseline Profiles<a aria-label="Посилання на розділ: App startup" class="heading-anchor" href="#app-startup-baseline-profiles">#</a></h2>
-<p><code>reportFullyDrawn()</code> потрібен для власних вимірів TTFD (logcat, Macrobenchmark <code>StartupTimingMetric</code>, Perfetto). Android vitals рахує startup як TTID (excessive: cold ≥5 с, warm ≥2 с, hot ≥1.5 с), і <code>reportFullyDrawn()</code> цього не змінює. Інструменти: Macrobenchmark (<code>StartupTimingMetric</code>) у CI, Perfetto/«App Startup» трек для розслідування, Play Vitals для польових даних. Baseline Profile генерується через Macrobenchmark-модуль і їде в реліз як артефакт; типовий ефект — −15–30% до cold start (орієнтир, не гарантія).</p>
-<pre><code class="language-kotlin">// Macrobenchmark: вимірюємо cold start + перевіряємо ефект Baseline Profile
-@Test
-fun coldStartup() = benchmarkRule.measureRepeated(
-    packageName = "com.app",
-    metrics = listOf(StartupTimingMetric()),
-    iterations = 5,
-    startupMode = StartupMode.COLD,
-    compilationMode = CompilationMode.Partial() // з baseline profile
-) {
-    pressHome()
-    startActivityAndWait()
-}</code></pre>
-
-<h3 id="platform-follow-up">Follow-up питання за рівнями<a aria-label="Посилання на розділ: Platform follow-up" class="heading-anchor" href="#platform-follow-up">#</a></h3>
-<p><strong>Middle+: користувач відхилив дозвіл двічі. Що відбувається і що робити?</strong><br/>
-Система перестає показувати діалог (запит миттєво повертає denied), <code>shouldShowRequestPermissionRationale</code> повертає false (але false — не повний oracle, див. етап 6). Єдиний шлях — пояснити цінність і повести в налаштування застосунку через intent на <code>ACTION_APPLICATION_DETAILS_SETTINGS</code>. UI має деградувати достойно: фіча вимкнена, але застосунок працює.</p>
-<p><strong>Senior: чому ваш «оптимізований» cold start у Macrobenchmark не збігається з Play Vitals?</strong><br/>
-Бенчмарк міряє конкретний девайс, фіксований стан і зазвичай TTID; vitals — польовий розподіл по всіх девайсах, з різною термальною деградацією та фоновим навантаженням. Плюс vitals рахує TTID, тож порівнювати з ним TTFD з бенчмарку некоректно; <code>reportFullyDrawn</code> на vitals не впливає. Тому дивлюсь перцентилі (P90), сегментую по девайс-класах і калібрую бенчмарк на слабшому залізі.</p>
-<p><strong>Staff/Lead: як ви проєктуєте політику дозволів на рівні продукту?</strong><br/>
-Понад принцип мінімізації з етапу 6 — метрика grant-rate по кожному дозволу в аналітиці. Це знижує і відтік на onboarding, і ризики при Play-ревью.</p>
 </div></details><details class="major-section" data-key="senior-process" data-title="Senior у команді: code review, менторинг, технічні рішення" id="senior-process-leadership" open=""><summary class="major-summary"><span class="major-title">Senior у команді: code review, менторинг, технічні рішення</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
 <p>На Senior/Principal-співбесідах ~30% сигналу — не код. Питання «розкажіть про складне технічне рішення» або «як ви ревьюїте код» перевіряють, чи масштабуєтесь ви за межі власних коммітів.</p>
 
@@ -12538,160 +12172,7 @@ Result (verified metrics only) → learning/revisit trigger
 <h2 id="en-stage32-sources">References (principles, not guarantees)</h2><ul><li><strong>Primary engineering-practice source:</strong> <a href="https://google.github.io/eng-practices/review/">Google Engineering Practices — Code Review</a>, including <a href="https://google.github.io/eng-practices/review/reviewer/standard.html">review standard</a>, <a href="https://google.github.io/eng-practices/review/reviewer/looking-for.html">what to look for</a>, <a href="https://google.github.io/eng-practices/review/reviewer/speed.html">speed</a>, and <a href="https://google.github.io/eng-practices/review/developer/">author guidance</a>. These are Google practices, useful principles rather than universal policy.</li><li><strong>Primary reliability sources:</strong> Google SRE, <a href="https://sre.google/sre-book/managing-incidents/">Managing Incidents</a>, <a href="https://sre.google/workbook/postmortem-culture/">Postmortem Culture</a>, and <a href="https://sre.google/sre-book/embracing-risk/">Embracing Risk</a>. Adapt roles and risk policy to the organization.</li><li><strong>Primary Android context:</strong> <a href="https://developer.android.com/topic/architecture">Android Developers — Guide to app architecture</a> and <a href="https://developer.android.com/topic/architecture/recommendations">architecture recommendations</a>. These inform technical boundaries; they do not define career levels.</li><li><strong>ADR source:</strong> Michael Nygard’s lightweight ADR template, preserved by <a href="https://architecture-decision-record.github.io/templates/decision-record-template-by-michael-nygard/">Architecture Decision Record</a>; see also <a href="https://martinfowler.com/bliki/ArchitectureDecisionRecord.html">Martin Fowler’s contextual overview</a>. A record improves traceability, not decision correctness.</li><li><strong>Contextual team-research source:</strong> <a href="https://rework.withgoogle.com/intl/en/guides/understand-team-effectiveness">Google re:Work — team effectiveness</a>. Findings are contextual and are not a guarantee for every team.</li></ul>
 </div></details>
 
-</div></details><details class="major-section senior-expanded-section" data-key="senior-deep-dive-follow-up-answers" data-title="Senior Deep Dive + Follow-up Answers" id="en-senior-deep-dive-follow-up-answers" open="">
-<summary class="major-summary"><span class="major-title">Senior Deep Dive + Follow-up Answers</span><span class="major-meta">expand / collapse</span></summary>
-<div class="section-body senior-expanded-body"><p><strong>More detail:</strong> <a href="#en-android-process-lifecycle-state-restoration">Android process lifecycle and state restoration</a>, <a href="#en-android-background-execution">Android background execution</a>, <a href="#en-kotlin-type-system-state-modeling">Kotlin type system and state modeling</a>, <a href="#en-kotlin-coroutines-foundations-internals">Kotlin Coroutines: foundations and internals</a>, <a href="#en-kotlin-coroutines-failures-supervision-testing">Kotlin Coroutines: failures, supervision, cleanup, testing</a>, <a href="#en-kotlin-hot-flows-ui-state-events">StateFlow, SharedFlow, Channel</a>, <a href="#en-advanced-kotlin-flow-production">Advanced Kotlin Flow in production</a>, <a href="#en-compose-effects-navigation-viewmodel">Compose effects, navigation, and ViewModel</a>, <a href="#en-jetpack-compose-performance">Jetpack Compose performance</a>, <a href="#en-android-ui-architecture-state-modeling">Android UI architecture</a>, <a href="#en-clean-architecture-android-modularization">Clean Architecture and modularization</a>, <a href="#en-dependency-injection-android">Dependency injection on Android</a>, <a href="#en-senior-android-testing-strategy">Senior Android testing strategy</a>, <a href="#en-android-memory-threading">Android memory and threading</a>, <a href="#en-startup-rendering-performance">Startup and rendering performance</a>, <a href="#en-system-design-chat-real-time-updates">System design: chat</a>. Only follow-up answers and examples not present in the stages remain here.</p>
-<p>The goal is not to memorize APIs, but to explain ownership, lifecycle, failure semantics, testability, scalability, and observability.</p>
-<hr/>
-<h2>Direct answers to follow-up questions</h2>
-<p><strong>When is Application context not enough?</strong><br/>
-For UI-bound operations requiring an Activity theme, window token, dialog, or activity result.</p>
-<h2>Lifecycle, configuration changes, and process death</h2>
-<pre><code class="language-kotlin">@HiltViewModel
-class ProductDetailsViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
-    private val repository: ProductsRepository
-) : ViewModel() {
-    private val productId = savedStateHandle.getStateFlow("productId", "")
-
-    val uiState = productId
-        .filter { it.isNotBlank() }
-        .flatMapLatest(repository::observeProduct)
-        .map&lt;Product, ProductDetailsUiState&gt; { ProductDetailsUiState.Content(it) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ProductDetailsUiState.Loading)
-}
-</code></pre>
-<p><strong>When is ViewModel overkill?</strong><br/>
-When the state is purely local and short-lived: animation state, a temporary expanded card, drag state, or local focus state.</p>
-<hr/>
-<h2>Background work: Services, BroadcastReceiver, WorkManager</h2>
-<p>Choose APIs based on task semantics:</p>
-<table>
-<thead>
-<tr>
-<th>Task semantics</th>
-<th>Preferred tool</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Screen-bound short work</td>
-<td><code>viewModelScope</code> / <code>lifecycleScope</code></td>
-</tr>
-<tr>
-<td>Deferrable guaranteed work</td>
-<td><code>WorkManager</code></td>
-</tr>
-<tr>
-<td>User-visible long-running work</td>
-<td>Foreground Service</td>
-</tr>
-<tr>
-<td>Real-time stream for one screen</td>
-<td>lifecycle-aware owner</td>
-</tr>
-<tr>
-<td>System event</td>
-<td>Receiver, with restrictions in mind</td>
-</tr>
-</tbody>
-</table>
-<pre><code class="language-kotlin">@HiltWorker
-class SyncOrdersWorker @AssistedInject constructor(
-    @Assisted appContext: Context,
-    @Assisted params: WorkerParameters,
-    private val repository: OrdersRepository
-) : CoroutineWorker(appContext, params) {
-    override suspend fun doWork(): Result = try {
-        repository.syncPendingOrders()
-        Result.success()
-    } catch (e: IOException) {
-        if (runAttemptCount &lt; 3) Result.retry() else Result.failure()
-    }
-}
-</code></pre>
-<p>The default <code>WorkerFactory</code> can only call a <code>(Context, WorkerParameters)</code> constructor, so an extra dependency needs <code>@HiltWorker</code>/<code>@AssistedInject</code> plus <code>HiltWorkerFactory</code> supplied through <code>Configuration.Provider</code> (with the default <code>WorkManagerInitializer</code> removed), or a custom <code>WorkerFactory</code>.</p>
-<p><strong>How do you debug WorkManager?</strong><br/>
-Log work id, name, constraints, attempt count, result, payload size, and failure reason. Use the inspector locally and production metrics for sync health.</p>
-<hr/>
-<h2>Kotlin follow-up traps</h2>
-<p><strong>When is <code>lateinit</code> appropriate?</strong><br/>
-Mostly when framework construction prevents constructor injection. Otherwise, prefer constructor injection or explicit initialization.</p>
-<p><strong>When is an extension function a smell?</strong><br/>
-When it hides dependencies, IO, navigation, analytics, or complex business logic. Extensions are best for small pure transformations.</p>
-<hr/>
-<h2>Coroutines: structured concurrency, cancellation, exceptions</h2>
-<pre><code class="language-kotlin">suspend fun loadCheckoutScreen(
-    cartRepository: CartRepository,
-    paymentRepository: PaymentRepository
-): CheckoutData = coroutineScope {
-    val cart = async { cartRepository.getCart() }
-    val methods = async { paymentRepository.getPaymentMethods() }
-    CheckoutData(cart.await(), methods.await())
-}
-</code></pre>
-<p>Use <code>coroutineScope</code> when child tasks are one all-or-nothing operation. Use <code>supervisorScope</code> when children can fail independently.</p>
-<p><strong>When is an application-wide scope acceptable?</strong><br/>
-For explicitly designed app-level work such as analytics queues, session observers, or shared socket managers. It should be injected, observable, and cancellable when appropriate.</p>
-<hr/>
-<h2>Compose effects in code</h2>
-<pre><code class="language-kotlin">@Composable
-fun CheckoutRoute(
-    viewModel: CheckoutViewModel,
-    snackbarHostState: SnackbarHostState,
-    onPaymentSuccess: () -&gt; Unit
-) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val latestSuccess by rememberUpdatedState(onPaymentSuccess)
-
-    LaunchedEffect(uiState.paymentCompleted) {
-        if (uiState.paymentCompleted) {
-            latestSuccess()
-            viewModel.onPaymentSuccessHandled()
-        }
-    }
-
-    LaunchedEffect(uiState.errorMessage) {
-        uiState.errorMessage?.let {
-            snackbarHostState.showSnackbar(it)
-            viewModel.onErrorShown()
-        }
-    }
-}
-</code></pre>
-<hr/>
-<h2>Testing coroutines, Flow, ViewModel</h2>
-<pre><code class="language-kotlin">@get:Rule
-val mainDispatcherRule = MainDispatcherRule() // Dispatchers.setMain(StandardTestDispatcher())
-
-@Test
-fun emitsLoadingThenContent() = runTest {
-    val repository = FakeArticlesRepository()
-    val viewModel = FeedViewModel(ObserveFeedUseCase(repository), RefreshFeedUseCase(repository))
-
-    viewModel.uiState.test {
-        assertEquals(FeedUiState.Loading, awaitItem())
-        repository.emitArticles(listOf(Article("1", "Coroutines")))
-        assertTrue(awaitItem() is FeedUiState.Content)
-    }
-}
-</code></pre>
-<hr/>
-<h2>ANR and system design answers</h2>
-<p><strong>What causes ANR?</strong><br/>
-Main-thread blocking: slow IO, locks, heavy inflation, binder calls, synchronous DB work, or long receiver/service operations.</p>
-<p><strong>How answer Android system design questions?</strong><br/>
-Start with invariants: source of truth, read path, write path, offline behavior, sync/retry, lifecycle owner, error handling, testing, observability.</p>
-<hr/>
-<h2>Interview-ready summary</h2>
-<p><strong>Coroutines:</strong> define owner, cancellation, and failure semantics before choosing API.<br/>
-<strong>Flow:</strong> distinguish state from delivery and cold from hot.<br/>
-<strong>Compose:</strong> keep composables side-effect free and choose correct state owner.<br/>
-<strong>Architecture:</strong> talk in boundaries, source of truth, and trade-offs.<br/>
-<strong>Testing:</strong> make async behavior deterministic by design.<br/>
-<strong>Performance:</strong> measure first, then apply targeted fixes.</p>
-</div>
-</details><details class="major-section" data-key="senior-edge-cases" data-title="Senior Edge Cases: a bank of production traps" id="en-senior-edge-cases" open=""><summary class="major-summary"><span class="major-title">Senior Edge Cases: a bank of production traps</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+</div></details><details class="major-section" data-key="senior-edge-cases" data-title="Senior Edge Cases: a bank of production traps" id="en-senior-edge-cases" open=""><summary class="major-summary"><span class="major-title">Senior Edge Cases: a bank of production traps</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
 <p><strong>More detail:</strong> <a href="#en-authentication-token-refresh-android-mobile-security">Authentication, token refresh, and mobile security</a>, <a href="#en-advanced-kotlin-flow-production">Advanced Kotlin Flow in production</a>, <a href="#en-kotlin-hot-flows-ui-state-events">StateFlow, SharedFlow, Channel</a>, <a href="#en-jetpack-compose-performance">Jetpack Compose performance</a>, <a href="#en-android-process-lifecycle-state-restoration">Android process lifecycle and state restoration</a>, <a href="#en-android-background-execution">Android background execution</a>, <a href="#en-local-persistence-sqlite-room-datastore">Local persistence: Room and DataStore</a>, <a href="#en-offline-first-architecture-paging-3">Offline-first and Paging 3</a>, <a href="#en-build-release-delivery-engineering">Build, release and delivery engineering</a>, <a href="#en-android-tasks-back-stack-deep-links-intents-pending-intent">Tasks, deep links, PendingIntent</a>, <a href="#en-kotlin-coroutines-failures-supervision-testing">Coroutines: failures, cleanup, testing</a>. Only production stories and details absent from the stages remain here; the Compose stability, Paging LoadState, and swallowed <code>CancellationException</code> cases are fully covered in the stages.</p>
 <p>Case scheme: problem → why it happens → what breaks in production → what a Senior does.</p>
 
@@ -12774,45 +12255,6 @@ Both operate only on upstream exceptions. <code>retry</code> re-subscribes to th
 MockWebServer with a custom <code>Dispatcher</code> that routes by path/header (refresh endpoint → new token, calls with the old token → 401, with the new token → 200), because the default FIFO queue is non-deterministic under concurrent requests; launch N concurrent requests via <code>async</code> and assert exactly one request hit the refresh endpoint (counting recorded requests by path). A separate test: refresh returns 401 and all requests resolve into exactly one logout signal.</p>
 <p><strong>Staff/Lead: how do you scale this knowledge to the team instead of keeping it in one head?</strong><br/>
 Turn the cases into infrastructure: lint rules (ban fragment.lifecycleScope for collect, ban mutable PendingIntent without a justified suppress), shared base classes/conventions (a single TokenAuthenticator, a single LoadState mapper), CI gates (migration tests mandatory on schema change, smoke on the minified build), and ADRs explaining why. Knowledge not encoded into tooling leaves with people.</p>
-</div></details><details class="major-section" data-key="platform-deep-dive" data-title="Android Platform Deep Dive: permissions, storage, notifications, startup" id="en-android-platform-deep-dive" open=""><summary class="major-summary"><span class="major-title">Android Platform Deep Dive: permissions, storage, notifications, startup</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
-<p><strong>More detail:</strong> <a href="#en-android-permissions-storage-notifications">Android permissions, storage, and notifications across versions</a>, <a href="#en-android-background-execution">Android background execution</a>, <a href="#en-android-tasks-back-stack-deep-links-intents-pending-intent">Android tasks, back stack, deep links, intents, and PendingIntent</a>, <a href="#en-startup-rendering-performance">Startup and rendering performance</a>. Below are only the practical nuances those stages do not contain.</p>
-
-<h2 id="en-scoped-storage">Scoped storage and file access<a aria-label="Link to section: Scoped storage" class="heading-anchor" href="#en-scoped-storage">#</a></h2>
-<p>Editing others' media in <code>MediaStore</code> goes through consent dialogs like <code>createWriteRequest</code>. <code>MANAGE_EXTERNAL_STORAGE</code> is a special access permission that Google Play allows only for apps whose core function needs broad file access (file managers, backup/restore, anti-virus, document management, on-device file search, device migration), with a Play Console declaration and review.</p>
-<p>Production trap: persistable URI permissions are limited in count and disappear on reinstall — document URIs stored in Room must be validated before use, or you get a <code>SecurityException</code> months after the user picked the file.</p>
-
-<h2 id="en-notifications-deep-dive">Notifications: channels, permission, FGS<a aria-label="Link to section: Notifications" class="heading-anchor" href="#en-notifications-deep-dive">#</a></h2>
-<p>Media-session notifications are exempt from <code>POST_NOTIFICATIONS</code> entirely. Exemptions from the Android 12+ background FGS start ban include high-priority FCM, exact alarms, and user interaction. The Senior conclusion: a "long background process" is designed from the constraints backwards — first ask whether it should be an FGS at all, or WorkManager + expedited work, or a push-driven model.</p>
-
-<h2 id="en-task-backstack-edge-cases">Task, back stack and deep links: edge cases<a aria-label="Link to section: Task back stack edge cases" class="heading-anchor" href="#en-task-backstack-edge-cases">#</a></h2>
-<ul>
-<li><strong>Deep link into a deep screen:</strong> back must lead to the logical parent, not exit the app: a synthetic back stack via TaskStackBuilder / <code>NavDeepLinkBuilder</code>; Compose Navigation builds the stack from the graph itself.</li>
-<li><strong>launchMode + taskAffinity:</strong> combinations with <code>singleInstance</code>/<code>taskAffinity</code> create multiple app tasks in Recents — users see "two apps".</li>
-<li><strong>Process death + back stack:</strong> the system recreates the back stack, but each Activity gets only its own savedInstanceState — singletons and static "data buses" are empty.</li>
-</ul>
-
-<h2 id="en-app-startup-baseline-profiles">App startup: TTID/TTFD, App Startup, Baseline Profiles<a aria-label="Link to section: App startup" class="heading-anchor" href="#en-app-startup-baseline-profiles">#</a></h2>
-<p><code>reportFullyDrawn()</code> is needed to measure TTFD in your own tooling (logcat, Macrobenchmark <code>StartupTimingMetric</code>, Perfetto). Android vitals reports startup as TTID (excessive: cold ≥5 s, warm ≥2 s, hot ≥1.5 s), and <code>reportFullyDrawn()</code> does not change that. Tooling: Macrobenchmark (<code>StartupTimingMetric</code>) in CI, Perfetto for investigations, Play Vitals for field data. A Baseline Profile is generated by a Macrobenchmark module and shipped with the release; the typical effect is −15–30% cold start (a rule of thumb, not a guarantee).</p>
-<pre><code class="language-kotlin">// Macrobenchmark: measure cold start + verify the Baseline Profile effect
-@Test
-fun coldStartup() = benchmarkRule.measureRepeated(
-    packageName = "com.app",
-    metrics = listOf(StartupTimingMetric()),
-    iterations = 5,
-    startupMode = StartupMode.COLD,
-    compilationMode = CompilationMode.Partial() // with baseline profile
-) {
-    pressHome()
-    startActivityAndWait()
-}</code></pre>
-
-<h3 id="en-platform-follow-up">Follow-up questions by level<a aria-label="Link to section: Platform follow-up" class="heading-anchor" href="#en-platform-follow-up">#</a></h3>
-<p><strong>Middle+: the user denied a permission twice. What happens and what do you do?</strong><br/>
-The system stops showing the dialog (requests instantly return denied), <code>shouldShowRequestPermissionRationale</code> returns false (though false is not a complete oracle — see Stage 6). The only path left is explaining the value and sending the user to app settings via <code>ACTION_APPLICATION_DETAILS_SETTINGS</code>. The UI must degrade gracefully: the feature is off, the app still works.</p>
-<p><strong>Senior: why does your "optimized" cold start in Macrobenchmark not match Play Vitals?</strong><br/>
-The benchmark measures one device, a fixed state and usually TTID; vitals are a field distribution across all devices with thermal throttling and background load. Also, vitals report TTID, so comparing it with a benchmark TTFD is a mismatch in itself; <code>reportFullyDrawn</code> does not affect vitals. So I look at percentiles (P90), segment by device class and calibrate the benchmark on weaker hardware.</p>
-<p><strong>Staff/Lead: how do you design a permissions policy at product level?</strong><br/>
-Beyond the minimization principle from Stage 6 — a grant-rate metric per permission in analytics. This reduces onboarding drop-off and Play review risk at the same time.</p>
 </div></details><details class="major-section" data-key="senior-process" data-title="Senior in a team: code review, mentoring, technical decisions" id="en-senior-process-leadership" open=""><summary class="major-summary"><span class="major-title">Senior in a team: code review, mentoring, technical decisions</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
 <p>At Senior/Principal interviews roughly 30% of the signal is not code. "Tell me about a hard technical decision" or "how do you review code" tests whether you scale beyond your own commits.</p>
 
@@ -12830,7 +12272,8 @@ Beyond the minimization principle from Stage 6 — a grant-rate metric per permi
 First genuinely understand the argument (ask back), separate taste from substance; if it is substance — thank and fix; if taste — propose codifying a team convention instead of fighting in every PR; if deadlocked — a 10-minute call and a third opinion / the code owner. Blocking a release over a stylistic disagreement is an anti-pattern on both sides.</p>
 <p><strong>Staff/Lead: product pushes a deadline; you can see it will hurt without a refactor. How do you communicate?</strong><br/>
 Translate technical debt into risk and velocity: "without X every next feature in this module costs +30% time — here are the last two as evidence". Offer priced options (shortcut now + a ticket with a deadline; partial refactor of the critical path; full one later), give a recommendation and leave the call to the business — in writing. If the risk is unacceptable (security, data loss) — escalate explicitly; that too is a Senior's duty.</p>
-</div></details><details class="major-section" data-key="preparation" data-title="How to prepare for a Senior Android Interview" id="en-how-to-prepare-for-a-senior-android-interview" open=""><summary class="major-summary"><span class="major-title">How to prepare for a Senior Android Interview</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+</div></details><details class="major-section" data-key="preparation" data-title="How to prepare for a Senior Android Interview" id="en-how-to-prepare-for-a-senior-android-interview" open=""><summary class="major-summary"><span class="major-title">How to prepare for a Senior Android Interview</span><span class="major-meta">expand / collapse</span></summary><div class="section-body"><p>The goal is not to memorize APIs, but to explain ownership, lifecycle, failure semantics, testability, scalability, and observability.</p>
+
 <h2 id="en-four-week-preparation-plan">Four-week preparation plan<a aria-label="Link to section: Four-week preparation plan" class="heading-anchor" href="#en-four-week-preparation-plan">#</a></h2>
 <h3 id="en-week-1-android-fundamentals-and-kotlin">Week 1: Android fundamentals and Kotlin<a aria-label="Link to section: Week 1: Android fundamentals and Kotlin" class="heading-anchor" href="#en-week-1-android-fundamentals-and-kotlin">#</a></h3>
 <p>Review Activity/Fragment lifecycle, process death, permissions, background execution, Kotlin nullability, sealed classes, immutability, generics, and collections.</p>
