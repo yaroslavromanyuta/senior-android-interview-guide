@@ -946,11 +946,6 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="en-coroutines-and-concurrency" href="#en-coroutines-and-concurrency">Coroutines and Concurrency</a>
 <ol class="toc-children">
 <li><a data-target="en-structured-concurrency" href="#en-structured-concurrency">Structured concurrency</a></li>
-<li><a data-target="en-launch-vs-async" href="#en-launch-vs-async">launch vs async</a></li>
-<li><a data-target="en-coroutinescope-vs-supervisorscope" href="#en-coroutinescope-vs-supervisorscope">coroutineScope vs supervisorScope</a></li>
-<li><a data-target="en-cancellation" href="#en-cancellation">Cancellation</a></li>
-<li><a data-target="en-exception-handling" href="#en-exception-handling">Exception handling</a></li>
-<li><a data-target="en-dispatchers-and-withcontext" href="#en-dispatchers-and-withcontext">Dispatchers and withContext</a></li>
 </ol>
 </li>
 <li class="toc-major">
@@ -6562,177 +6557,24 @@ Result (only verified metrics) → learning/revisit trigger
 <h2 id="kotlin-for-android-підсумок">Kotlin for Android — підсумок<a aria-label="Посилання на розділ: Kotlin for Android — підсумок" class="heading-anchor" href="#kotlin-for-android-підсумок">#</a></h2>
 <p>Kotlin на Senior-рівні — це не тільки syntax. Це спосіб моделювати state, errors, nullability, immutability і API boundaries. Найсильніші відповіді показують, як Kotlin features допомагають писати безпечний, тестований і підтримуваний Android-код.</p>
 </div></details><details class="major-section" data-key="coroutines-and-concurrency" data-title="Coroutines and Concurrency" id="coroutines-and-concurrency" open=""><summary class="major-summary"><span class="major-title">Coroutines and Concurrency</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<p><strong>Детальніше:</strong> <a href="#kotlin-coroutines-foundations-internals">Kotlin Coroutines: foundations та internals</a> (ownership, Job tree, launch/async, dispatchers, cancellation, callback bridging), <a href="#kotlin-coroutines-failures-supervision-testing">Kotlin Coroutines: failures, supervision, cleanup, testing та debugging</a> (failure propagation, supervision, CoroutineExceptionHandler, cleanup, runTest), <a href="#compose-effects-navigation-viewmodel">Compose effects, navigation та ViewModel integration</a> (rememberCoroutineScope, LaunchedEffect). Нижче — лише interview-формулювання та деталі, яких немає в цих етапах.</p>
 <h2 id="structured-concurrency">Structured concurrency<a aria-label="Посилання на розділ: Structured concurrency" class="heading-anchor" href="#structured-concurrency">#</a></h2>
-<h3 id="питання-15">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-15">#</a></h3>
-<p>Що таке structured concurrency у Kotlin Coroutines?</p>
-<h3 id="просте-пояснення">Просте пояснення<a aria-label="Посилання на розділ: Просте пояснення" class="heading-anchor" href="#просте-пояснення">#</a></h3>
-<p>Structured concurrency означає, що coroutines мають чітку ієрархію: parent scope керує child coroutines. Якщо parent скасовується, children теж скасовуються. Якщо child падає з exception, це впливає на parent відповідно до типу scope/job.</p>
-<h3 id="senior-level-пояснення-15">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-15">#</a></h3>
-<p>Structured concurrency — один із головних принципів, який відрізняє production coroutine code від хаотичного async code. Він гарантує:</p>
-<ul>
-<li>контроль lifetime async задач;</li>
-<li>автоматичну cancellation propagation;</li>
-<li>зрозуміле exception propagation;</li>
-<li>відсутність orphan coroutines;</li>
-<li>predictable cleanup.</li>
-</ul>
-<p>У Android це особливо важливо, бо UI має lifecycle. Якщо coroutine переживає екран без потреби, вона може:</p>
-<ul>
-<li>продовжити network/database work після закриття екрана;</li>
-<li>оновити неіснуючий UI;</li>
-<li>утримувати references і створити leak;</li>
-<li>витратити battery/network;</li>
-<li>створити race condition при повторному відкритті екрана.</li>
-</ul>
-<p>Structured concurrency означає, що ми не створюємо “вільні” coroutine без owner-а. Ми використовуємо <code>viewModelScope</code>, <code>lifecycleScope</code>, <code>rememberCoroutineScope</code>, repository/application scopes там, де lifetime справді довший.</p>
-<h3 id="production-приклад-8">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-8">#</a></h3>
-<pre><code class="language-kotlin">@HiltViewModel
-class CheckoutViewModel @Inject constructor(
-    private val loadCart: LoadCartUseCase,
-    private val loadPaymentMethods: LoadPaymentMethodsUseCase
-) : ViewModel() {
-
-    private val _uiState = MutableStateFlow(CheckoutUiState())
-    val uiState: StateFlow&lt;CheckoutUiState&gt; = _uiState.asStateFlow()
-
-    fun load() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-
-            val result = runCatchingNonCancellation { // rethrows CancellationException
-                coroutineScope {
-                    val cart = async { loadCart() }
-                    val paymentMethods = async { loadPaymentMethods() }
-
-                    CheckoutData(
-                        cart = cart.await(),
-                        paymentMethods = paymentMethods.await()
-                    )
-                }
-            }
-
-            _uiState.update { current -&gt;
-                result.fold(
-                    onSuccess = { data -&gt;
-                        current.copy(
-                            isLoading = false,
-                            cart = data.cart,
-                            paymentMethods = data.paymentMethods,
-                            error = null
-                        )
-                    },
-                    onFailure = { error -&gt;
-                        current.copy(
-                            isLoading = false,
-                            error = error.toUserMessage()
-                        )
-                    }
-                )
-            }
-        }
-    }
-}
-</code></pre>
-<p>Тут <code>async</code> children живуть тільки всередині parent <code>coroutineScope</code>. Якщо <code>loadCart()</code> падає, <code>loadPaymentMethods()</code> скасовується. Це правильна поведінка, якщо екран не може показати partial content.</p>
-<h3 id="типові-помилки-15">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-15">#</a></h3>
-<ul>
-<li>Використовувати <code>GlobalScope</code> для screen-level задач.</li>
-<li>Запускати <code>async</code> і не викликати <code>await</code>.</li>
-<li>Створювати custom <code>CoroutineScope</code> без cancel.</li>
-<li>Ігнорувати cancellation у long-running loops.</li>
-<li>Використовувати <code>SupervisorJob</code> всюди без розуміння failure semantics.</li>
-<li>Ховати exceptions у <code>launch</code>, не маючи strategy.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-15">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-15">#</a></h3>
+<p>Що дає structured concurrency: контроль lifetime async задач, автоматичну cancellation propagation, зрозуміле exception propagation, відсутність orphan coroutines, predictable cleanup. Якщо coroutine без потреби переживає Android-екран, вона може продовжити network/database work після закриття, оновити неіснуючий UI, утримувати references (leak), витрачати battery/network і створити race condition при повторному відкритті екрана.</p>
 <blockquote>
 <p>Structured concurrency для мене — це про ownership async роботи. Кожна coroutine має мати parent scope з правильним lifecycle. У ViewModel я використовую <code>viewModelScope</code>, у UI — lifecycle-aware scopes, у repository — suspend APIs або application-level scope тільки для справді app-wide задач. Я уникаю <code>GlobalScope</code>, бо він створює orphan work. Якщо екран закривається, робота має скасуватися, якщо тільки product requirement не каже інше.</p>
 </blockquote>
-<h3 id="follow-up-питання-6">Follow-up питання<a aria-label="Посилання на розділ: Follow-up питання" class="heading-anchor" href="#follow-up-питання-6">#</a></h3>
-<p><strong>Чому <code>GlobalScope</code> небезпечний?</strong><br/>
-Він живе весь процес і стоїть поза structured concurrency: ніхто не скасує, помилки не пропагуються до власника, робота і посилання течуть. Замість нього — injected scope з явним owner-ом і lifecycle.</p>
-<p><strong>Що відбувається з child coroutine, якщо parent cancelled?</strong><br/>
-Child скасовується теж — це основа structured concurrency. Але cancellation cooperative: blocking-код усередині не зупиниться, доки не дійде до suspension point або перевірки <code>isActive</code>.</p>
-<p><strong>Чим structured concurrency краща за callbacks?</strong><br/>
-Явний lifecycle і ownership, автоматична propagation скасування і помилок вгору-вниз по ієрархії, послідовний читабельний код замість пірамід колбеків з розмитим error handling.</p>
-<p><strong>Коли доречно мати application-level CoroutineScope?</strong><br/>
-Для роботи, що легітимно переживає екран: синк, outbox, аналітика. Створюється у DI як <code>CoroutineScope(SupervisorJob() + Dispatchers.Default)</code>, інжектиться явно — а не GlobalScope «бо зручно».</p>
-<p><strong>Як уникнути coroutine leaks?</strong><br/>
-Правильний scope за ownership (viewModelScope, viewLifecycleOwner), жодного GlobalScope як default, не тримати посилання на View/Activity у довгих корутинах, скасовувати збережені Job-и, не ковтати CancellationException.</p>
-<h3 id="короткий-висновок-2">Короткий висновок<a aria-label="Посилання на розділ: Короткий висновок" class="heading-anchor" href="#короткий-висновок-2">#</a></h3>
-<p>Structured concurrency — це foundation для безпечного async code в Android. Senior candidate має пояснити ownership, cancellation, exception propagation і lifecycle, а не просто сказати “coroutines легші за threads”.</p>
+<p><strong>Чому <code>GlobalScope</code> небезпечний?</strong> Живе весь процес і стоїть поза structured concurrency: ніхто не скасує, помилки не пропагуються до власника, робота і посилання течуть. Замість нього — injected scope з явним owner-ом і lifecycle.</p>
+<p><strong>Чим structured concurrency краща за callbacks?</strong> Явний lifecycle і ownership, автоматична propagation скасування і помилок вгору-вниз по ієрархії, послідовний читабельний код замість пірамід колбеків з розмитим error handling.</p>
+<p><strong>Коли доречно мати application-level CoroutineScope?</strong> Для роботи, що легітимно переживає екран: синк, outbox, аналітика. Створюється у DI як <code>CoroutineScope(SupervisorJob() + Dispatchers.Default)</code> і інжектиться явно — а не GlobalScope «бо зручно» (приклад — у <a href="#job-vs-supervisorjob">Job vs SupervisorJob</a>).</p>
+<p><strong>Як уникнути coroutine leaks?</strong> Крім правильного scope за ownership і відмови від GlobalScope: не тримати посилання на View/Activity у довгих корутинах, скасовувати збережені Job-и, не ковтати CancellationException.</p>
 <hr/>
 <h2 id="launch-vs-async">launch vs async<a aria-label="Посилання на розділ: launch vs async" class="heading-anchor" href="#launch-vs-async">#</a></h2>
-<h3 id="питання-16">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-16">#</a></h3>
-<p>Чим <code>launch</code> відрізняється від <code>async</code>?</p>
-<h3 id="просте-пояснення-2">Просте пояснення<a aria-label="Посилання на розділ: Просте пояснення" class="heading-anchor" href="#просте-пояснення-2">#</a></h3>
-<p><code>launch</code> запускає coroutine і повертає <code>Job</code>. Він підходить для fire-and-forget задач, де результат не потрібен напряму. <code>async</code> запускає coroutine і повертає <code>Deferred&lt;T&gt;</code>, з якого можна отримати результат через <code>await()</code>.</p>
-<h3 id="senior-level-пояснення-16">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-16">#</a></h3>
-<p>Ключова різниця не тільки в return type. Важлива семантика errors і intent:</p>
-<ul>
-<li><code>launch</code> використовується для side effects: update state, send event, log analytics.</li>
-<li><code>async</code> використовується для concurrent decomposition, коли parent coroutine має зібрати результати.</li>
-<li><code>async</code> без <code>await</code> — code smell, бо exception може бути відкладений або загублений залежно від scope.</li>
-<li><code>async</code> не слід використовувати як generic “background task launcher”.</li>
-</ul>
-<p>Правильний production use case для <code>async</code> — паралельні незалежні calls, результат яких потрібен разом.</p>
-<h3 id="production-приклад-9">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-9">#</a></h3>
-<pre><code class="language-kotlin">suspend fun loadHomeScreen(): HomeData = coroutineScope {
-    val profileDeferred = async { userRepository.getProfile() }
-    val bannersDeferred = async { marketingRepository.getBanners() }
-    val recommendationsDeferred = async { productRepository.getRecommendations() }
-
-    HomeData(
-        profile = profileDeferred.await(),
-        banners = bannersDeferred.await(),
-        recommendations = recommendationsDeferred.await()
-    )
-}
-</code></pre>
-<p>Якщо один call падає, інші скасовуються. Це правильно, якщо Home screen не може бути показаний без повного набору даних. Якщо partial content дозволений — краще <code>supervisorScope</code> або окреме result modeling.</p>
-<h3 id="типові-помилки-16">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-16">#</a></h3>
-<ul>
-<li>Використовувати <code>async</code> без <code>await</code>.</li>
-<li>Використовувати <code>launch</code> там, де треба повернути результат.</li>
-<li>Робити parallel calls без <code>coroutineScope</code>, втрачаючи structured concurrency.</li>
-<li>Використовувати <code>async</code> для sequential logic без потреби.</li>
-<li>Не думати про partial failure.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-16">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-16">#</a></h3>
-<blockquote>
-<p>Я вибираю <code>launch</code>, коли coroutine виконує side effect і не повертає result. <code>async</code> використовую, коли потрібно паралельно запустити кілька незалежних операцій і потім зібрати результати через <code>await</code>. Якщо я не await-ю <code>Deferred</code>, це майже завжди smell. Також я завжди думаю про failure semantics: чи має один failed call скасувати інші, чи ми можемо показати partial result.</p>
-</blockquote>
-<h3 id="follow-up-питання-7">Follow-up питання<a aria-label="Посилання на розділ: Follow-up питання" class="heading-anchor" href="#follow-up-питання-7">#</a></h3>
-<p><strong>Що станеться, якщо exception виникне в <code>launch</code>?</strong><br/>
-Виняток пропагується по Job-ієрархії: скасовує parent і siblings (якщо не SupervisorJob), на root потрапляє в CoroutineExceptionHandler або валить процес. Expected errors ловляться try/catch усередині і мапляться в UI state.</p>
-<p><strong>Що станеться, якщо exception виникне в <code>async</code> до <code>await</code>?</strong><br/>
-Виняток зберігається в Deferred і перекидається при <code>await</code>. Але parent усе одно дізнається про failure структуровано — <code>async</code> не ізолює помилки сам по собі.</p>
-<p><strong>Коли використовувати <code>awaitAll()</code>?</strong><br/>
-Коли є колекція Deferred і всі результати потрібні разом як одна операція; <code>awaitAll</code> падає одразу при першому failure будь-якого Deferred (не в порядку списку), але сам нічого не скасовує: решту скасовує enclosing <code>coroutineScope</code>/звичайний Job; у <code>supervisorScope</code> інші Deferred продовжують працювати. Для часткових результатів — supervisorScope і обробка кожного окремо.</p>
-<p><strong>Як обробити partial failures?</strong><br/>
-<code>supervisorScope</code> + try/catch (або runCatching) навколо кожного незалежного блоку; результат кожного мапиться у свою частину state. Чесно визначити, які частини екрана можуть жити без інших.</p>
+<p><strong>Коли використовувати <code>awaitAll()</code>?</strong> Коли є колекція Deferred і всі результати потрібні разом як одна операція; <code>awaitAll</code> падає одразу при першому failure будь-якого Deferred (не в порядку списку), але сам нічого не скасовує: решту скасовує enclosing <code>coroutineScope</code>/звичайний Job; у <code>supervisorScope</code> інші Deferred продовжують працювати. Для часткових результатів — supervisorScope і обробка кожного окремо.</p>
 <hr/>
 <h2 id="coroutinescope-vs-supervisorscope">coroutineScope vs supervisorScope<a aria-label="Посилання на розділ: coroutineScope vs supervisorScope" class="heading-anchor" href="#coroutinescope-vs-supervisorscope">#</a></h2>
-<h3 id="питання-17">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-17">#</a></h3>
-<p>Чим <code>coroutineScope</code> відрізняється від <code>supervisorScope</code>?</p>
-<h3 id="просте-пояснення-3">Просте пояснення<a aria-label="Посилання на розділ: Просте пояснення" class="heading-anchor" href="#просте-пояснення-3">#</a></h3>
-<p><code>coroutineScope</code> скасовує всі child coroutines, якщо одна child coroutine падає. <code>supervisorScope</code> дозволяє child coroutines падати незалежно: failure одного child не скасовує siblings автоматично.</p>
-<h3 id="senior-level-пояснення-17">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-17">#</a></h3>
-<p>Це питання часто перевіряє senior-level мислення, бо відповідь залежить від business semantics.</p>
-<p>Використовуй <code>coroutineScope</code>, коли результат має бути atomic:</p>
-<ul>
-<li>checkout requires cart + payment + address;</li>
-<li>screen cannot render without all required data;</li>
-<li>one failure invalidates whole operation.</li>
-</ul>
-<p>Використовуй <code>supervisorScope</code>, коли partial success acceptable:</p>
-<ul>
-<li>home screen: profile, banners, recommendations;</li>
-<li>dashboard widgets;</li>
-<li>optional analytics/config calls;</li>
-<li>non-critical enrichment.</li>
-</ul>
-<h3 id="production-приклад-atomic-loading">Production приклад: atomic loading<a aria-label="Посилання на розділ: Production приклад: atomic loading" class="heading-anchor" href="#production-приклад-atomic-loading">#</a></h3>
-<pre><code class="language-kotlin">suspend fun loadRequiredCheckoutData(): CheckoutData = coroutineScope {
+<p>Типові приклади: <code>coroutineScope</code> (atomic) — checkout потребує cart + payment + address, екран не рендериться без усіх required даних. <code>supervisorScope</code> (partial success) — Home screen (profile, banners, recommendations), dashboard widgets, optional analytics/config calls, non-critical enrichment.</p>
+<pre><code class="language-kotlin">// Atomic: один failure скасовує решту і перекидається caller-у
+suspend fun loadRequiredCheckoutData(): CheckoutData = coroutineScope {
     val cart = async { cartRepository.getCart() }
     val address = async { addressRepository.getSelectedAddress() }
     val payment = async { paymentRepository.getDefaultPaymentMethod() }
@@ -6743,12 +6585,13 @@ Child скасовується теж — це основа structured concurren
         paymentMethod = payment.await()
     )
 }
-</code></pre>
-<h3 id="production-приклад-partial-loading">Production приклад: partial loading<a aria-label="Посилання на розділ: Production приклад: partial loading" class="heading-anchor" href="#production-приклад-partial-loading">#</a></h3>
-<pre><code class="language-kotlin">suspend fun loadDashboard(): DashboardUiModel = supervisorScope {
-    val profile = async { runCatching { profileRepository.getProfile() } }
-    val banners = async { runCatching { bannerRepository.getBanners() } }
-    val recommendations = async { runCatching { recommendationRepository.getItems() } }
+
+// Partial: кожен child явно моделює свій result
+// (runCatchingNonCancellation — див. Coroutine cancellation нижче)
+suspend fun loadDashboard(): DashboardUiModel = supervisorScope {
+    val profile = async { runCatchingNonCancellation { profileRepository.getProfile() } }
+    val banners = async { runCatchingNonCancellation { bannerRepository.getBanners() } }
+    val recommendations = async { runCatchingNonCancellation { recommendationRepository.getItems() } }
 
     DashboardUiModel(
         profile = profile.await().getOrNull(),
@@ -6757,35 +6600,8 @@ Child скасовується теж — це основа structured concurren
     )
 }
 </code></pre>
-<h3 id="типові-помилки-17">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-17">#</a></h3>
-<ul>
-<li>Використовувати <code>supervisorScope</code> як blanket fix для crashes.</li>
-<li>Не обробляти exceptions всередині supervised children.</li>
-<li>Використовувати <code>coroutineScope</code> для optional widgets і падати всім екраном.</li>
-<li>Не пояснювати business semantics failure.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-17">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-17">#</a></h3>
-<blockquote>
-<p>Я вибираю між <code>coroutineScope</code> і <code>supervisorScope</code> за семантикою фічі. Якщо операція атомарна — <code>coroutineScope</code>: один failure скасовує все. Якщо UI може показати partial content — <code>supervisorScope</code>, але тоді я явно моделюю result кожного child, наприклад через <code>runCatching</code> або domain result. Supervisor не означає “ignore errors”, він означає “errors ізольовані”.</p>
-</blockquote>
-<h3 id="follow-up-питання-8">Follow-up питання<a aria-label="Посилання на розділ: Follow-up питання" class="heading-anchor" href="#follow-up-питання-8">#</a></h3>
-<p><strong>Чи ловить <code>supervisorScope</code> exceptions автоматично?</strong><br/>
-Ні. Він лише ізолює failure: siblings не скасовуються. Необроблений виняток дитини все одно треба ловити — try/catch усередині child або handler. supervisorScope — це failure isolation, а не error handling.</p>
-<p><strong>Що буде з siblings при failure у <code>coroutineScope</code>?</strong><br/>
-Усі скасовуються, а виняток перекидається далі — all-or-nothing семантика. Це правильний вибір, коли результати мають сенс лише разом.</p>
-<p><strong>Як <code>SupervisorJob</code> відрізняється від <code>Job</code>?</strong><br/>
-У звичайному Job failure дитини скасовує parent і siblings; у SupervisorJob діти ізольовані одне від одного. Скасування parent-а скасовує дітей в обох випадках.</p>
-<p><strong>Як це застосувати на Home screen?</strong><br/>
-Секції (банери, рекомендації, кошик) — незалежні child-корутини під supervisorScope; кожна мапить свій результат/помилку у свій шматок UI state. Падіння рекомендацій показує placeholder, а не валить екран.</p>
 <hr/>
 <h2 id="job-vs-supervisorjob">Job vs SupervisorJob<a aria-label="Посилання на розділ: Job vs SupervisorJob" class="heading-anchor" href="#job-vs-supervisorjob">#</a></h2>
-<h3 id="питання-18">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-18">#</a></h3>
-<p>Чим <code>Job</code> відрізняється від <code>SupervisorJob</code>?</p>
-<h3 id="коротка-відповідь-15">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-15">#</a></h3>
-<p><code>Job</code> propagates child failure upward і зазвичай скасовує siblings. <code>SupervisorJob</code> ізолює child failures: failure одного child не скасовує інших children.</p>
-<h3 id="senior-level-пояснення-18">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-18">#</a></h3>
-<p><code>SupervisorJob</code> часто використовується у ViewModel scope, бо незалежні UI operations не мають падати всі разом. Але це не означає, що exceptions можна ігнорувати. Кожна coroutine має мати explicit error handling strategy.</p>
-<h3 id="production-приклад-10">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-10">#</a></h3>
 <pre><code class="language-kotlin">class AppCoroutineScope @Inject constructor() : CoroutineScope {
     override val coroutineContext: CoroutineContext =
         SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, throwable -&gt;
@@ -6795,32 +6611,9 @@ Child скасовується теж — це основа structured concurren
 }
 </code></pre>
 <p>Такий scope може бути доречним для app-wide non-UI задач, але його потрібно cancel при shutdown тільки в специфічних середовищах; у Android process-level lifetime зазвичай закінчується разом із process.</p>
-<h3 id="типові-помилки-18">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-18">#</a></h3>
-<ul>
-<li>Додавати <code>SupervisorJob</code> у кожен scope без розуміння.</li>
-<li>Думати, що <code>SupervisorJob</code> “обробляє” exceptions.</li>
-<li>Створювати scope в repository без lifecycle owner.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-18">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-18">#</a></h3>
-<blockquote>
-<p><code>SupervisorJob</code> змінює failure propagation між children, але не є error handling mechanism. Я використовую його там, де children логічно незалежні. Якщо операція атомарна, звичайний <code>Job</code>/<code>coroutineScope</code> часто правильніший.</p>
-</blockquote>
 <hr/>
 <h2 id="dispatchers-withcontext-suspend-vs-blocking">Dispatchers, withContext, suspend vs blocking<a aria-label="Посилання на розділ: Dispatchers, withContext, suspend vs blocking" class="heading-anchor" href="#dispatchers-withcontext-suspend-vs-blocking">#</a></h2>
-<h3 id="питання-19">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-19">#</a></h3>
-<p>Що таке Dispatchers і коли використовувати <code>withContext</code>?</p>
-<h3 id="просте-пояснення-4">Просте пояснення<a aria-label="Посилання на розділ: Просте пояснення" class="heading-anchor" href="#просте-пояснення-4">#</a></h3>
-<p>Dispatcher визначає, на яких threads виконується coroutine. <code>Dispatchers.Main</code> — UI thread, <code>IO</code> — blocking IO, <code>Default</code> — CPU-heavy work. <code>withContext</code> перемикає context для частини suspend function.</p>
-<h3 id="senior-level-пояснення-19">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-19">#</a></h3>
-<p><code>suspend</code> не означає автоматично background thread. Suspend function може виконуватися на caller dispatcher, якщо всередині не змінює context. Тому blocking IO в suspend function без <code>withContext(Dispatchers.IO)</code> може заблокувати Main thread.</p>
-<p>Правило:</p>
-<ul>
-<li>UI state update — Main.</li>
-<li>Network/DB blocking APIs — IO.</li>
-<li>CPU-heavy mapping/sorting/parsing — Default.</li>
-<li>Repository може сам гарантувати dispatcher або очікувати dispatcher від caller — але в команді це має бути стандартизовано.</li>
-</ul>
-<h3 id="production-приклад-11">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-11">#</a></h3>
+<p>Repository може сам гарантувати dispatcher або очікувати dispatcher від caller — але в команді це має бути стандартизовано (типово: data-шар гарантує main-safety, ViewModel про потоки не знає).</p>
 <pre><code class="language-kotlin">class ProductRepository @Inject constructor(
     private val api: ProductApi,
     private val dao: ProductDao,
@@ -6834,44 +6627,12 @@ Child скасовується теж — це основа structured concurren
     }
 }
 </code></pre>
-<h3 id="типові-помилки-19">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-19">#</a></h3>
-<ul>
-<li>Вважати, що Retrofit suspend call завжди вирішує всі threading питання.</li>
-<li>Робити heavy JSON/list mapping на Main.</li>
-<li>Використовувати <code>Dispatchers.IO</code> для CPU-heavy work.</li>
-<li>Hardcode dispatchers і ускладнювати tests.</li>
-<li>Використовувати <code>runBlocking</code> у production UI code.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-19">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-19">#</a></h3>
-<blockquote>
-<p>Suspend function — це не обов’язково background work. Вона просто може suspend/resume без blocking thread. Я явно контролюю dispatcher для blocking IO або CPU-heavy tasks. Dispatchers inject-ю через DI, щоб у тестах замінити їх на test dispatcher.</p>
-</blockquote>
-<h3 id="follow-up-питання-9">Follow-up питання<a aria-label="Посилання на розділ: Follow-up питання" class="heading-anchor" href="#follow-up-питання-9">#</a></h3>
-<p><strong>Чому <code>runBlocking</code> небезпечний на Main thread?</strong><br/>
-Він блокує потік до завершення всієї корутини — фризи кадрів і ANR. Легітимні місця: <code>main()</code>, тести, рідкісні синхронні мости в legacy-коді (як runBlocking у Authenticator, де OkHttp API синхронний).</p>
-<p><strong>Чим <code>Dispatchers.IO</code> відрізняється від <code>Default</code>?</strong><br/>
-IO — еластичний пул для blocking IO (диск, блокуючі мережеві API). Default — пул ~за кількістю ядер для CPU-bound роботи (парсинг, сортування). CPU-робота на IO — oversubscription; blocking IO на Default — голодування пулу.</p>
-<p><strong>Де краще перемикати dispatcher — у ViewModel чи Repository?</strong><br/>
-У data-шарі: репозиторій/data source гарантують main-safety за контрактом (<code>withContext(io)</code> всередині). ViewModel про потоки не знає. Dispatcher-и інжектяться — інакше тести стають недетермінованими.</p>
+<p>Типові помилки: вважати, що Retrofit suspend call завжди вирішує всі threading питання; робити heavy JSON/list mapping на Main; використовувати <code>Dispatchers.IO</code> для CPU-heavy work.</p>
+<p><strong>Чому <code>runBlocking</code> небезпечний на Main thread?</strong> Він блокує потік до завершення всієї корутини — фризи кадрів і ANR. Легітимні місця: <code>main()</code>, тести, рідкісні синхронні мости в legacy-коді (як runBlocking у Authenticator, де OkHttp API синхронний).</p>
+<p><strong>Чим <code>Dispatchers.IO</code> відрізняється від <code>Default</code>?</strong> IO — еластичний пул для blocking IO (диск, блокуючі мережеві API). Default — пул ~за кількістю ядер для CPU-bound роботи (парсинг, сортування). CPU-робота на IO — oversubscription; blocking IO на Default — голодування пулу.</p>
 <hr/>
 <h2 id="coroutine-cancellation">Coroutine cancellation<a aria-label="Посилання на розділ: Coroutine cancellation" class="heading-anchor" href="#coroutine-cancellation">#</a></h2>
-<h3 id="питання-20">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-20">#</a></h3>
-<p>Як працює cancellation у coroutines?</p>
-<h3 id="просте-пояснення-5">Просте пояснення<a aria-label="Посилання на розділ: Просте пояснення" class="heading-anchor" href="#просте-пояснення-5">#</a></h3>
-<p>Cancellation у coroutines cooperative. Coroutine має перевіряти cancellation у suspension points або вручну через <code>isActive</code>, <code>ensureActive</code>, <code>yield</code>. Якщо coroutine виконує tight loop без suspension/checks, вона може не скасуватися вчасно.</p>
-<h3 id="senior-level-пояснення-20">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-20">#</a></h3>
-<p>Cancellation — це normal control flow, а не error. <code>CancellationException</code> не слід перетворювати на generic error state. Якщо ти ловиш <code>Exception</code>, треба не проковтнути cancellation випадково.</p>
-<p>Правильно:</p>
-<pre><code class="language-kotlin">try {
-    repository.load()
-} catch (e: CancellationException) {
-    throw e
-} catch (e: Exception) {
-    emitError(e)
-}
-</code></pre>
-<p>Або використовувати <code>runCatching</code> обережно, бо він ловить <code>CancellationException</code> як <code>Throwable</code>/<code>Exception</code> залежно від usage. У production часто пишуть helper, який rethrow cancellation.</p>
-<h3 id="production-приклад-12">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-12">#</a></h3>
+<p><code>runCatching</code> ловить і <code>CancellationException</code>, тому в production часто пишуть helper, який rethrow cancellation (використовується в прикладах цього розділу):</p>
 <pre><code class="language-kotlin">suspend inline fun &lt;T&gt; runCatchingNonCancellation(
     crossinline block: suspend () -&gt; T
 ): Result&lt;T&gt; {
@@ -6884,53 +6645,18 @@ IO — еластичний пул для blocking IO (диск, блокуюч�
     }
 }
 </code></pre>
-<p>Long-running CPU work:</p>
-<pre><code class="language-kotlin">suspend fun calculateDiff(items: List&lt;Item&gt;): DiffResult = withContext(Dispatchers.Default) {
-    for (item in items) {
-        ensureActive()
-        // heavy calculation
-    }
-    buildDiffResult(items)
-}
-</code></pre>
-<h3 id="типові-помилки-20">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-20">#</a></h3>
-<ul>
-<li>Catch <code>Exception</code> і не rethrow <code>CancellationException</code>.</li>
-<li>Виконувати infinite/tight loops без <code>isActive</code>/<code>ensureActive</code>.</li>
-<li>Робити cleanup без <code>NonCancellable</code>, коли cleanup suspend-иться.</li>
-<li>Плутати cancellation з error.</li>
-<li>Показувати error snackbar при user navigation cancellation.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-20">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-20">#</a></h3>
-<blockquote>
-<p>Cancellation у coroutines cooperative і є нормальною частиною lifecycle. Якщо користувач закрив екран, screen-level coroutine має скасуватися без error UI. Я уважно ставлюся до <code>CancellationException</code>: не проковтую її в broad catch і не перетворюю на failure. Для CPU loops додаю cancellation checks, а cleanup роблю в <code>finally</code>, іноді з <code>NonCancellable</code>, якщо cleanup має suspend operation.</p>
-</blockquote>
-<h3 id="follow-up-питання-10">Follow-up питання<a aria-label="Посилання на розділ: Follow-up питання" class="heading-anchor" href="#follow-up-питання-10">#</a></h3>
-<p><strong>Чому cancellation cooperative?</strong><br/>
-Скасування — це прапорець стану Job, який перевіряється у suspension points. Примусово вбити потік безпечно неможливо, тож обчислювальний цикл без suspension/перевірок не зупиниться — додавайте <code>ensureActive()</code>/<code>yield()</code>.</p>
-<p><strong>Що таке <code>CancellationException</code>?</strong><br/>
-Службовий сигнал скасування, реалізований як виняток. Це не помилка: його не можна ковтати загальним catch і не можна показувати користувачу як error — див. Edge Case №15.</p>
-<p><strong>Як зробити cancellable wrapper навколо callback API?</strong><br/>
-<code>suspendCancellableCoroutine</code>: resume у колбеку успіху/помилки + <code>invokeOnCancellation</code> для відписки і закриття ресурсу. Без invokeOnCancellation callback-джерело тече після виходу з екрана.</p>
-<p><strong>Коли використовувати <code>NonCancellable</code>?</strong><br/>
-Тільки для короткого критичного cleanup у <code>finally</code> вже скасованої корутини: закрити транзакцію, дописати журнал. Не для «щоб бізнес-логіка точно доробилась» — це ламає скасування.</p>
+<p><strong>Чому cancellation cooperative?</strong> Скасування — це прапорець стану Job, який перевіряється у suspension points. Примусово вбити потік безпечно неможливо, тож обчислювальний цикл без suspension/перевірок не зупиниться — додавайте <code>ensureActive()</code>/<code>yield()</code>. CancellationException — службовий сигнал, не помилка (див. також Edge Case №15).</p>
 <hr/>
 <h2 id="exception-handling-in-coroutines">Exception handling in coroutines<a aria-label="Посилання на розділ: Exception handling in coroutines" class="heading-anchor" href="#exception-handling-in-coroutines">#</a></h2>
-<h3 id="питання-21">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-21">#</a></h3>
-<p>Як обробляти exceptions у coroutines?</p>
-<h3 id="просте-пояснення-6">Просте пояснення<a aria-label="Посилання на розділ: Просте пояснення" class="heading-anchor" href="#просте-пояснення-6">#</a></h3>
-<p>Exceptions у coroutines залежать від builder і scope. У <code>launch</code> uncaught exception піде в parent/handler. У <code>async</code> exception зберігається в <code>Deferred</code> і буде thrown при <code>await</code>. <code>CoroutineExceptionHandler</code> працює тільки для uncaught exceptions у root coroutine, не як універсальний try/catch.</p>
-<h3 id="senior-level-пояснення-21">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-21">#</a></h3>
-<p>Senior має пояснити кілька рівнів error handling:</p>
+<p>Рівні error handling, які має пояснити senior:</p>
 <ol>
 <li><strong>Local handling</strong> — try/catch навколо конкретного operation.</li>
-<li><strong>Domain result</strong> — sealed <code>Result</code>, <code>Either</code>, typed error.</li>
-<li><strong>UI state</strong> — user-friendly message/action.</li>
-<li><strong>Global logging</strong> — non-fatal reporting for unexpected errors.</li>
+<li><strong>Domain result</strong> — sealed <code>Result</code>, <code>Either</code>, typed error на межі data→domain (Success / типізовані Error-причини, як NetworkError у розділі Networking і Data). Винятки — для неочікуваного; очікувані стани — частина типу результату, а не control flow через throw.</li>
+<li><strong>UI state</strong> — user-friendly message/action; не показувати raw exception message користувачу.</li>
+<li><strong>Global logging</strong> — non-fatal reporting для unexpected errors; expected domain errors не логувати як crash.</li>
 <li><strong>Cancellation</strong> — not an error.</li>
 </ol>
 <p>У ViewModel краще явно оновлювати UI state, а не покладатися на global <code>CoroutineExceptionHandler</code>.</p>
-<h3 id="production-приклад-13">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-13">#</a></h3>
 <pre><code class="language-kotlin">sealed class CheckoutError : Exception() {
     class Network : CheckoutError()
     class PaymentDeclined : CheckoutError()
@@ -6946,9 +6672,9 @@ class SubmitCheckoutUseCase @Inject constructor(
         throw throwable.toCheckoutError()
     }
 }
-</code></pre>
-<p>ViewModel:</p>
-<pre><code class="language-kotlin">fun submit() {
+
+// ViewModel
+fun submit() {
     viewModelScope.launch {
         _uiState.update { it.copy(isSubmitting = true) }
 
@@ -6965,59 +6691,12 @@ class SubmitCheckoutUseCase @Inject constructor(
     }
 }
 </code></pre>
-<h3 id="типові-помилки-21">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-21">#</a></h3>
-<ul>
-<li>Думати, що <code>CoroutineExceptionHandler</code> ловить все.</li>
-<li>Не await-ити <code>async</code> і губити exception.</li>
-<li>Catch <code>Throwable</code> без rethrow cancellation.</li>
-<li>Показувати raw exception message користувачу.</li>
-<li>Логувати expected domain errors як crash.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-21">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-21">#</a></h3>
-<blockquote>
-<p>Я обробляю errors на правильному рівні. Expected domain/network errors маплю в typed result і показую в UI state. Unexpected errors логую як non-fatal. <code>CoroutineExceptionHandler</code> не використовую як заміну try/catch у ViewModel. Також завжди пам’ятаю, що cancellation — не failure.</p>
-</blockquote>
-<h3 id="follow-up-питання-11">Follow-up питання<a aria-label="Посилання на розділ: Follow-up питання" class="heading-anchor" href="#follow-up-питання-11">#</a></h3>
-<p><strong>Чому <code>CoroutineExceptionHandler</code> не ловить exception всередині <code>async</code> до <code>await</code>?</strong><br/>
-Контракт async: помилку має отримати споживач результату при <code>await</code>. CEH спрацьовує лише для uncaught-помилок root launch-подібних корутин; для async він свідомо не викликається.</p>
-<p><strong>Як помилки Flow відрізняються від coroutine errors?</strong><br/>
-У Flow виняток тече вниз по ланцюжку і обробляється <code>catch</code>/<code>retry</code> (лише upstream); помилка термінально завершує потік. У звичайних корутинах помилка пропагується вгору по Job-ієрархії і скасовує сусідів.</p>
-<p><strong>Як моделювати domain errors?</strong><br/>
-Sealed-ієрархія результатів на межі data→domain (Success / типізовані Error-причини, як NetworkError у розділі Networking і Data). Винятки — для неочікуваного; очікувані стани — частина типу результату, а не control flow через throw.</p>
+<p><strong>Як помилки Flow відрізняються від coroutine errors?</strong> У Flow виняток тече вниз по ланцюжку і обробляється <code>catch</code>/<code>retry</code> (лише upstream); помилка термінально завершує потік. У звичайних корутинах помилка пропагується вгору по Job-ієрархії і скасовує сусідів.</p>
 <hr/>
 <h2 id="lifecycle-aware-coroutine-scopes">Lifecycle-aware coroutine scopes<a aria-label="Посилання на розділ: Lifecycle-aware coroutine scopes" class="heading-anchor" href="#lifecycle-aware-coroutine-scopes">#</a></h2>
-<h3 id="питання-22">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-22">#</a></h3>
-<p>Коли використовувати <code>viewModelScope</code>, <code>lifecycleScope</code>, <code>rememberCoroutineScope</code>?</p>
-<h3 id="коротка-відповідь-16">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-16">#</a></h3>
-<p><code>viewModelScope</code> — для роботи, яка живе разом із ViewModel. <code>lifecycleScope</code> — для lifecycle owner, наприклад Activity/Fragment. <code>rememberCoroutineScope</code> — Compose scope, прив’язаний до composition, корисний для UI events, які запускають coroutine з callback.</p>
-<h3 id="senior-level-пояснення-22">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-22">#</a></h3>
-<p>Scope має відповідати lifetime задачі:</p>
-<ul>
-<li>Load screen data — <code>viewModelScope</code>.</li>
-<li>Collect UI state in Fragment — <code>viewLifecycleOwner.lifecycleScope + repeatOnLifecycle</code>.</li>
-<li>Snackbar/animation/scroll action у Compose — <code>rememberCoroutineScope</code>.</li>
-<li>App-wide sync — application scope/WorkManager, не ViewModel.</li>
-</ul>
-<h3 id="типові-помилки-22">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-22">#</a></h3>
-<ul>
-<li>Запускати screen work в <code>GlobalScope</code>.</li>
-<li>Collect Flow без <code>repeatOnLifecycle</code>.</li>
-<li>Використовувати <code>rememberCoroutineScope</code> для business logic.</li>
-<li>Запускати довгу задачу в Composable без effect key.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-22">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-22">#</a></h3>
-<blockquote>
-<p>Я вибираю coroutine scope за lifetime роботи. Якщо робота має жити поки існує ViewModel — <code>viewModelScope</code>. Якщо це UI collection — lifecycle-aware collection. Якщо coroutine потрібна для UI callback у Compose — <code>rememberCoroutineScope</code>. Якщо робота має пережити екран, я не ховаю її у ViewModel, а використовую repository/application scope або WorkManager залежно від гарантій.</p>
-</blockquote>
+<p>Scope має відповідати lifetime задачі: load screen data — <code>viewModelScope</code>; collect UI state у Fragment — <code>viewLifecycleOwner.lifecycleScope + repeatOnLifecycle</code>; snackbar/animation/scroll action у Compose — <code>rememberCoroutineScope</code>; app-wide sync — application scope/WorkManager залежно від гарантій, не ViewModel. Типові помилки: використовувати <code>rememberCoroutineScope</code> для business logic; запускати довгу задачу в Composable без effect key.</p>
 <hr/>
 <h2 id="testing-coroutines">Testing coroutines<a aria-label="Посилання на розділ: Testing coroutines" class="heading-anchor" href="#testing-coroutines">#</a></h2>
-<h3 id="питання-23">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-23">#</a></h3>
-<p>Як тестувати coroutine code у ViewModel/use cases?</p>
-<h3 id="коротка-відповідь-17">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-17">#</a></h3>
-<p>Використовують <code>kotlinx-coroutines-test</code>, <code>runTest</code>, test dispatchers, injected dispatchers і контроль virtual time. Для Flow часто використовують Turbine.</p>
-<h3 id="senior-level-пояснення-23">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-23">#</a></h3>
-<p>Production code не має hardcode-ити dispatchers, інакше тести стають flaky. Dispatchers треба inject-ити. У тестах використовують <code>StandardTestDispatcher</code> для контрольованого виконання або <code>UnconfinedTestDispatcher</code> для простіших сценаріїв, але треба розуміти різницю.</p>
-<h3 id="production-like-приклад">Production-like приклад<a aria-label="Посилання на розділ: Production-like приклад" class="heading-anchor" href="#production-like-приклад">#</a></h3>
 <pre><code class="language-kotlin">@OptIn(ExperimentalCoroutinesApi::class)
 class ProductViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
@@ -7048,18 +6727,7 @@ class ProductViewModelTest {
     }
 }
 </code></pre>
-<h3 id="типові-помилки-23">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-23">#</a></h3>
-<ul>
-<li>Використовувати real Dispatchers у тестах.</li>
-<li>Не контролювати virtual time.</li>
-<li>Тестувати implementation details замість observable state.</li>
-<li>Не тестувати cancellation/error сценарії.</li>
-<li>Зловживати mocks для простих repositories, де fake був би стабільніший.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-23">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-23">#</a></h3>
-<blockquote>
-<p>Coroutine tests мають бути deterministic. Я inject-ю dispatchers, використовую <code>runTest</code>, контролюю virtual time і перевіряю observable state/events. Для Flow використовую Turbine. Я також тестую cancellation, retry, error mapping і порядок state transitions, якщо це важливо для UX.</p>
-</blockquote>
+<p>Не зловживайте mocks для простих repositories, де fake був би стабільніший.</p>
 <hr/>
 <h2 id="coroutines-and-concurrency-підсумок">Coroutines and Concurrency — підсумок<a aria-label="Посилання на розділ: Coroutines and Concurrency — підсумок" class="heading-anchor" href="#coroutines-and-concurrency-підсумок">#</a></h2>
 <p>На Senior Android interview Coroutines — одна з найважливіших тем. Недостатньо сказати “launch запускає, async повертає результат”. Треба пояснити structured concurrency, lifecycle ownership, cancellation, exception propagation, partial failure, dispatcher strategy і testing. Найсильніша відповідь завжди прив’язує concurrency design до business semantics.</p>
@@ -15196,90 +14864,10 @@ val uiState: StateFlow&lt;CheckoutUiState&gt; = _uiState.asStateFlow()
 }
 </code></pre>
 </div></details><details class="major-section" data-key="coroutines-and-concurrency" data-title="Coroutines and Concurrency" id="en-coroutines-and-concurrency" open=""><summary class="major-summary"><span class="major-title">Coroutines and Concurrency</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<p><strong>More detail:</strong> <a href="#en-kotlin-coroutines-foundations-internals">Kotlin Coroutines: foundations and internals</a> (ownership, Job tree, launch/async, dispatchers and withContext, cancellation) and <a href="#en-kotlin-coroutines-failures-supervision-testing">Kotlin Coroutines: failures, supervision, cleanup, testing, and debugging</a> (coroutineScope vs supervisorScope, exception propagation, CoroutineExceptionHandler, preserving CancellationException, test dispatchers). Only the short interview wording is kept here.</p>
 <h2 id="en-structured-concurrency">Structured concurrency<a aria-label="Link to section: Structured concurrency" class="heading-anchor" href="#en-structured-concurrency">#</a></h2>
-<h3 id="en-simple-explanation-3">Simple explanation<a aria-label="Link to section: Simple explanation" class="heading-anchor" href="#en-simple-explanation-3">#</a></h3>
-<p>Structured concurrency means coroutines have clear parent-child relationships. When the parent is cancelled, children are cancelled. When a child fails, the parent is notified according to the scope semantics.</p>
-<h3 id="en-senior-level-explanation-3">Senior-level explanation<a aria-label="Link to section: Senior-level explanation" class="heading-anchor" href="#en-senior-level-explanation-3">#</a></h3>
-<p>Structured concurrency gives lifecycle ownership to asynchronous work. In Android, this prevents work from outliving screens or feature scopes. It also makes failures and cancellation predictable. Unstructured work such as <code>GlobalScope.launch</code> is dangerous because no component owns it.</p>
-<pre><code class="language-kotlin">class RefreshOrdersUseCase @Inject constructor(
-    private val api: OrdersApi,
-    private val dao: OrdersDao,
-    private val dispatcher: CoroutineDispatcher
-) {
-    suspend operator fun invoke() = withContext(dispatcher) {
-        val remote = api.getOrders()
-        dao.replaceAll(remote.map { it.toEntity() })
-    }
-}
-</code></pre>
-<h3 id="en-common-mistakes-6">Common mistakes<a aria-label="Link to section: Common mistakes" class="heading-anchor" href="#en-common-mistakes-6">#</a></h3>
-<ul>
-<li>Using <code>GlobalScope</code> for app work.</li>
-<li>Launching child coroutines without waiting for them.</li>
-<li>Swallowing cancellation.</li>
-<li>Creating custom scopes without clear lifecycle.</li>
-</ul>
 <h3 id="en-interview-wording-5">Interview wording<a aria-label="Link to section: Interview wording" class="heading-anchor" href="#en-interview-wording-5">#</a></h3>
 <p>“I design coroutine ownership explicitly. UI work belongs to <code>viewModelScope</code> or lifecycle scopes; domain suspend functions do not launch unowned background work. If a parent operation is cancelled, its children should normally be cancelled too.”</p>
-<h2 id="en-launch-vs-async"><code>launch</code> vs <code>async</code><a aria-label="Link to section: launch vs async" class="heading-anchor" href="#en-launch-vs-async">#</a></h2>
-<p><code>launch</code> returns <code>Job</code> and is used for fire-and-observe work. <code>async</code> returns <code>Deferred&lt;T&gt;</code> and is used when you need a result, especially for parallel decomposition.</p>
-<pre><code class="language-kotlin">suspend fun loadHome(): HomeData = coroutineScope {
-    val profile = async { profileRepository.getProfile() }
-    val feed = async { feedRepository.getFeed() }
-    HomeData(profile.await(), feed.await())
-}
-</code></pre>
-<h3 id="en-senior-note-2">Senior note<a aria-label="Link to section: Senior note" class="heading-anchor" href="#en-senior-note-2">#</a></h3>
-<p>Do not use <code>async</code> just because you want concurrency. If the result is not awaited, exceptions can be delayed or lost depending on context. Use <code>async</code> when the result is part of the parent operation.</p>
-<h2 id="en-coroutinescope-vs-supervisorscope"><code>coroutineScope</code> vs <code>supervisorScope</code><a aria-label="Link to section: coroutineScope vs supervisorScope" class="heading-anchor" href="#en-coroutinescope-vs-supervisorscope">#</a></h2>
-<p><code>coroutineScope</code> fails fast: if one child fails, the scope cancels other children and rethrows the exception. This is correct when all children are part of one atomic operation.</p>
-<p><code>supervisorScope</code> isolates child failures: one child failure does not cancel siblings. This is useful when partial success is acceptable.</p>
-<pre><code class="language-kotlin">suspend fun loadDashboard(): Dashboard = supervisorScope {
-    val recommendations = async { runCatching { recsRepository.load() } }
-    val banners = async { runCatching { bannersRepository.load() } }
-
-    Dashboard(
-        recommendations = recommendations.await().getOrDefault(emptyList()),
-        banners = banners.await().getOrDefault(emptyList())
-    )
-}
-</code></pre>
-<h3 id="en-interview-wording-6">Interview wording<a aria-label="Link to section: Interview wording" class="heading-anchor" href="#en-interview-wording-6">#</a></h3>
-<p>“I choose <code>coroutineScope</code> when the operation is all-or-nothing. I choose <code>supervisorScope</code> when independent children can fail without invalidating the whole screen.”</p>
-<h2 id="en-cancellation">Cancellation<a aria-label="Link to section: Cancellation" class="heading-anchor" href="#en-cancellation">#</a></h2>
-<p>Cancellation is cooperative. All suspending functions in kotlinx.coroutines (<code>delay</code>, <code>withContext</code>, <code>await</code>, <code>yield</code>) are cancellable; your own suspend function or CPU loop is cancellable only if it calls them or checks <code>ensureActive()</code>/<code>isActive</code>.</p>
-<pre><code class="language-kotlin">suspend fun parseLargeFile(lines: Sequence&lt;String&gt;): List&lt;Item&gt; = withContext(Dispatchers.Default) {
-    lines.mapIndexed { index, line -&gt;
-        ensureActive()
-        parseLine(index, line)
-    }.toList()
-}
-</code></pre>
-<h3 id="en-common-mistakes-7">Common mistakes<a aria-label="Link to section: Common mistakes" class="heading-anchor" href="#en-common-mistakes-7">#</a></h3>
-<ul>
-<li>Catching <code>Exception</code> and swallowing <code>CancellationException</code>.</li>
-<li>Doing blocking IO on Main dispatcher.</li>
-<li>Not cancelling work when UI leaves screen.</li>
-</ul>
-<pre><code class="language-kotlin">try {
-    repository.refresh()
-} catch (e: CancellationException) {
-    throw e
-} catch (e: Throwable) {
-    handleError(e)
-}
-</code></pre>
-<h2 id="en-exception-handling">Exception handling<a aria-label="Link to section: Exception handling" class="heading-anchor" href="#en-exception-handling">#</a></h2>
-<p>Exceptions in coroutines depend on builder and parent scope. A root <code>launch</code> delivers an uncaught failure to the <code>CoroutineExceptionHandler</code>; a root <code>async</code> stores it in <code>Deferred</code> and rethrows on <code>await</code>. As children of a regular Job, both <code>launch</code> and <code>async</code> propagate failure to the parent immediately, cancelling siblings, regardless of <code>await</code>. <code>CoroutineExceptionHandler</code> is not a local try/catch replacement; it catches uncaught exceptions at the boundary.</p>
-<h3 id="en-interview-wording-7">Interview wording<a aria-label="Link to section: Interview wording" class="heading-anchor" href="#en-interview-wording-7">#</a></h3>
-<p>“I prefer local error modeling in suspend functions and ViewModels. I do not rely on <code>CoroutineExceptionHandler</code> for normal business errors. I use it only as a last-resort boundary for uncaught failures.”</p>
-<h2 id="en-dispatchers-and-withcontext">Dispatchers and <code>withContext</code><a aria-label="Link to section: Dispatchers and withContext" class="heading-anchor" href="#en-dispatchers-and-withcontext">#</a></h2>
-<p>Use Main for UI, IO for blocking IO, Default for CPU-bound work. <code>withContext</code> changes dispatcher while preserving structured concurrency.</p>
-<pre><code class="language-kotlin">suspend fun loadUser(): User = withContext(Dispatchers.IO) {
-    api.getUser().toDomain()
-}
-</code></pre>
-<p>In tests, inject dispatchers instead of hardcoding them.</p>
 </div></details><details class="major-section" data-key="flow" data-title="Flow" id="en-flow" open=""><summary class="major-summary"><span class="major-title">Flow</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
 <h2 id="en-cold-flow-vs-hot-flow">Cold Flow vs Hot Flow<a aria-label="Link to section: Cold Flow vs Hot Flow" class="heading-anchor" href="#en-cold-flow-vs-hot-flow">#</a></h2>
 <p>Cold Flow starts executing when collected. Each collector triggers the upstream again. Hot Flow exists independently of collectors and can emit even when nobody is collecting.</p>
