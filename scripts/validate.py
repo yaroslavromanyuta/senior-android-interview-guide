@@ -86,6 +86,12 @@ def validate_index_structure() -> list[str]:
     if duplicate_ids:
         errors.append(f"index.html: duplicate ids: {', '.join(duplicate_ids)}")
 
+    for tag in ("details", "div"):
+        opened = len(re.findall(rf"<{tag}[\s>]", content))
+        closed = content.count(f"</{tag}>")
+        if opened != closed:
+            errors.append(f"index.html: unbalanced <{tag}> tags ({opened} opened, {closed} closed)")
+
     id_set = set(ids)
     unresolved = sorted({
         target
@@ -155,12 +161,11 @@ def validate_index_structure() -> list[str]:
             f'{prefix}{STAGE30_KEY}',
             f'{prefix}{STAGE31_KEY}',
             f'{prefix}{STAGE32_KEY}',
-            f'{prefix}kotlin-for-android',
         )
         positions = [content.find(f'id="{value}"') for value in ordered_ids]
         if -1 in positions or positions != sorted(positions):
             errors.append(
-                f"index.html: {prefix or 'uk-'}Stages 2–32 must follow Stage 1 and precede Kotlin for Android"
+                f"index.html: {prefix or 'uk-'}Stages 2–32 must follow Stage 1 in order"
             )
 
         stage5_id = f"{prefix}{STAGE5_KEY}"
@@ -225,7 +230,7 @@ def validate_index_structure() -> list[str]:
             or stage30_id not in major_ids
             or stage31_id not in major_ids
             or stage32_id not in major_ids
-            or f"{prefix}kotlin-for-android" not in major_ids
+            or major_ids.index(stage32_id) + 1 >= len(major_ids)
             or major_ids.index(stage6_id) != major_ids.index(stage5_id) + 1
             or major_ids.index(stage7_id) != major_ids.index(stage6_id) + 1
             or major_ids.index(stage8_id) != major_ids.index(stage7_id) + 1
@@ -253,7 +258,6 @@ def validate_index_structure() -> list[str]:
             or major_ids.index(stage30_id) != major_ids.index(stage29_id) + 1
             or major_ids.index(stage31_id) != major_ids.index(stage30_id) + 1
             or major_ids.index(stage32_id) != major_ids.index(stage31_id) + 1
-            or major_ids.index(f"{prefix}kotlin-for-android") != major_ids.index(stage32_id) + 1
         ):
             errors.append(
                 f"index.html: {stage6_id!r} must immediately follow {stage5_id!r}, "
@@ -566,15 +570,21 @@ def validate_index_structure() -> list[str]:
                 f"index.html: TOC link {stage31_id!r} must be immediately after {stage30_id!r}"
             )
 
-        stage32_toc_adjacency = re.search(
+        # The section that follows Stage 32 (cross-cutting interview material) must follow it in the TOC too.
+        post_stage32_id = (
+            major_ids[major_ids.index(stage32_id) + 1]
+            if stage32_id in major_ids and major_ids.index(stage32_id) + 1 < len(major_ids)
+            else ""
+        )
+        stage32_toc_adjacency = post_stage32_id and re.search(
             rf'<li class="toc-major">\s*<a data-target="{re.escape(stage31_id)}"[^>]*>.*?</a>\s*'
             rf'</li>\s*<li class="toc-major">\s*<a data-target="{re.escape(stage32_id)}"[^>]*>.*?</a>\s*'
-            rf'</li>\s*<li class="toc-major">\s*<a data-target="{re.escape(prefix + "kotlin-for-android")}"[^>]*>',
+            rf'</li>\s*<li class="toc-major">\s*<a data-target="{re.escape(post_stage32_id)}"[^>]*>',
             content, re.S,
         )
         if not stage32_toc_adjacency:
             errors.append(
-                f"index.html: final TOC link {stage32_id!r} must be immediately after {stage31_id!r} and before Kotlin for Android"
+                f"index.html: final TOC link {stage32_id!r} must be immediately after {stage31_id!r} and before the next section"
             )
 
     stage4_contracts = (
