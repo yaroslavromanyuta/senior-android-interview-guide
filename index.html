@@ -676,7 +676,6 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <li><a data-target="як-відповідати-на-android-system-design-питання" href="#як-відповідати-на-android-system-design-питання">Як відповідати на Android System Design питання</a></li>
 <li><a data-target="designing-a-chat-app" href="#designing-a-chat-app">Designing a chat app</a></li>
 <li><a data-target="designing-an-offline-first-app" href="#designing-an-offline-first-app">Designing an offline-first app</a></li>
-<li><a data-target="designing-a-payment-flow" href="#designing-a-payment-flow">Designing a payment flow</a></li>
 <li><a data-target="designing-a-news-feed" href="#designing-a-news-feed">Designing a news feed</a></li>
 <li><a data-target="designing-authentication-token-refresh" href="#designing-authentication-token-refresh">Designing authentication/token refresh</a></li>
 <li><a data-target="designing-analytics-architecture" href="#designing-analytics-architecture">Designing analytics architecture</a></li>
@@ -987,9 +986,6 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <li class="toc-major">
 <a data-target="en-android-system-design" href="#en-android-system-design">Android System Design</a>
 <ol class="toc-children">
-<li><a data-target="en-designing-a-chat-app" href="#en-designing-a-chat-app">Designing a chat app</a></li>
-<li><a data-target="en-designing-an-offline-first-app" href="#en-designing-an-offline-first-app">Designing an offline-first app</a></li>
-<li><a data-target="en-designing-a-payment-flow" href="#en-designing-a-payment-flow">Designing a payment flow</a></li>
 <li><a data-target="en-designing-a-news-feed" href="#en-designing-a-news-feed">Designing a news feed</a></li>
 <li><a data-target="en-designing-navigation-architecture" href="#en-designing-navigation-architecture">Designing navigation architecture</a></li>
 </ol>
@@ -6830,6 +6826,7 @@ fun errorState_showsRetryButton() {
 <h2 id="performance-підсумок">Performance — підсумок<a aria-label="Посилання на розділ: Performance — підсумок" class="heading-anchor" href="#performance-підсумок">#</a></h2>
 <p>Senior performance відповідь має бути measurement-driven. Треба знати memory leaks, ANR, startup, rendering, images, threading, battery, StrictMode, profiling і baseline profiles. Головне — не оптимізувати інтуїтивно, а знаходити bottleneck і виправляти root cause.</p>
 </div></details><details class="major-section" data-key="android-system-design" data-title="Android System Design" id="android-system-design" open=""><summary class="major-summary"><span class="major-title">Android System Design</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<p><strong>Детальніше:</strong> <a href="#system-design-offline-first-commerce-news-feed">System design: offline-first commerce/news feed</a>, <a href="#system-design-chat-real-time-updates">System design: chat and real-time updates</a>, <a href="#system-design-payments-orders">System design: payments and orders</a>, <a href="#system-design-auth-analytics-feature-flags">System design: auth, analytics and feature flags</a>, <a href="#system-design-scenarios">Android System Design: практичні сценарії</a>. Нижче — лише те, чого там немає.</p>
 <h2 id="як-відповідати-на-android-system-design-питання">Як відповідати на Android System Design питання<a aria-label="Посилання на розділ: Як відповідати на Android System Design питання" class="heading-anchor" href="#як-відповідати-на-android-system-design-питання">#</a></h2>
 <p>System design на Android interview — це не тільки backend-scale design. Interviewer хоче побачити, як ти проектуєш mobile client з урахуванням lifecycle, offline, networking, storage, security, performance, observability, modularization і testing.</p>
 <p>Хороша структура відповіді:</p>
@@ -6847,33 +6844,7 @@ fun errorState_showsRetryButton() {
 </ol>
 <hr/>
 <h2 id="designing-a-chat-app">Designing a chat app<a aria-label="Посилання на розділ: Designing a chat app" class="heading-anchor" href="#designing-a-chat-app">#</a></h2>
-<h3 id="питання-65">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-65">#</a></h3>
-<p>Як спроектувати Android chat app?</p>
-<h3 id="коротка-відповідь-54">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-54">#</a></h3>
-<p>Chat app потребує realtime messaging, local persistence, offline queue, message delivery states, pagination, sync, push notifications, encryption/security, media upload, lifecycle-aware connection management і conflict handling.</p>
-<h3 id="senior-level-design">Senior-level design<a aria-label="Посилання на розділ: Senior-level design" class="heading-anchor" href="#senior-level-design">#</a></h3>
-<h4 id="requirements-clarification">Requirements clarification<a aria-label="Посилання на розділ: Requirements clarification" class="heading-anchor" href="#requirements-clarification">#</a></h4>
-<p>Потрібно уточнити:</p>
-<ul>
-<li>one-to-one чи group chat;</li>
-<li>чи потрібен offline send;</li>
-<li>delivery/read receipts;</li>
-<li>typing indicators;</li>
-<li>attachments/media;</li>
-<li>end-to-end encryption;</li>
-<li>multi-device sync;</li>
-<li>message search;</li>
-<li>retention/delete/edit.</li>
-</ul>
-<h4 id="architecture-2">Architecture<a aria-label="Посилання на розділ: Architecture" class="heading-anchor" href="#architecture-2">#</a></h4>
-<pre><code class="language-text">UI Compose/View
-  -&gt; ChatViewModel
-  -&gt; SendMessageUseCase / ObserveMessagesUseCase
-  -&gt; ChatRepository
-  -&gt; Local DB Room as source of truth
-  -&gt; Remote API/WebSocket/FCM
-</code></pre>
-<h4 id="data-model">Data model<a aria-label="Посилання на розділ: Data model" class="heading-anchor" href="#data-model">#</a></h4>
+<p>Серед вимог до chat уточнити також <strong>message search</strong>. Мінімальна data model: <code>localId</code> для optimistic UI, <code>serverId</code> для дедуплікації:</p>
 <pre><code class="language-kotlin">data class Message(
     val localId: String,
     val serverId: String?,
@@ -6888,71 +6859,14 @@ enum class MessageStatus {
     Pending, Sent, Delivered, Read, Failed
 }
 </code></pre>
-<h4 id="data-flow">Data flow<a aria-label="Посилання на розділ: Data flow" class="heading-anchor" href="#data-flow">#</a></h4>
 <ul>
-<li>UI observe-ить Room Flow.</li>
-<li>Sending message immediately inserts local pending message.</li>
-<li>Background send worker/API call updates status/serverId.</li>
-<li>WebSocket receives new messages and writes to DB.</li>
-<li>FCM wakes app or shows notification when socket inactive.</li>
-<li>Pagination loads older messages and stores them locally.</li>
+<li>Повідомлення і оновлення conversation preview (останнє повідомлення у списку чатів) пишуться в одній DB-транзакції.</li>
+<li>Pending-повідомлення без server sequence показуються в кінці діалогу, доки сервер не призначить sequence.</li>
+<li>Failed message: обмежені авто-retry з backoff, далі явний статус failed з manual retry у UI. Нескінченний тихий retry — це і retry storm, і повідомлення, що несподівано для користувача «відправиться» через добу.</li>
 </ul>
-<h4 id="production-notes-2">Production notes<a aria-label="Посилання на розділ: Production notes" class="heading-anchor" href="#production-notes-2">#</a></h4>
-<ul>
-<li>Use local ID for optimistic UI.</li>
-<li>Server ID for deduplication.</li>
-<li>Retry pending messages with idempotency key.</li>
-<li>WebSocket lifecycle tied to foreground/auth state, not individual screen if product needs global realtime.</li>
-<li>Attachments use separate upload state and progress.</li>
-<li>DB transaction for message + conversation preview update.</li>
-</ul>
-<h3 id="типові-помилки-62">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-62">#</a></h3>
-<ul>
-<li>UI залежить напряму від WebSocket callbacks.</li>
-<li>Немає local source of truth.</li>
-<li>Duplicate messages після reconnect.</li>
-<li>Немає pending/failed states.</li>
-<li>Polling замість realtime без пояснення trade-off.</li>
-<li>Не враховано process death під час send.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-65">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-65">#</a></h3>
-<blockquote>
-<p>Я б будував chat offline-first: Room як source of truth, UI observe-ить local messages, sending створює pending message з localId, а sync layer відправляє його на сервер і оновлює status/serverId. Realtime updates приходять через WebSocket, push — для background. Основні складності: deduplication, retry/idempotency, ordering, delivery states, lifecycle connection і media upload.</p>
-</blockquote>
-<h3 id="follow-up-питання-18">Follow-up питання<a aria-label="Посилання на розділ: Follow-up питання" class="heading-anchor" href="#follow-up-питання-18">#</a></h3>
-<p><strong>Як уникнути дублікатів після reconnect?</strong><br/>
-Client-generated id (UUID) у кожному повідомленні + серверна дедуплікація по ньому + інкрементальний cursor-синк замість повторної доставки всього. Reconnect тоді безпечний за визначенням.</p>
-<p><strong>Як працює offline send?</strong><br/>
-Outbox: insert у Room зі статусом pending у тій самій транзакції, що показує повідомлення в UI → черга відправки при появі мережі → server ack оновлює статус і додає server_id. Розгорнуто — System Design сценарій №3.</p>
-<p><strong>Як зберігати message ordering?</strong><br/>
-Сортувати за server sequence number per conversation, не за локальним часом (годинники брешуть). Pending-повідомлення показуються в кінці до отримання sequence від сервера.</p>
-<p><strong>Що робити з failed message?</strong><br/>
-Явний статус failed з manual retry у UI; обмежені авто-retry з backoff до того. Нескінченний тихий retry — це і retry storm, і повідомлення, що «відправиться» через добу несподівано для користувача.</p>
-<p><strong>Як реалізувати typing indicator?</strong><br/>
-Ефемерний канал поверх WebSocket: debounce на відправку, TTL на відображення, жодної персистенції і жодних гарантій доставки — це сигнал, який можна губити.</p>
 <hr/>
 <h2 id="designing-an-offline-first-app">Designing an offline-first app<a aria-label="Посилання на розділ: Designing an offline-first app" class="heading-anchor" href="#designing-an-offline-first-app">#</a></h2>
-<h3 id="питання-66">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-66">#</a></h3>
-<p>Як спроектувати offline-first Android app?</p>
-<h3 id="коротка-відповідь-55">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-55">#</a></h3>
-<p>Offline-first app використовує local DB як source of truth. UI читає з DB, remote sync оновлює DB. User actions записуються локально й синхронізуються з сервером, коли network доступний. Потрібні sync queue, conflict resolution, retry, stale state і observability.</p>
-<h3 id="senior-level-design-2">Senior-level design<a aria-label="Посилання на розділ: Senior-level design" class="heading-anchor" href="#senior-level-design-2">#</a></h3>
-<h4 id="core-principles">Core principles<a aria-label="Посилання на розділ: Core principles" class="heading-anchor" href="#core-principles">#</a></h4>
-<ul>
-<li>Local DB is source of truth.</li>
-<li>UI never waits only on network to show cached data.</li>
-<li>Writes are either optimistic or queued.</li>
-<li>Sync is idempotent.</li>
-<li>Conflicts are expected, not exceptional.</li>
-</ul>
-<h4 id="architecture-3">Architecture<a aria-label="Посилання на розділ: Architecture" class="heading-anchor" href="#architecture-3">#</a></h4>
-<pre><code class="language-text">UI -&gt; ViewModel -&gt; UseCase -&gt; Repository
-Repository -&gt; Room Flow for reads
-Repository/SyncManager -&gt; API for refresh/upload
-WorkManager -&gt; background sync
-NetworkMonitor -&gt; constraints/connectivity awareness
-</code></pre>
-<h4 id="production-приклад-34">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-34">#</a></h4>
+<p>Приклад SyncManager, що дренує чергу pending actions з <code>idempotencyKey = action.id</code>: мережева помилка (<code>IOException</code>) зупиняє прохід до наступного запуску синку, конфлікт позначає дію разом із серверним станом для подальшої резолюції.</p>
 <pre><code class="language-kotlin">class SyncManager @Inject constructor(
     private val pendingActionDao: PendingActionDao,
     private val api: SyncApi
@@ -6972,112 +6886,23 @@ NetworkMonitor -&gt; constraints/connectivity awareness
     }
 }
 </code></pre>
-<h3 id="типові-помилки-63">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-63">#</a></h3>
-<ul>
-<li>Treat offline as error screen only.</li>
-<li>No conflict strategy.</li>
-<li>No idempotency for queued writes.</li>
-<li>UI reads remote and local separately, causing inconsistent state.</li>
-<li>WorkManager task not idempotent.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-66">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-66">#</a></h3>
-<blockquote>
-<p>Offline-first означає, що local DB — source of truth, а network — mechanism to refresh/sync. UI observe-ить DB, refresh writes to DB, user actions можуть бути optimistic або queued. Найважливіші складності — conflict resolution, idempotency, stale indicators і retry strategy.</p>
-</blockquote>
-<hr/>
-<h2 id="designing-a-payment-flow">Designing a payment flow<a aria-label="Посилання на розділ: Designing a payment flow" class="heading-anchor" href="#designing-a-payment-flow">#</a></h2>
-<h3 id="питання-67">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-67">#</a></h3>
-<p>Як спроектувати payment flow в Android app?</p>
-<h3 id="коротка-відповідь-56">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-56">#</a></h3>
-<p>Payment flow має бути безпечним, idempotent, lifecycle-safe і recoverable після process death. Треба уникати duplicate charges, мати clear state machine, server-side source of truth, idempotency keys, retry strategy, error handling і observability.</p>
-<h3 id="senior-level-design-3">Senior-level design<a aria-label="Посилання на розділ: Senior-level design" class="heading-anchor" href="#senior-level-design-3">#</a></h3>
-<h4 id="state-machine">State machine<a aria-label="Посилання на розділ: State machine" class="heading-anchor" href="#state-machine">#</a></h4>
-<pre><code class="language-text">Idle -&gt; Validating -&gt; CreatingPaymentIntent -&gt; ConfirmingPayment -&gt; WaitingForResult -&gt; Success
-                                                              -&gt; Failed/Cancelled/RequiresAction
-</code></pre>
-<h4 id="production-considerations">Production considerations<a aria-label="Посилання на розділ: Production considerations" class="heading-anchor" href="#production-considerations">#</a></h4>
-<ul>
-<li>Payment state має зберігатися server-side.</li>
-<li>Client не є source of truth для payment success.</li>
-<li>POST requests мають idempotency key.</li>
-<li>Process death/rotation не мають створити duplicate payment.</li>
-<li>Sensitive data не логувати.</li>
-<li>Use official SDKs where required.</li>
-<li>Handle 3DS/redirect/deep link return.</li>
-</ul>
-<h3 id="типові-помилки-64">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-64">#</a></h3>
-<ul>
-<li>Retry payment POST без idempotency.</li>
-<li>Вважати client success final без server verification.</li>
-<li>Зберігати card data локально.</li>
-<li>Не обробляти process death під час redirect.</li>
-<li>Не мати clear loading/error states.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-67">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-67">#</a></h3>
-<blockquote>
-<p>Payment flow я проектую як state machine, де server — source of truth. Кожна payment attempt має idempotency key, щоб retry або process recreation не створили duplicate charge. Client показує state, але фінальний результат підтверджує backend. Особливо важливо обробити cancellation, redirect/3DS і recovery після process death.</p>
-</blockquote>
 <hr/>
 <h2 id="designing-a-news-feed">Designing a news feed<a aria-label="Посилання на розділ: Designing a news feed" class="heading-anchor" href="#designing-a-news-feed">#</a></h2>
-<h3 id="питання-68">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-68">#</a></h3>
-<p>Як спроектувати news feed?</p>
-<h3 id="коротка-відповідь-57">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-57">#</a></h3>
-<p>News feed потребує pagination, cache, refresh, image loading, offline/stale state, deduplication, analytics, performance optimization і personalization/filtering.</p>
-<h3 id="senior-level-design-4">Senior-level design<a aria-label="Посилання на розділ: Senior-level design" class="heading-anchor" href="#senior-level-design-4">#</a></h3>
+<p>Поверх Paging 3 + RemoteMediator + Room для feed окремо продумати:</p>
 <ul>
-<li>Paging 3 для pagination.</li>
-<li>RemoteMediator для network + Room cache.</li>
-<li>DB source of truth для feed items.</li>
-<li>Image loader з memory/disk cache.</li>
-<li>Separate load states: initial, append, refresh.</li>
-<li>Pull-to-refresh invalidates/refreshes cache.</li>
-<li>Deduplicate by stable content ID.</li>
-<li>Track impressions carefully, not on every recomposition.</li>
+<li>image loader з memory/disk cache; decode зображень не блокує Main;</li>
+<li>stable keys у списку для performance;</li>
+<li>impressions трекати обережно — не на кожну recomposition, інакше duplicate events;</li>
+<li>наступну сторінку не вантажити на кожну появу елемента без throttling;</li>
+<li>offset pagination ламається, коли feed змінюється;</li>
+<li>personalization/filtering.</li>
 </ul>
-<h3 id="типові-помилки-65">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-65">#</a></h3>
-<ul>
-<li>Load next page when item appears without throttling.</li>
-<li>Duplicate impressions due to recomposition.</li>
-<li>Offset pagination breaks when feed changes.</li>
-<li>No stale cache policy.</li>
-<li>Blocking image decode on Main.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-68">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-68">#</a></h3>
-<blockquote>
-<p>Для feed я б використав Paging 3 з Room cache і RemoteMediator, якщо потрібен offline/cache. UI має розрізняти initial load, refresh і append. Для performance важливі stable keys, image caching і контроль analytics impressions, щоб recomposition не створювала duplicate events.</p>
-</blockquote>
 <hr/>
 <h2 id="designing-authentication-token-refresh">Designing authentication/token refresh<a aria-label="Посилання на розділ: Designing authentication/token refresh" class="heading-anchor" href="#designing-authentication-token-refresh">#</a></h2>
-<h3 id="питання-69">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-69">#</a></h3>
-<p>Як спроектувати authentication architecture?</p>
-<h3 id="коротка-відповідь-58">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-58">#</a></h3>
-<p>Потрібен AuthRepository/SessionManager, secure token storage, auth interceptor, synchronized token refresh, session expiration handling, logout propagation, navigation reset і tests for concurrent 401.</p>
-<h3 id="senior-level-design-5">Senior-level design<a aria-label="Посилання на розділ: Senior-level design" class="heading-anchor" href="#senior-level-design-5">#</a></h3>
-<pre><code class="language-text">OkHttp AuthInterceptor -&gt; adds token
-OkHttp Authenticator/AuthRepository -&gt; refresh token with mutex
-TokenStore -&gt; encrypted/persistent storage
-SessionState -&gt; StateFlow&lt;AuthState&gt;
-Navigation layer -&gt; reacts to logged out state
-</code></pre>
-<h3 id="типові-помилки-66">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-66">#</a></h3>
-<ul>
-<li>Refresh storm при multiple 401.</li>
-<li>Infinite retry.</li>
-<li>Token read blocking Main.</li>
-<li>Logout не очищає DB/cache.</li>
-<li>Sensitive tokens у logs.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-69">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-69">#</a></h3>
-<blockquote>
-<p>Auth architecture має розділяти token attachment, refresh і session state. Refresh синхронізую через mutex, retry обмежую, а якщо refresh token expired — очищаю session і повідомляю app-level navigation. Tokens зберігаю безпечно і не логую sensitive data.</p>
-</blockquote>
+<p>Android-компоненти (<code>AuthInterceptor</code>, Authenticator з Mutex, <code>TokenStore</code>, <code>SessionManager</code> зі <code>StateFlow</code>, на який реагує навігація) — у <a href="#sd-auth-system">сценарії №6</a>. Додатково: читання токена не має блокувати Main thread.</p>
 <hr/>
 <h2 id="designing-analytics-architecture">Designing analytics architecture<a aria-label="Посилання на розділ: Designing analytics architecture" class="heading-anchor" href="#designing-analytics-architecture">#</a></h2>
-<h3 id="питання-70">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-70">#</a></h3>
-<p>Як спроектувати analytics architecture?</p>
-<h3 id="коротка-відповідь-59">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-59">#</a></h3>
-<p>Analytics має бути centralized, typed, testable і не прив’язаний напряму до UI implementation details. Потрібні event contracts, user consent/privacy, batching/offline queue за потреби, debugging і duplicate prevention.</p>
-<h3 id="senior-level-design-6">Senior-level design<a aria-label="Посилання на розділ: Senior-level design" class="heading-anchor" href="#senior-level-design-6">#</a></h3>
+<p>Analytics — centralized і typed; конкретні providers приховані за інтерфейсом:</p>
 <pre><code class="language-kotlin">sealed interface AnalyticsEvent {
     data class ScreenViewed(val screen: String) : AnalyticsEvent
     data class ProductClicked(val productId: String, val position: Int) : AnalyticsEvent
@@ -7087,26 +6912,11 @@ interface AnalyticsTracker {
     fun track(event: AnalyticsEvent)
 }
 </code></pre>
-<p>Production notes:</p>
 <ul>
-<li>Events typed, not raw string everywhere.</li>
-<li>UI sends semantic events, not low-level clicks without context.</li>
-<li>Avoid duplicate events from recomposition/lifecycle repeat.</li>
-<li>Consent/privacy rules respected.</li>
-<li>Analytics should not crash app.</li>
+<li>UI/ViewModel відправляє semantic events. У Compose не fire-ити events у body composable — lifecycle/effect-aware підхід, інакше duplicate events від recomposition і duplicate screen views після rotation.</li>
+<li>Analytics dependency не імпортується в domain layer.</li>
+<li>Emission подій покривається тестами.</li>
 </ul>
-<h3 id="типові-помилки-67">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-67">#</a></h3>
-<ul>
-<li>Fire analytics in composable body.</li>
-<li>Raw strings everywhere.</li>
-<li>No testing for event emission.</li>
-<li>Duplicate screen views after rotation.</li>
-<li>Analytics dependency imported in domain layer.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-70">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-70">#</a></h3>
-<blockquote>
-<p>Я роблю analytics typed і centralized. UI/ViewModel відправляє semantic events, а конкретні providers приховані за interface. У Compose не fire-ю events у body, використовую lifecycle/effect-aware approach. Також враховую consent і duplicate prevention.</p>
-</blockquote>
 <hr/>
 <h2 id="designing-navigation-architecture">Designing navigation architecture<a aria-label="Посилання на розділ: Designing navigation architecture" class="heading-anchor" href="#designing-navigation-architecture">#</a></h2>
 <h3 id="питання-71">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-71">#</a></h3>
@@ -8316,15 +8126,14 @@ Halt rollout (безкоштовно і зворотно) → Crashlytics: то�
 <p><strong>Staff/Lead: збірка проєкту виросла до 25 хвилин, команда зла. План?</strong><br/>
 Спочатку дані: build scans, configuration vs execution, критичний шлях модульного графа, частка cache hits у CI. Типові виграші за порядком вартості: remote build cache, configuration cache, KAPT→KSP, розрізання модулів-«хабів» на критичному шляху, винесення environment з flavors, перегляд api→implementation. Далі бюджет (наприклад, локальна інкрементальна збірка ≤ 2 хв, CI PR ≤ 12 хв) і дашборд тренду — інакше за пів року все повернеться.</p>
 </div></details><details class="major-section" data-key="system-design-scenarios" data-title="Android System Design: практичні сценарії" id="system-design-scenarios" open=""><summary class="major-summary"><span class="major-title">Android System Design: практичні сценарії</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<p><strong>Детальніше:</strong> <a href="#system-design-offline-first-commerce-news-feed">offline-first commerce/news feed</a>, <a href="#system-design-chat-real-time-updates">chat and real-time updates</a>, <a href="#system-design-payments-orders">payments and orders</a>, <a href="#system-design-auth-analytics-feature-flags">auth, analytics and feature flags</a>, <a href="#migration-design-live-android-product">migration design</a>. Тут лишено тільки конкретику сценаріїв, якої в цих stages немає.</p>
 <p>Доповнення до framework-розділу: готові розбори типових сценаріїв. Структура кожного: вимоги → архітектура і дані → офлайн/помилки → безпека → тестування й observability → trade-offs і пастки. На співбесіді не розповідай усе підряд — починай з уточнення вимог і веди interviewer-а по шарах.</p>
 
 <h2 id="sd-offline-cart">1. Offline-first шопінг з кошиком<a aria-label="Посилання на розділ: Offline cart" class="heading-anchor" href="#sd-offline-cart">#</a></h2>
-<p><strong>Вимоги уточнити:</strong> чи можна додавати в кошик офлайн? Що з цінами/наявністю при синку? Один девайс чи кілька (кошик шериться з вебом)?</p>
-<p><strong>Архітектура:</strong> Room — source of truth для каталогу (кеш з TTL) і кошика (локальні мутації). Мутації кошика — патерн <strong>outbox</strong>: операція пишеться в таблицю pending_operations у тій самій транзакції, що й оптимістичне оновлення кошика; WorkManager з NetworkType.CONNECTED дренує чергу з retry/backoff.</p>
-<p><strong>Конфлікти:</strong> server-authoritative для цін і наявності: відповідь синку перезаписує локальні ціни; конфлікт «товар зник» → елемент позначається unavailable, UI показує diff («2 товари змінились у ціні»). Ідемпотентні операції з client-generated operation id.</p>
-<p><strong>Помилки/офлайн:</strong> UI завжди рендерить локальний стан + банер sync state (synced / pending N / error). Checkout — тільки онлайн, з idempotency key.</p>
-<p><strong>Тестування:</strong> unit на merge-логіку конфліктів; інтеграційний тест outbox (операції в офлайні → поява мережі → черга дренується, порядок збережений); E2E happy path checkout.</p>
-<p><strong>Пастки:</strong> оптимістичний UI без visual pending-стану (користувач не розуміє, що не засинкано); очищення кошика з сервера, що затирає локальні pending-операції; нескінченні retry неідемпотентних операцій.</p>
+<p><strong>Уточнити:</strong> чи можна додавати в кошик офлайн; один девайс чи кілька (кошик шериться з вебом)?</p>
+<p><strong>Реалізація:</strong> outbox — таблиця pending_operations; WorkManager з NetworkType.CONNECTED дренує чергу з retry/backoff. Конфлікт «товар зник» → елемент позначається unavailable, UI показує diff («2 товари змінились у ціні»). UI завжди рендерить локальний стан + банер sync state (synced / pending N / error).</p>
+<p><strong>Тестування:</strong> unit на merge-логіку конфліктів; E2E happy path checkout.</p>
+<p><strong>Пастки:</strong> оптимістичний UI без visual pending-стану (користувач не розуміє, що не засинкано); очищення кошика з сервера, що затирає локальні pending-операції.</p>
 
 <h2 id="sd-delivery-tracking">2. Food delivery: трекінг кур'єра<a aria-label="Посилання на розділ: Delivery tracking" class="heading-anchor" href="#sd-delivery-tracking">#</a></h2>
 <p><strong>Вимоги:</strong> частота оновлення позиції? точність ETA? трекінг коли застосунок у фоні/вбитий?</p>
@@ -8335,58 +8144,46 @@ Halt rollout (безкоштовно і зворотно) → Crashlytics: то�
 <p><strong>Пастки:</strong> трекінг через постійний FGS з location у застосунку <em>клієнта</em> (не треба — координати дає сервер); ETA рахувати на клієнті; відсутність версіонування повідомлень stream (out-of-order оновлення смикають маркер назад — потрібен monotonic sequence number).</p>
 
 <h2 id="sd-chat-offline">3. Чат з офлайн-повідомленнями<a aria-label="Посилання на розділ: Chat offline" class="heading-anchor" href="#sd-chat-offline">#</a></h2>
-<p><strong>Вимоги:</strong> гарантії доставки? порядок? E2E-шифрування? медіа?</p>
-<p><strong>Дані:</strong> Room: messages (client_id UUID — primary до підтвердження, server_id після; status: pending/sent/delivered/read/failed), conversations, outbox. Відправка: insert pending у Room (UI миттєво показує) → WorkManager/синк-двигун шле → сервер повертає server_id → статус оновлюється. Дедуплікація на сервері по client_id.</p>
-<p><strong>Синхронізація вхідних:</strong> push (FCM) як «дзвінок розбудити», дані тягнуться інкрементально за cursor/sequence per conversation — не покладатись на payload push-а (він може не прийти або прийти без даних). Порядок — server sequence, UI сортує за ним, а не за локальним часом.</p>
 <p><strong>Помилки:</strong> failed-повідомлення з manual retry; «retry storm» після відновлення мережі гаситься чергою з обмеженою конкурентністю.</p>
 <p><strong>Безпека:</strong> якщо E2E — ключі в Keystore, окрема складність multi-device; мінімум — TLS+pinning на критичні ендпоінти, локальна БД за бажанням SQLCipher (trade-off: перформанс і підтримка).</p>
-<p><strong>Пастки:</strong> сортування за client timestamp (годинники брешуть); відсутність client_id → дублікати повідомлень при retry; повна перезагрузка діалогу замість інкрементального cursor-синку; невирішений кейс редагування/видалення (це events, а не просто стан).</p>
 
 <h2 id="sd-news-feed">4. Стрічка новин з Paging 3 і кешем<a aria-label="Посилання на розділ: News feed" class="heading-anchor" href="#sd-news-feed">#</a></h2>
-<p><strong>Каркас:</strong> Room + RemoteMediator (деталі — у розділі Networking і Data). Тут — продуктові рішення: на REFRESH в одній Room-транзакції з вставкою першої сторінки видаляємо лише рядки й remote keys цього feed/query key (і акаунта) — чистити всю таблицю можна, тільки якщо вона тримає лише цей один feed; «нові пости вище» — банер «N нових», а не раптовий зсув скролу; ключі елементів стабільні (id), щоб DiffUtil/LazyColumn не мерехтіли.</p>
-<p><strong>Кеш-інвалідація:</strong> TTL на сторінку (timestamp у remote keys) — застарілий кеш показується одразу, але тригерить refresh у фоні (stale-while-revalidate). Персоналізована стрічка не кешується довго — узгодити з продуктом «вік» допустимого контенту.</p>
+<p><strong>Продуктові рішення поверх Room + RemoteMediator:</strong> на REFRESH видаляємо лише рядки й remote keys цього feed/query key (і акаунта) — чистити всю таблицю можна, тільки якщо вона тримає лише цей один feed; «нові пости вище» — банер «N нових», а не раптовий зсув скролу; ключі елементів стабільні (id), щоб DiffUtil/LazyColumn не мерехтіли. Персоналізована стрічка не кешується довго — узгодити з продуктом «вік» допустимого контенту.</p>
 <p><strong>Пастки:</strong> одна error-поведінка на всі LoadState (edge case №9); втрата позиції скролу після process death (зберігати ключ якоря); зображення без розмірів з бекенду → layout стрибає (placeholder aspect ratio в контракті API).</p>
 
 <h2 id="sd-payment-flow">5. Платіжний флоу<a aria-label="Посилання на розділ: Payment flow" class="heading-anchor" href="#sd-payment-flow">#</a></h2>
-<p><strong>Принципи:</strong> стан платежу — це state machine (idle → validating → processing → requires_3ds → success/failed/unknown), джерело правди — сервер. Жодних сирих карткових даних у застосунку: токенізація через SDK провайдера (Adyen/Stripe) — це і PCI DSS scope, і менше коду.</p>
-<p><strong>Ключовий кейс — невідомий результат:</strong> timeout/process death під час processing → при поверненні питаємо статус за idempotency/payment id; кнопка Pay блокується ідемпотентно, double-tap захищений на рівні state machine, а не <code>isEnabled</code>.</p>
-<p><strong>3DS/redirect:</strong> повернення з браузера/банківського застосунку через deep link — валідований, без довіри до параметрів (статус все одно підтверджує сервер).</p>
-<p><strong>Тестування:</strong> unit на state machine (всі переходи, включно з unknown); інтеграційні з sandbox провайдера; обов'язковий тест «убили процес посеред оплати».</p>
-<p><strong>Пастки:</strong> success по відповіді клієнтського SDK без серверного підтвердження (webhook/poll); логування PAN/токенів; retry POST без idempotency key; зберігання стану платежу лише в пам'яті ViewModel.</p>
+<p><strong>Клієнтська state machine:</strong> idle → validating → processing → requires_3ds → success/failed/unknown; джерело правди — сервер. Сирі карткові дані не потрапляють у застосунок: токенізація через SDK провайдера (Adyen/Stripe).</p>
+<p><strong>Double-tap:</strong> кнопка Pay блокується ідемпотентно — захист на рівні state machine, а не <code>isEnabled</code>.</p>
+<p><strong>Пастки:</strong> зберігання стану платежу лише в пам'яті ViewModel.</p>
 
 <h2 id="sd-auth-system">6. Authentication і token refresh система<a aria-label="Посилання на розділ: Auth system" class="heading-anchor" href="#sd-auth-system">#</a></h2>
 <p><strong>Компоненти:</strong> <code>TokenStore</code> (DataStore + Keystore-шифрування), <code>TokenAuthenticator</code> (єдиний refresh під Mutex — код у банку edge cases), <code>AuthInterceptor</code> (додає заголовок), <code>SessionManager</code> (StateFlow&lt;SessionState&gt;: LoggedIn/LoggedOut/Expired — на нього підписана навігація).</p>
-<p><strong>Сценарії, які треба проговорити:</strong> одночасні 401 (один refresh); refresh повернув 401 → один logout-сигнал, а не шторм; logout чистить токени, БД користувача, скасовує WorkManager-роботи і інвалідовує in-memory кеші; multi-account — окремі простори даних per account id.</p>
-<p><strong>Безпека:</strong> refresh token rotation (сервер видає новий refresh на кожен refresh — крадений старий стає маркером компрометації); biometric gate як локальний шар поверх (BiometricPrompt + CryptoObject для строгого зв'язування).</p>
-<p><strong>Пастки:</strong> race між «запит у польоті» і logout (запити мають скасовуватись через session scope); зберігання токена у звичайних SharedPreferences з allowBackup=true; deadlock, якщо refresh-запит сам проходить через Authenticator (refresh-клієнт — окремий OkHttp без Authenticator).</p>
+<p><strong>Нюанси:</strong> refresh повернув 401 → один logout-сигнал, а не шторм; biometric gate — BiometricPrompt + CryptoObject для строгого зв'язування.</p>
+<p><strong>Пастки:</strong> зберігання токена у звичайних SharedPreferences з allowBackup=true; deadlock, якщо refresh-запит сам проходить через Authenticator (refresh-клієнт — окремий OkHttp без Authenticator).</p>
 
 <h2 id="sd-analytics-sdk">7. Analytics SDK / модуль<a aria-label="Посилання на розділ: Analytics SDK" class="heading-anchor" href="#sd-analytics-sdk">#</a></h2>
-<p><strong>Вимоги:</strong> гарантії доставки? обсяг подій? офлайн? приватність/consent?</p>
-<p><strong>Архітектура:</strong> публічний фасад <code>track(event: AnalyticsEvent)</code> (типізовані події); запис у Room-чергу миттєво і неблокуюче (власний scope + SupervisorJob — SDK ніколи не валить host-застосунок); відправка батчами (за розміром/часом/станом мережі) через WorkManager; at-least-once + server-side дедуплікація по event id; backpressure: ліміт черги з політикою скидання найстаріших низькопріоритетних подій.</p>
-<p><strong>Якість даних:</strong> схема подій версіонується, валідація на CI (генерація типів зі схеми), consent-стан гейтить збір (GDPR), PII-санітизація на вході.</p>
-<p><strong>Спостережуваність самого SDK:</strong> метрики розміру черги, age найстарішої події, delivery success rate — інакше тиха втрата даних.</p>
-<p><strong>Пастки:</strong> ініціалізація SDK, що б'є по cold start (лінива ініціалізація, без ContentProvider-магії); події, загублені при краші до запису (черга — перший крок, не останній); необмежене зростання черги в офлайні.</p>
+<p><strong>Архітектура:</strong> публічний фасад <code>track(event: AnalyticsEvent)</code>; запис у Room-чергу миттєво і неблокуюче (власний scope + SupervisorJob — SDK ніколи не валить host-застосунок); при переповненні черги скидаються найстаріші низькопріоритетні події; типи подій генеруються зі схеми на CI; метрика delivery success rate — інакше тиха втрата даних.</p>
+<p><strong>Пастки:</strong> ініціалізація SDK, що б'є по cold start (лінива ініціалізація, без ContentProvider-магії).</p>
 
 <h2 id="sd-feature-flags">8. Feature flag система<a aria-label="Посилання на розділ: Feature flags" class="heading-anchor" href="#sd-feature-flags">#</a></h2>
-<p><strong>Архітектура:</strong> інтерфейс <code>FeatureFlags.isEnabled(flag: Flag): Boolean</code> + типізований реєстр флагів з дефолтами в коді; джерела за пріоритетом: local override (debug-панель) → remote config → дефолт. Fetch на старті + періодично; активація fetched-значень — контрольована (на наступний cold start для UX-критичних флагів, миттєво для kill switches).</p>
-<p><strong>Консистентність:</strong> значення флага фіксується на сесію (інакше UI перемикається посеред флоу); A/B-bucket — sticky по user id, експозиція логуються в аналітику в момент першого використання, не на старті.</p>
-<p><strong>Пастки:</strong> офлайн-перший-запуск (тільки дефолти — вони мають бути безпечні); флаг, що гейтить сам механізм оновлення флагів; мертві флаги, які ніхто не прибирає (процес: тікет на видалення створюється разом з флагом); тести лише на «увімкнено».</p>
+<p><strong>Архітектура:</strong> інтерфейс <code>FeatureFlags.isEnabled(flag: Flag): Boolean</code> + типізований реєстр флагів з дефолтами в коді; джерела за пріоритетом: local override (debug-панель) → remote config → дефолт. Fetch на старті + періодично; активація fetched-значень — на наступний cold start для UX-критичних флагів, миттєво для kill switches.</p>
+<p><strong>Консистентність:</strong> значення флага фіксується на сесію (інакше UI перемикається посеред флоу).</p>
+<p><strong>Пастки:</strong> флаг, що гейтить сам механізм оновлення флагів; тести лише на «увімкнено».</p>
 
 <h2 id="sd-multimodule-app">9. Великий мультимодульний застосунок<a aria-label="Посилання на розділ: Multi module app" class="heading-anchor" href="#sd-multimodule-app">#</a></h2>
-<p>Це питання не про список модулів, а про <em>правила</em>. Скелет графа і принципи — у розділі Release Engineering; на system design додаємо: ownership (кожен модуль має команду-власника, CODEOWNERS), контракти між фічами через api-модулі, контроль графа автоматикою (конвенційні плагіни забороняють недозволені залежності), стратегія спільного UI (design system модуль з власним release-циклом), і шлях масштабування: монорепо з build cache до того, як думати про окремі репозиторії.</p>
-<p><strong>Пастки:</strong> модуль <code>core:common</code>, що стає смітником і хабом перекомпіляцій; циклічні залежності через «тимчасові» костилі; передчасна мультимодульність у команді з трьох людей.</p>
+<p>Це питання не про список модулів, а про <em>правила</em>. Скелет графа — у розділі Release Engineering; понад boundary/API/dependency-правила зі stage міграції додаємо: ownership через CODEOWNERS (кожен модуль має команду-власника), design system модуль з власним release-циклом, шлях масштабування — монорепо з build cache до того, як думати про окремі репозиторії.</p>
+<p><strong>Пастки:</strong> модуль <code>core:common</code> як хаб перекомпіляцій; передчасна мультимодульність у команді з трьох людей.</p>
 
 <h2 id="sd-xml-to-compose">10. Міграція з XML Views на Compose<a aria-label="Посилання на розділ: XML to Compose" class="heading-anchor" href="#sd-xml-to-compose">#</a></h2>
-<p><strong>Стратегія:</strong> strangler fig, не big bang. Порядок: (1) фундамент — design system у Compose (токени, базові компоненти) + інтероп-обгортки; (2) нові екрани — тільки Compose; (3) старі — за пріоритетом «частота змін × простота» (екран, який ніколи не чіпають, мігрує останнім або ніколи); (4) <code>ComposeView</code> в XML і <code>AndroidView</code> у Compose як містки.</p>
-<p><strong>Передумова, яку всі пропускають:</strong> state management має бути готовий — якщо логіка сидить у Fragment-ах, спершу рефакторинг до ViewModel + StateFlow (він окупається незалежно), і тоді UI-шар міняється майже механічно.</p>
-<p><strong>Контроль якості:</strong> скріншот-тести до/після міграції екрана; метрики перформансу (особливо списки: RecyclerView → LazyColumn — перевірити jank і стабільність моделей); APK size і build time моніторяться (Compose додає і те, і інше).</p>
-<p><strong>Пастки:</strong> міграція «найскладнішого екрана для пілота»; інтероп-сендвічі (XML→Compose→XML) — там болять фокус, скрол і теми; нескінченний паралельний рефакторинг без явного критерію done.</p>
+<p><strong>Порядок:</strong> (1) фундамент — design system у Compose (токени, базові компоненти) + інтероп-обгортки; (2) нові екрани — тільки Compose; (3) старі — за пріоритетом «частота змін × простота» (екран, який ніколи не чіпають, мігрує останнім або ніколи).</p>
+<p><strong>Передумова, яку всі пропускають:</strong> якщо логіка сидить у Fragment-ах, спершу рефакторинг до ViewModel + StateFlow (він окупається незалежно), і тоді UI-шар міняється майже механічно.</p>
+<p><strong>Контроль якості:</strong> APK size і build time моніторяться (Compose додає і те, і інше).</p>
 
 <h2 id="sd-rx-to-flow">11. Міграція з RxJava на Coroutines/Flow<a aria-label="Посилання на розділ: Rx to Flow" class="heading-anchor" href="#sd-rx-to-flow">#</a></h2>
 <p><strong>Мапінг понять:</strong> Single/Maybe → suspend fun; Completable → suspend fun (Unit); Observable/Flowable → Flow (backpressure у Flow — через suspension, природно); Subjects → StateFlow/SharedFlow/Channel за семантикою; CompositeDisposable → structured concurrency (скоупи замість ручного тримання підписок); Schedulers → Dispatchers (injected).</p>
-<p><strong>Порядок:</strong> межами модулів/шарів, від data до UI: репозиторій переходить на suspend/Flow, для старих споживачів — адаптери <code>kotlinx-coroutines-rx3</code> (<code>asFlow</code>/<code>asObservable</code>) як тимчасовий міст; нові фічі пишуться без Rx з першого дня; останніми мігрують складні комбінатори (combineLatest-ланцюги) — їх переписують з тестами поведінки, написаними ДО міграції.</p>
-<p><strong>На що дивитись особливо:</strong> семантика помилок (Rx onError термінальний; у Flow — catch/retry і CancellationException-нюанси), гарячі Subjects з replay (підібрати відповідний SharedFlow replay/buffer), backpressure-стратегії (onBackpressureLatest → conflate тощо), тести (TestScheduler → runTest/virtual time + Turbine).</p>
-<p><strong>Пастки:</strong> механічний переклад оператор-в-оператор без перегляду дизайну (половина Rx-ланцюгів — це емуляція того, що в корутинах робиться послідовним кодом); подвійний стек назавжди (мета і дедлайн видалення rx-залежності мають бути явні); втрата відписки там, де CompositeDisposable чистився вручну, а скоуп вибрали не той.</p>
+<p><strong>Порядок:</strong> від data до UI: репозиторій переходить на suspend/Flow, для старих споживачів — адаптери <code>kotlinx-coroutines-rx3</code> (<code>asFlow</code>/<code>asObservable</code>) як тимчасовий міст; нові фічі пишуться без Rx з першого дня; останніми мігрують складні комбінатори (combineLatest-ланцюги).</p>
+<p><strong>Відповідники:</strong> onBackpressureLatest → conflate; TestScheduler → runTest/virtual time + Turbine.</p>
+<p><strong>Пастки:</strong> механічний переклад оператор-в-оператор — половина Rx-ланцюгів є емуляцією того, що в корутинах робиться послідовним кодом.</p>
 
 <h3 id="sd-scenarios-follow-up">Як подавати сценарії на співбесіді<a aria-label="Посилання на розділ: SD follow-up" class="heading-anchor" href="#sd-scenarios-follow-up">#</a></h3>
 <p>Формула: 2 хвилини на вимоги і обмеження (офлайн? масштаб? безпека?), 5 — на шари (UI state → domain → data → транспорт) з явним source of truth, далі — самостійно назвати 2–3 failure modes і як їх ловить observability. Interviewer оцінює не повноту, а порядок мислення: вимоги → дані → помилки → trade-offs. Найсильніший сигнал Senior — фрази «тут я б уточнив у продукту…» і «це залежить від contract-у з бекендом, я б запропонував…».</p>
@@ -13433,14 +13230,9 @@ fun `login success emits navigation event`() = runTest {
 <h2 id="en-anr-and-threading">ANR and threading<a aria-label="Link to section: ANR and threading" class="heading-anchor" href="#en-anr-and-threading">#</a></h2>
 <p>Besides disk, network, bitmap decoding, and long computations, heavy JSON parsing is a typical main-thread offender.</p>
 </div></details><details class="major-section" data-key="android-system-design" data-title="Android System Design" id="en-android-system-design" open=""><summary class="major-summary"><span class="major-title">Android System Design</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
-<h2 id="en-designing-a-chat-app">Designing a chat app<a aria-label="Link to section: Designing a chat app" class="heading-anchor" href="#en-designing-a-chat-app">#</a></h2>
-<p>Cover authentication, local database as source of truth, WebSocket or push for real-time updates, message queue for offline sends, delivery/read state, pagination, conflict handling, media uploads, encryption/security if needed, and observability.</p>
-<h2 id="en-designing-an-offline-first-app">Designing an offline-first app<a aria-label="Link to section: Designing an offline-first app" class="heading-anchor" href="#en-designing-an-offline-first-app">#</a></h2>
-<p>Use local database as source of truth, sync workers, conflict resolution, retry/backoff, network constraints, and clear UI states for stale/syncing/error.</p>
-<h2 id="en-designing-a-payment-flow">Designing a payment flow<a aria-label="Link to section: Designing a payment flow" class="heading-anchor" href="#en-designing-a-payment-flow">#</a></h2>
-<p>Payment requires idempotency, secure token handling, backend-driven state, 3DS handling, error recovery, analytics, and strong testing. Do not trust client-only success state.</p>
+<p><strong>More detail:</strong> <a href="#en-system-design-offline-first-commerce-news-feed">System design: offline-first commerce/news feed</a>, <a href="#en-system-design-chat-real-time-updates">System design: chat and real-time updates</a>, <a href="#en-system-design-payments-orders">System design: payments and orders</a>, <a href="#en-system-design-scenarios">Android System Design: practical scenarios</a>. Only what those do not cover remains below.</p>
 <h2 id="en-designing-a-news-feed">Designing a news feed<a aria-label="Link to section: Designing a news feed" class="heading-anchor" href="#en-designing-a-news-feed">#</a></h2>
-<p>Discuss pagination, caching, pull-to-refresh, local source of truth, deduplication, prefetching, image loading, offline state, and experimentation/analytics.</p>
+<p>Beyond pagination, caching, pull-to-refresh, local source of truth, deduplication and offline state, also discuss prefetching, image loading, and experimentation/analytics.</p>
 <h2 id="en-designing-navigation-architecture">Designing navigation architecture<a aria-label="Link to section: Designing navigation architecture" class="heading-anchor" href="#en-designing-navigation-architecture">#</a></h2>
 <p>Navigation should be explicit, testable, and feature-aware. Avoid passing large objects through navigation arguments. Model deep links, back stack behavior, and one-shot navigation events carefully.</p>
 </div></details><details class="major-section senior-expanded-section" data-key="senior-deep-dive-follow-up-answers" data-title="Senior Deep Dive + Follow-up Answers" id="en-senior-deep-dive-follow-up-answers" open="">
@@ -14213,15 +14005,14 @@ Halt the rollout (free and reversible) → Crashlytics: the top new crash, deobf
 <p><strong>Staff/Lead: project build time grew to 25 minutes, the team is angry. The plan?</strong><br/>
 Data first: build scans, configuration vs execution split, the module graph's critical path, CI cache hit rate. Typical wins ordered by cost: remote build cache, configuration cache, KAPT→KSP, splitting "hub" modules on the critical path, moving environment out of flavors, auditing api→implementation. Then set a budget (e.g., local incremental ≤ 2 min, CI PR ≤ 12 min) and a trend dashboard — otherwise it all comes back within six months.</p>
 </div></details><details class="major-section" data-key="system-design-scenarios" data-title="Android System Design: practical scenarios" id="en-system-design-scenarios" open=""><summary class="major-summary"><span class="major-title">Android System Design: practical scenarios</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<p><strong>More detail:</strong> <a href="#en-system-design-offline-first-commerce-news-feed">offline-first commerce/news feed</a>, <a href="#en-system-design-chat-real-time-updates">chat and real-time updates</a>, <a href="#en-system-design-payments-orders">payments and orders</a>, <a href="#en-system-design-auth-analytics-feature-flags">auth, analytics and feature flags</a>, <a href="#en-migration-design-live-android-product">migration design</a>. Only scenario specifics those stages do not cover remain here.</p>
 <p>A companion to the framework chapter: ready-made walkthroughs of typical scenarios. Each follows: requirements → architecture and data → offline/errors → security → testing and observability → trade-offs and traps. In the interview do not recite everything — start by clarifying requirements and walk the interviewer through the layers.</p>
 
 <h2 id="en-sd-offline-cart">1. Offline-first shopping with a cart<a aria-label="Link to section: Offline cart" class="heading-anchor" href="#en-sd-offline-cart">#</a></h2>
-<p><strong>Clarify:</strong> can items be added offline? What happens to prices/stock on sync? One device or several (cart shared with web)?</p>
-<p><strong>Architecture:</strong> Room is the source of truth for the catalog (TTL cache) and the cart (local mutations). Cart mutations use the <strong>outbox</strong> pattern: the operation is written to a pending_operations table in the same transaction as the optimistic cart update; WorkManager with NetworkType.CONNECTED drains the queue with retry/backoff.</p>
-<p><strong>Conflicts:</strong> server-authoritative for prices and stock: the sync response overwrites local prices; an "item disappeared" conflict marks the element unavailable and the UI shows a diff ("2 items changed price"). Operations are idempotent with client-generated operation ids.</p>
-<p><strong>Errors/offline:</strong> the UI always renders local state plus a sync-state banner (synced / pending N / error). Checkout is online-only, with an idempotency key.</p>
-<p><strong>Testing:</strong> unit tests on conflict-merge logic; an integration test of the outbox (offline operations → network appears → queue drains, order preserved); an E2E happy-path checkout.</p>
-<p><strong>Traps:</strong> optimistic UI without a visible pending state (users cannot tell what is unsynced); a server-side cart wipe that overwrites local pending operations; endless retries of non-idempotent operations.</p>
+<p><strong>Clarify:</strong> can items be added offline; one device or several (cart shared with web)?</p>
+<p><strong>Implementation:</strong> the outbox is a pending_operations table; WorkManager with NetworkType.CONNECTED drains the queue with retry/backoff. An "item disappeared" conflict marks the element unavailable and the UI shows a diff ("2 items changed price"). The UI always renders local state plus a sync-state banner (synced / pending N / error).</p>
+<p><strong>Testing:</strong> unit tests on conflict-merge logic; an E2E happy-path checkout.</p>
+<p><strong>Traps:</strong> optimistic UI without a visible pending state (users cannot tell what is unsynced); a server-side cart wipe that overwrites local pending operations.</p>
 
 <h2 id="en-sd-delivery-tracking">2. Food delivery: courier tracking<a aria-label="Link to section: Delivery tracking" class="heading-anchor" href="#en-sd-delivery-tracking">#</a></h2>
 <p><strong>Clarify:</strong> position update frequency? ETA accuracy? tracking when the app is backgrounded/killed?</p>
@@ -14232,58 +14023,46 @@ Data first: build scans, configuration vs execution split, the module graph's cr
 <p><strong>Traps:</strong> tracking via a persistent location FGS in the <em>customer's</em> app (unnecessary — the server provides coordinates); computing ETA on the client; no message versioning on the stream (out-of-order updates make the marker jump backwards — you need a monotonic sequence number).</p>
 
 <h2 id="en-sd-chat-offline">3. Chat with offline messages<a aria-label="Link to section: Chat offline" class="heading-anchor" href="#en-sd-chat-offline">#</a></h2>
-<p><strong>Clarify:</strong> delivery guarantees? ordering? E2E encryption? media?</p>
-<p><strong>Data:</strong> Room: messages (client_id UUID — primary until acknowledged, server_id afterwards; status: pending/sent/delivered/read/failed), conversations, outbox. Sending: insert pending into Room (UI shows instantly) → WorkManager/sync engine sends → server returns server_id → status updates. Server deduplicates by client_id.</p>
-<p><strong>Inbound sync:</strong> push (FCM) as a "wake-up call"; data is pulled incrementally by cursor/sequence per conversation — never rely on the push payload (it may not arrive, or arrive dataless). Ordering — server sequence; the UI sorts by it, not by local time.</p>
 <p><strong>Errors:</strong> failed messages with manual retry; the post-reconnect "retry storm" is damped by a queue with bounded concurrency.</p>
 <p><strong>Security:</strong> with E2E — keys in the Keystore and the separate complexity of multi-device; the minimum — TLS + pinning on critical endpoints; the local DB optionally SQLCipher (trade-off: performance and maintenance).</p>
-<p><strong>Traps:</strong> sorting by client timestamp (clocks lie); no client_id → duplicate messages on retry; full conversation reloads instead of incremental cursor sync; edit/delete left undesigned (they are events, not just state).</p>
 
 <h2 id="en-sd-news-feed">4. A news feed with Paging 3 and cache<a aria-label="Link to section: News feed" class="heading-anchor" href="#en-sd-news-feed">#</a></h2>
-<p><strong>Skeleton:</strong> Room + RemoteMediator (details in the Networking and Data chapter). Here — the product decisions: on REFRESH, in the same Room transaction that inserts page one, delete only the rows and remote keys owned by this feed/query key (and account) — clearing the whole table is acceptable only when it holds just this one feed; "new posts above" — an "N new posts" banner, never a sudden scroll jump; element keys are stable ids so DiffUtil/LazyColumn do not flicker.</p>
-<p><strong>Cache invalidation:</strong> a per-page TTL (timestamp in remote keys) — stale cache is shown immediately but triggers a background refresh (stale-while-revalidate). A personalized feed is not cached long — agree with product on the acceptable content "age".</p>
+<p><strong>Product decisions on top of Room + RemoteMediator:</strong> on REFRESH, delete only the rows and remote keys owned by this feed/query key (and account) — clearing the whole table is acceptable only when it holds just this one feed; "new posts above" — an "N new posts" banner, never a sudden scroll jump; element keys are stable ids so DiffUtil/LazyColumn do not flicker. A personalized feed is not cached long — agree with product on the acceptable content "age".</p>
 <p><strong>Traps:</strong> one error behavior for all LoadStates (edge case #9); losing scroll position after process death (persist an anchor key); images without dimensions from the backend → layout jumps (aspect ratio belongs in the API contract).</p>
 
 <h2 id="en-sd-payment-flow">5. A payment flow<a aria-label="Link to section: Payment flow" class="heading-anchor" href="#en-sd-payment-flow">#</a></h2>
-<p><strong>Principles:</strong> payment state is a state machine (idle → validating → processing → requires_3ds → success/failed/unknown) with the server as the source of truth. No raw card data in the app: tokenization through the provider SDK (Adyen/Stripe) — both PCI DSS scope and less code.</p>
-<p><strong>The key case — unknown outcome:</strong> a timeout/process death during processing → on return, query the status by idempotency/payment id; the Pay button is blocked idempotently, double-tap is guarded at the state-machine level, not via <code>isEnabled</code>.</p>
-<p><strong>3DS/redirect:</strong> returning from the browser/bank app via a deep link — validated, with zero trust in its parameters (the server confirms the status anyway).</p>
-<p><strong>Testing:</strong> unit tests on the state machine (all transitions, including unknown); integration with the provider sandbox; the mandatory "process killed mid-payment" test.</p>
-<p><strong>Traps:</strong> declaring success from the client SDK response without server confirmation (webhook/poll); logging PANs/tokens; retrying POSTs without an idempotency key; keeping payment state only in ViewModel memory.</p>
+<p><strong>Client state machine:</strong> idle → validating → processing → requires_3ds → success/failed/unknown, with the server as the source of truth. No raw card data in the app: tokenization through the provider SDK (Adyen/Stripe).</p>
+<p><strong>Double-tap:</strong> the Pay button is blocked idempotently — guarded at the state-machine level, not via <code>isEnabled</code>.</p>
+<p><strong>Traps:</strong> keeping payment state only in ViewModel memory.</p>
 
 <h2 id="en-sd-auth-system">6. Authentication and token refresh system<a aria-label="Link to section: Auth system" class="heading-anchor" href="#en-sd-auth-system">#</a></h2>
 <p><strong>Components:</strong> a <code>TokenStore</code> (DataStore + Keystore encryption), a <code>TokenAuthenticator</code> (single refresh behind a Mutex — code in the edge-case bank), an <code>AuthInterceptor</code> (attaches the header), a <code>SessionManager</code> (StateFlow&lt;SessionState&gt;: LoggedIn/LoggedOut/Expired — navigation subscribes to it).</p>
-<p><strong>Scenarios to cover out loud:</strong> simultaneous 401s (one refresh); refresh returning 401 → exactly one logout signal, not a storm; logout wipes tokens, the user database, cancels WorkManager jobs and invalidates in-memory caches; multi-account — separate data namespaces per account id.</p>
-<p><strong>Security:</strong> refresh token rotation (the server issues a new refresh token on every refresh — a stolen old one becomes a compromise marker); a biometric gate as a local layer on top (BiometricPrompt + CryptoObject for strict binding).</p>
-<p><strong>Traps:</strong> a race between in-flight requests and logout (requests must be cancellable via a session scope); tokens in plain SharedPreferences with allowBackup=true; a deadlock when the refresh call itself passes through the Authenticator (the refresh client is a separate OkHttp instance without an Authenticator).</p>
+<p><strong>Nuances:</strong> refresh returning 401 → exactly one logout signal, not a storm; a biometric gate uses BiometricPrompt + CryptoObject for strict binding.</p>
+<p><strong>Traps:</strong> tokens in plain SharedPreferences with allowBackup=true; a deadlock when the refresh call itself passes through the Authenticator (the refresh client is a separate OkHttp instance without an Authenticator).</p>
 
 <h2 id="en-sd-analytics-sdk">7. An analytics SDK / module<a aria-label="Link to section: Analytics SDK" class="heading-anchor" href="#en-sd-analytics-sdk">#</a></h2>
-<p><strong>Clarify:</strong> delivery guarantees? event volume? offline? privacy/consent?</p>
-<p><strong>Architecture:</strong> a public <code>track(event: AnalyticsEvent)</code> facade (typed events); instant non-blocking write into a Room queue (its own scope with a SupervisorJob — the SDK never crashes the host app); batched dispatch (by size/time/network state) via WorkManager; at-least-once plus server-side deduplication by event id; backpressure: a queue cap with a drop-oldest-low-priority policy.</p>
-<p><strong>Data quality:</strong> a versioned event schema, CI validation (types generated from the schema), a consent state gating collection (GDPR), PII sanitization at the entry point.</p>
-<p><strong>Observability of the SDK itself:</strong> queue size, age of the oldest event, delivery success rate — otherwise data loss is silent.</p>
-<p><strong>Traps:</strong> SDK initialization hitting cold start (lazy init, no ContentProvider magic); events lost when a crash precedes the queue write (queueing is the first step, not the last); unbounded queue growth offline.</p>
+<p><strong>Architecture:</strong> a public <code>track(event: AnalyticsEvent)</code> facade; instant non-blocking write into a Room queue (its own scope with a SupervisorJob — the SDK never crashes the host app); when the queue cap is hit, the oldest low-priority events are dropped; event types are generated from the schema on CI; track the delivery success rate — otherwise data loss is silent.</p>
+<p><strong>Traps:</strong> SDK initialization hitting cold start (lazy init, no ContentProvider magic).</p>
 
 <h2 id="en-sd-feature-flags">8. A feature flag system<a aria-label="Link to section: Feature flags" class="heading-anchor" href="#en-sd-feature-flags">#</a></h2>
-<p><strong>Architecture:</strong> a <code>FeatureFlags.isEnabled(flag: Flag): Boolean</code> interface plus a typed flag registry with in-code defaults; sources by priority: local override (debug panel) → remote config → default. Fetch at startup plus periodically; activation of fetched values is controlled (next cold start for UX-critical flags, immediate for kill switches).</p>
-<p><strong>Consistency:</strong> a flag's value is pinned for the session (otherwise the UI flips mid-flow); A/B buckets are sticky per user id; exposure is logged to analytics at first use, not at startup.</p>
-<p><strong>Traps:</strong> offline first launch (defaults only — they must be safe); a flag gating the flag-update mechanism itself; dead flags nobody deletes (process: the removal ticket is created together with the flag); testing only the "on" state.</p>
+<p><strong>Architecture:</strong> a <code>FeatureFlags.isEnabled(flag: Flag): Boolean</code> interface plus a typed flag registry with in-code defaults; sources by priority: local override (debug panel) → remote config → default. Fetch at startup plus periodically; fetched values activate at the next cold start for UX-critical flags and immediately for kill switches.</p>
+<p><strong>Consistency:</strong> a flag's value is pinned for the session (otherwise the UI flips mid-flow).</p>
+<p><strong>Traps:</strong> a flag gating the flag-update mechanism itself; testing only the "on" state.</p>
 
 <h2 id="en-sd-multimodule-app">9. A large multi-module app<a aria-label="Link to section: Multi module app" class="heading-anchor" href="#en-sd-multimodule-app">#</a></h2>
-<p>This question is not about a list of modules but about <em>rules</em>. The graph skeleton and principles live in the Release Engineering chapter; at system-design level add: ownership (every module has an owning team, CODEOWNERS), contracts between features via api modules, automated graph enforcement (convention plugins forbid illegal dependencies), a shared-UI strategy (a design system module with its own release cycle), and the scaling path: a monorepo with a build cache long before separate repositories.</p>
-<p><strong>Traps:</strong> a <code>core:common</code> module turning into a dumping ground and a recompilation hub; dependency cycles through "temporary" hacks; premature multi-module in a three-person team.</p>
+<p>This question is not about a list of modules but about <em>rules</em>. The graph skeleton lives in the Release Engineering chapter; beyond the boundary/API/dependency rules in the migration stage, add: ownership via CODEOWNERS (every module has an owning team), a design system module with its own release cycle, and the scaling path — a monorepo with a build cache long before separate repositories.</p>
+<p><strong>Traps:</strong> a <code>core:common</code> module turning into a recompilation hub; premature multi-module in a three-person team.</p>
 
 <h2 id="en-sd-xml-to-compose">10. Migrating from XML Views to Compose<a aria-label="Link to section: XML to Compose" class="heading-anchor" href="#en-sd-xml-to-compose">#</a></h2>
-<p><strong>Strategy:</strong> strangler fig, not big bang. Order: (1) the foundation — a Compose design system (tokens, base components) plus interop wrappers; (2) new screens — Compose only; (3) old screens by "change frequency × simplicity" (a screen nobody touches migrates last or never); (4) <code>ComposeView</code> in XML and <code>AndroidView</code> in Compose as bridges.</p>
-<p><strong>The precondition everyone skips:</strong> state management must be ready — if logic lives in Fragments, first refactor to ViewModel + StateFlow (it pays off regardless), and then the UI layer changes almost mechanically.</p>
-<p><strong>Quality control:</strong> screenshot tests before/after each migrated screen; performance metrics (lists especially: RecyclerView → LazyColumn — verify jank and model stability); APK size and build time monitored (Compose adds to both).</p>
-<p><strong>Traps:</strong> picking "the most complex screen" as the pilot; interop sandwiches (XML→Compose→XML) — focus, scrolling and theming hurt there; an endless parallel refactor without an explicit definition of done.</p>
+<p><strong>Order:</strong> (1) the foundation — a Compose design system (tokens, base components) plus interop wrappers; (2) new screens — Compose only; (3) old screens by "change frequency × simplicity" (a screen nobody touches migrates last or never).</p>
+<p><strong>The precondition everyone skips:</strong> if logic lives in Fragments, first refactor to ViewModel + StateFlow (it pays off regardless), and then the UI layer changes almost mechanically.</p>
+<p><strong>Quality control:</strong> APK size and build time are monitored (Compose adds to both).</p>
 
 <h2 id="en-sd-rx-to-flow">11. Migrating from RxJava to Coroutines/Flow<a aria-label="Link to section: Rx to Flow" class="heading-anchor" href="#en-sd-rx-to-flow">#</a></h2>
 <p><strong>Concept mapping:</strong> Single/Maybe → suspend fun; Completable → suspend fun (Unit); Observable/Flowable → Flow (backpressure via suspension, naturally); Subjects → StateFlow/SharedFlow/Channel per semantics; CompositeDisposable → structured concurrency (scopes instead of manual subscription bookkeeping); Schedulers → injected Dispatchers.</p>
-<p><strong>Order:</strong> along module/layer boundaries, data first: repositories move to suspend/Flow, with <code>kotlinx-coroutines-rx3</code> adapters (<code>asFlow</code>/<code>asObservable</code>) as a temporary bridge for old consumers; new features are Rx-free from day one; complex combinator chains (combineLatest pyramids) migrate last — rewritten against behavior tests written BEFORE the migration.</p>
-<p><strong>Watch closely:</strong> error semantics (Rx onError is terminal; in Flow it is catch/retry plus the CancellationException nuances), hot Subjects with replay (pick the matching SharedFlow replay/buffer), backpressure strategies (onBackpressureLatest → conflate, etc.), tests (TestScheduler → runTest/virtual time + Turbine).</p>
-<p><strong>Traps:</strong> mechanical operator-for-operator translation without redesign (half of Rx chains emulate what coroutines express as plain sequential code); a permanent dual stack (the goal and the deadline for removing the rx dependency must be explicit); lost unsubscription where CompositeDisposable was cleared manually and the chosen scope is wrong.</p>
+<p><strong>Order:</strong> data first: repositories move to suspend/Flow, with <code>kotlinx-coroutines-rx3</code> adapters (<code>asFlow</code>/<code>asObservable</code>) as a temporary bridge for old consumers; new features are Rx-free from day one; complex combinator chains (combineLatest pyramids) migrate last.</p>
+<p><strong>Equivalents:</strong> onBackpressureLatest → conflate; TestScheduler → runTest/virtual time + Turbine.</p>
+<p><strong>Traps:</strong> mechanical operator-for-operator translation — half of Rx chains emulate what coroutines express as plain sequential code.</p>
 
 <h3 id="en-sd-scenarios-follow-up">How to present scenarios in the interview<a aria-label="Link to section: SD follow-up" class="heading-anchor" href="#en-sd-scenarios-follow-up">#</a></h3>
 <p>The formula: 2 minutes on requirements and constraints (offline? scale? security?), 5 on the layers (UI state → domain → data → transport) with an explicit source of truth, then volunteer 2–3 failure modes and how observability catches them. The interviewer grades the order of thinking, not completeness: requirements → data → errors → trade-offs. The strongest Senior signal is "here I would check with product…" and "this depends on the backend contract; I would propose…".</p>
