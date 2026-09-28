@@ -703,17 +703,14 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <li><a data-target="edge-case-flow-catch" href="#edge-case-flow-catch">Flow: catch ловить лише upstream</a></li>
 <li><a data-target="edge-case-stateflow-conflation" href="#edge-case-stateflow-conflation">StateFlow: рівні значення</a></li>
 <li><a data-target="edge-case-sharedflow-overflow" href="#edge-case-sharedflow-overflow">SharedFlow: replay і втрачені події</a></li>
-<li><a data-target="edge-case-compose-stability" href="#edge-case-compose-stability">Compose: stability і recomposition</a></li>
 <li><a data-target="edge-case-fragment-lifecyclescope" href="#edge-case-fragment-lifecyclescope">Fragment: viewLifecycleOwner</a></li>
 <li><a data-target="edge-case-workmanager-periodic" href="#edge-case-workmanager-periodic">WorkManager: periodic ≠ exact</a></li>
 <li><a data-target="edge-case-room-destructive" href="#edge-case-room-destructive">Room: destructive migration</a></li>
-<li><a data-target="edge-case-paging-errors" href="#edge-case-paging-errors">Paging 3: refresh/append/prepend</a></li>
 <li><a data-target="edge-case-savedstatehandle" href="#edge-case-savedstatehandle">SavedStateHandle: межі</a></li>
 <li><a data-target="edge-case-datastore-misuse" href="#edge-case-datastore-misuse">DataStore — не база даних</a></li>
 <li><a data-target="edge-case-r8-keep-rules" href="#edge-case-r8-keep-rules">R8: рефлексія і keep rules</a></li>
 <li><a data-target="edge-case-pendingintent" href="#edge-case-pendingintent">PendingIntent: mutability</a></li>
 <li><a data-target="edge-case-deeplinks" href="#edge-case-deeplinks">Deep links: недовірений ввід</a></li>
-<li><a data-target="edge-case-cancellation" href="#edge-case-cancellation">Cancellation і NonCancellable</a></li>
 </ol>
 </li>
 <li class="toc-major">
@@ -1000,17 +997,14 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <li><a data-target="en-edge-case-flow-catch" href="#en-edge-case-flow-catch">Flow: catch is upstream-only</a></li>
 <li><a data-target="en-edge-case-stateflow-conflation" href="#en-edge-case-stateflow-conflation">StateFlow: equal values</a></li>
 <li><a data-target="en-edge-case-sharedflow-overflow" href="#en-edge-case-sharedflow-overflow">SharedFlow: dropped events</a></li>
-<li><a data-target="en-edge-case-compose-stability" href="#en-edge-case-compose-stability">Compose: stability</a></li>
 <li><a data-target="en-edge-case-fragment-lifecyclescope" href="#en-edge-case-fragment-lifecyclescope">Fragment: viewLifecycleOwner</a></li>
 <li><a data-target="en-edge-case-workmanager-periodic" href="#en-edge-case-workmanager-periodic">WorkManager: periodic ≠ exact</a></li>
 <li><a data-target="en-edge-case-room-destructive" href="#en-edge-case-room-destructive">Room: destructive migration</a></li>
-<li><a data-target="en-edge-case-paging-errors" href="#en-edge-case-paging-errors">Paging 3: LoadState errors</a></li>
 <li><a data-target="en-edge-case-savedstatehandle" href="#en-edge-case-savedstatehandle">SavedStateHandle: limits</a></li>
 <li><a data-target="en-edge-case-datastore-misuse" href="#en-edge-case-datastore-misuse">DataStore is not a database</a></li>
 <li><a data-target="en-edge-case-r8-keep-rules" href="#en-edge-case-r8-keep-rules">R8: reflection, keep rules</a></li>
 <li><a data-target="en-edge-case-pendingintent" href="#en-edge-case-pendingintent">PendingIntent: mutability</a></li>
 <li><a data-target="en-edge-case-deeplinks" href="#en-edge-case-deeplinks">Deep links: untrusted input</a></li>
-<li><a data-target="en-edge-case-cancellation" href="#en-edge-case-cancellation">Cancellation, NonCancellable</a></li>
 </ol>
 </li>
 <li class="toc-major">
@@ -6949,6 +6943,7 @@ interface AnalyticsTracker {
 <p>Senior system design відповідь має бути структурованою. Не починай одразу з бібліотек. Спочатку уточни requirements, потім запропонуй architecture, data flow, state, sync, errors, performance, security і testing. Найкраще звучать відповіді, де ти явно називаєш trade-offs і failure modes.</p>
 <hr/>
 </div></details><details class="major-section" data-key="senior-interview-answer-patterns" data-title="Senior Interview Answer Patterns" id="senior-interview-answer-patterns" open=""><summary class="major-summary"><span class="major-title">Senior Interview Answer Patterns</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<p><strong>Детальніше:</strong> <a href="#senior-engineering-practice">Senior engineering practice — фінальний етап</a> (decision framework, trade-off narrative), <a href="#kotlin-hot-flows-ui-state-events">StateFlow, SharedFlow, Channel</a>, <a href="#kotlin-coroutines-failures-supervision-testing">Kotlin Coroutines: failures, supervision</a>, <a href="#clean-architecture-android-modularization">Clean Architecture та modularization</a>.</p>
 <h2 id="pattern-1-define-problem-trade-off-example">Pattern 1: Define -&gt; Problem -&gt; Trade-off -&gt; Example<a aria-label="Посилання на розділ: Pattern 1: Define -&gt; Problem -&gt; Trade-off -&gt; Example" class="heading-anchor" href="#pattern-1-define-problem-trade-off-example">#</a></h2>
 <p>Коли питають “що таке X”, не зупиняйся на definition.</p>
 <p>Приклад для <code>StateFlow</code>:</p>
@@ -6991,158 +6986,25 @@ interface AnalyticsTracker {
 <hr/>
 </div></details><details class="major-section senior-expanded-section" data-key="senior-deep-dive-follow-up-answers" data-title="Senior Deep Dive + відповіді на Follow-up питання" id="senior-deep-dive-follow-up-answers" open="">
 <summary class="major-summary"><span class="major-title">Senior Deep Dive + відповіді на Follow-up питання</span><span class="major-meta">розгорнути / згорнути</span></summary>
-<div class="section-body senior-expanded-body"><h2>Що саме розширено</h2>
-<p>Цей блок додає те, чого зазвичай бракує коротким Android interview конспектам: не тільки основну відповідь, а й <strong>відповіді на follow-up питання</strong>, production trade-offs, типові помилки та формулювання, які можна прямо використовувати на Middle+/Senior співбесіді.</p>
-<p>Ідея проста: Senior Android Developer має пояснювати не API, а <strong>ownership, lifecycle, failure semantics, testability, scalability та observability</strong>. Тому нижче кожна тема розкрита через питання, відповідь, production reasoning і типові follow-up пастки.</p>
+<div class="section-body senior-expanded-body"><p><strong>Детальніше:</strong> <a href="#android-process-lifecycle-state-restoration">Життєвий цикл процесу Android і відновлення стану</a>, <a href="#android-background-execution">Android background execution</a>, <a href="#kotlin-type-system-state-modeling">Kotlin: система типів і моделювання стану</a>, <a href="#kotlin-coroutines-foundations-internals">Kotlin Coroutines: foundations та internals</a>, <a href="#kotlin-coroutines-failures-supervision-testing">Kotlin Coroutines: failures, supervision, cleanup, testing</a>, <a href="#kotlin-hot-flows-ui-state-events">StateFlow, SharedFlow, Channel</a>, <a href="#advanced-kotlin-flow-production">Advanced Kotlin Flow у production</a>, <a href="#compose-effects-navigation-viewmodel">Compose effects, navigation та ViewModel</a>, <a href="#jetpack-compose-performance">Jetpack Compose performance</a>, <a href="#android-ui-architecture-state-modeling">Android UI architecture</a>, <a href="#clean-architecture-android-modularization">Clean Architecture та modularization</a>, <a href="#dependency-injection-android">Dependency injection на Android</a>, <a href="#senior-android-testing-strategy">Senior Android testing strategy</a>, <a href="#android-memory-threading">Android memory and threading</a>, <a href="#startup-rendering-performance">Startup and rendering performance</a>, <a href="#system-design-chat-real-time-updates">System design: chat</a>. Тут лишилися лише follow-up відповіді та приклади, яких немає в етапах.</p>
+<p>Ідея: Senior Android Developer має пояснювати не API, а <strong>ownership, lifecycle, failure semantics, testability, scalability та observability</strong>.</p>
 <hr/>
-<h2>Швидкий банк відповідей на Follow-up питання з основного документа</h2>
-<p>Стислі відповіді тепер вбудовані безпосередньо під кожним follow-up питанням у відповідних розділах. Тут — розгорнуті Senior-версії цих відповідей, згруповані за темами, для другого проходу підготовки.</p>
-<h3>Activity lifecycle</h3>
-<p><strong>Чим <code>onPause</code> відрізняється від <code>onStop</code>?</strong><br/>
-<code>onPause</code> означає, що Activity частково або повністю втрачає foreground focus, але може ще бути видимою. Тут треба зупиняти легкі foreground-only дії: camera preview, sensors, transient animations. <code>onStop</code> означає, що Activity більше не видима; тут можна звільняти важчі UI ресурси, unregister receivers/listeners, зупиняти видимі updates. Не варто робити важкий synchronous work в <code>onPause</code>, бо це може сповільнити перехід до наступного екрана.</p>
-<p><strong>Чи завжди викликається <code>onDestroy</code>?</strong><br/>
-Ні. Якщо процес убитий системою, <code>onDestroy</code> може не викликатися. Тому <code>onDestroy</code> не можна використовувати як єдине місце для critical persistence. Важливі дані треба зберігати раніше або в durable layer.</p>
-<p><strong>Що буде при rotation?</strong><br/>
-За замовчуванням Activity буде destroyed і recreated. <code>ViewModel</code> переживе rotation, <code>remember</code> — ні, <code>rememberSaveable</code> може пережити recreation, а process-level persistence залежить від repository/local storage.</p>
-<p><strong>Як правильно collect Flow в Activity/Fragment?</strong><br/>
-Через lifecycle-aware collection: <code>repeatOnLifecycle</code> у Views/Fragments або <code>collectAsStateWithLifecycle</code> у Compose. Простий <code>launch { flow.collect() }</code> може collect-ити, коли UI вже stopped, і провокувати зайву роботу або crashes.</p>
-<h3>Fragment lifecycle</h3>
+<h2>Швидкий банк відповідей на Follow-up питання</h2>
+<h3>Activity і Fragment lifecycle</h3>
+<p><strong>Що зупиняти в <code>onPause</code>, а що в <code>onStop</code>?</strong><br/>
+В <code>onPause</code> — легкі foreground-only дії: camera preview, sensors, transient animations. В <code>onStop</code> — звільняти важчі UI ресурси, unregister receivers/listeners, зупиняти видимі updates.</p>
 <p><strong>Чому не можна використовувати non-default constructor для Fragment?</strong><br/>
 Default <code>FragmentFactory</code> перестворює Fragment рефлексією через no-arg constructor, тому аргументи треба передавати через <code>arguments</code>, Navigation args або SavedStateHandle. Dependencies через constructor можна передавати лише з custom <code>FragmentFactory</code> (<code>supportFragmentManager.fragmentFactory</code>, Fragment 1.1.0+).</p>
-<p><strong>Що таке <code>viewLifecycleOwner</code>?</strong><br/>
-Це lifecycle owner для View hierarchy Fragment-а. Він коротший за lifecycle Fragment instance. Collectors, binding observers і view-related jobs треба прив’язувати до <code>viewLifecycleOwner</code>, щоб не тримати стару View після <code>onDestroyView</code>.</p>
-<p><strong>Коли викликається <code>onDestroyView</code>, але не <code>onDestroy</code>?</strong><br/>
-Коли Fragment залишається у back stack або instance зберігається, але його View знищується. Це нормальна ситуація, тому binding треба чистити в <code>onDestroyView</code>.</p>
 <p><strong>Як share ViewModel між Fragment-ами?</strong><br/>
 Через <code>activityViewModels()</code> для Activity scope або <code>navGraphViewModels()</code> для navigation graph scope. Senior-відповідь має згадати, що scope треба вибирати за ownership: чи state належить всій Activity, чи конкретному flow.</p>
-<h3>Context, Intent, PendingIntent, security</h3>
 <p><strong>Коли Application context не підходить?</strong><br/>
 Коли потрібен UI-bound context: showing dialog, inflating UI with Activity theme, starting activity for result, accessing window/token. Application context підходить для long-lived dependencies, але не для UI operations.</p>
-<p><strong>Explicit vs implicit Intent?</strong><br/>
-Explicit Intent вказує конкретний component. Implicit Intent описує action/data/category, а system шукає component. Implicit intents потребують обережності через security і відсутність guaranteed handler.</p>
-<p><strong>Для чого потрібен <code>PendingIntent</code>?</strong><br/>
-Це token, який дозволяє іншому процесу виконати дію від імені твого застосунку пізніше: notification action, alarm, widget. Важливо правильно виставляти mutability flags (<code>FLAG_IMMUTABLE</code>/<code>FLAG_MUTABLE</code>).</p>
-<p><strong>Які security risks має exported component?</strong><br/>
-Інші apps можуть викликати exported Activity/Service/Receiver/Provider. Треба перевіряти permissions, input validation, intent data, caller trust і не експортувати component без потреби.</p>
-<h3>State restoration</h3>
-<p><strong>Що переживає process death?</strong><br/>
-Не пам’ять процесу. Не ViewModel. Переживає durable storage і малий saved state, який system зберіг у Bundle/SavedStateHandle. Тому після process death треба відновити ключі й побудувати screen заново.</p>
-<p><strong>Коли можна використовувати <code>android:configChanges</code>?</strong><br/>
-Рідко. Коли ти справді сам коректно обробляєш конкретну зміну конфігурації і хочеш уникнути recreation. Часто це workaround, який приховує state management problems.</p>
-<p><strong>Як тестувати відновлення state?</strong><br/>
-Через rotation tests, “Don’t keep activities”, process death сценарії, ActivityScenario recreate, Compose state restoration tests і перевірку, що screen будується з saved key + repository, а не з випадкового in-memory state.</p>
-<h3>Background work</h3>
-<p><strong>WorkManager vs Service?</strong><br/>
-WorkManager — для guaranteed deferrable work із constraints/retry/persistence. Service — для active operation. Foreground service — тільки для user-visible long-running work із notification.</p>
-<p><strong>Що таке Doze mode?</strong><br/>
-Power-saving режим, де background execution, network і alarms обмежуються. Senior має враховувати, що background робота не виконається “точно зараз”, якщо OS оптимізує battery.</p>
-<p><strong>Як зробити retry без дублювання операцій?</strong><br/>
-Через idempotency keys, unique work, local pending state, server-side duplicate protection і retry policy. Payment/order/message send не можна просто blindly retry-ити без idempotency.</p>
 <h3>Coroutines</h3>
-<p><strong>Що відбувається з child coroutine, якщо parent cancelled?</strong><br/>
-Child coroutine також cancel-иться. Це основа structured concurrency. Якщо child виконує blocking код, cancellation може не спрацювати миттєво, бо cancellation cooperative.</p>
 <p><strong>Чим structured concurrency краща за callbacks?</strong><br/>
 Вона дає явний lifecycle, cancellation propagation, predictable failure behavior і readable sequential style для async code. Callbacks часто розмивають ownership і error handling.</p>
-<p><strong>Як уникнути coroutine leaks?</strong><br/>
-Не використовувати <code>GlobalScope</code> як default, не створювати ad-hoc scopes без owner-а, cancel-ити довгоживучі jobs, прив’язувати UI work до lifecycle/ViewModel, не тримати Activity/Fragment references у long-lived coroutines.</p>
-<p><strong>Що станеться, якщо exception виникне в <code>launch</code>?</strong><br/>
-У root <code>launch</code> uncaught exception потрапить у exception handler/thread handler. У child <code>launch</code> exception зазвичай cancel-ить parent. Тому для expected errors краще локальний <code>try/catch</code> і mapping у UI state.</p>
-<p><strong>Що станеться, якщо exception виникне в <code>async</code> до <code>await</code>?</strong><br/>
-Exception буде збережений у <code>Deferred</code> і rethrow на <code>await</code>, але child failure все одно може вплинути на parent залежно від scope. <code>async</code> не є автоматичною ізоляцією помилок.</p>
 <p><strong>Коли використовувати <code>awaitAll()</code>?</strong><br/>
 Коли є колекція <code>Deferred</code> і всі результати потрібні як одна операція. Якщо потрібні partial results, краще явно обробляти кожен async або використовувати supervisor semantics.</p>
-<p><strong>Як обробити partial failures?</strong><br/>
-Обробляти помилку кожного незалежного child явно (try/catch конкретних exceptions на <code>await()</code> або wrapper, що rethrow-ить <code>CancellationException</code>; голий <code>runCatching</code> її ковтає). <code>supervisorScope</code> потрібен, коли uncaught failure одного child не має cancel-ити siblings. Але треба чесно визначити, які частини UI можуть існувати без інших.</p>
-<p><strong>Чи ловить <code>supervisorScope</code> exceptions автоматично?</strong><br/>
-Ні. Він не cancel-ить siblings автоматично, але exception треба обробити. <code>supervisorScope</code> — це failure isolation, не error handling magic.</p>
-<p><strong><code>SupervisorJob</code> vs <code>Job</code>?</strong><br/>
-У звичайному <code>Job</code> failure child може cancel-ити parent і siblings. У <code>SupervisorJob</code> child failures ізольовані, але parent cancellation все одно cancel-ить children.</p>
-<p><strong><code>Dispatchers.IO</code> vs <code>Dispatchers.Default</code>?</strong><br/>
-<code>IO</code> — для blocking IO: disk, network blocking APIs. <code>Default</code> — для CPU-bound роботи: parsing, sorting, heavy computation. Не треба використовувати <code>IO</code> як універсальний “background dispatcher”.</p>
-<p><strong>Де перемикати dispatcher — у ViewModel чи Repository?</strong><br/>
-Зазвичай data/repository layer має сам гарантувати, що blocking IO не виконується на Main. ViewModel не має знати, які саме dispatcher-и потрібні repository internals.</p>
-<p><strong>Коли використовувати <code>NonCancellable</code>?</strong><br/>
-Тільки для короткого critical cleanup у <code>finally</code>, наприклад закрити transaction/log/write final state. Не можна використовувати <code>NonCancellable</code>, щоб “перемогти” cancellation для звичайної роботи.</p>
-<p><strong>Як зробити cancellable wrapper навколо callback API?</strong><br/>
-Через <code>suspendCancellableCoroutine</code> або <code>callbackFlow</code> і обов’язково unregister callback в cancellation handler / <code>awaitClose</code>.</p>
-<h3>Flow</h3>
-<p><strong>Чому Room Flow cold?</strong><br/>
-Flow interface cold, collection запускає observation. Room оптимізує і emit-ить при invalidation, але semantics для consumer-а лишається Flow-based: без collection немає активного спостереження.</p>
-<p><strong>Які ризики має hot stream?</strong><br/>
-Він живе незалежно від конкретного collector-а, може тримати upstream активним, кешувати replay, втрачати emissions або leak-ити scope, якщо неправильно вибрати owner.</p>
-<p><strong><code>replay = 0</code> що означає?</strong><br/>
-Новий collector не отримає попередні emissions. Це може бути нормально для ephemeral signals, але небезпечно для state або critical events.</p>
-<p><strong>Як уникнути duplicate navigation після rotation?</strong><br/>
-Не тримати navigation як <code>StateFlow&lt;Event?&gt;</code>, який replay-иться після rotation. Краще моделювати результат як state і робити navigation у UI з ack/consumption, або мати чітку event delivery strategy.</p>
-<h3>Compose</h3>
-<p><strong>Що може спричинити зайві recompositions?</strong><br/>
-Занадто широкий state read, нові instances unstable параметрів на кожній recomposition (наприклад, щойно змаплений <code>List</code>), mutable collections у state, відсутність keys у lazy lists, expensive derived computation у composition.</p>
-<p><strong>Stable vs unstable type?</strong><br/>
-Зі strong skipping (default з Kotlin 2.0.20) усі restartable composables skippable: stable параметри порівнюються через <code>equals()</code>, unstable — за identity (<code>===</code>), а lambdas компілятор запам’ятовує автоматично. Stability досі важлива: новий instance unstable об’єкта на кожній recomposition все одно спричиняє recomposition. Mutable public properties або unknown mutable collections часто роблять тип unstable.</p>
-<p><strong>Як debug-ити recomposition?</strong><br/>
-Layout Inspector, Compose compiler reports, logging counters, recomposition highlights, profiling. Senior-відповідь: спочатку виміряти, потім оптимізувати.</p>
-<p><strong>Чому <code>LaunchedEffect(Unit)</code> може бути problem?</strong><br/>
-Він запускається один раз для цього місця composition. Це нормально для одноразового effect, але небезпечно, якщо effect залежить від змінних, які не включені в key. Тоді отримаєш stale values.</p>
-<p><strong><code>rememberCoroutineScope</code> vs <code>LaunchedEffect</code>?</strong><br/>
-<code>LaunchedEffect</code> запускає coroutine як реакцію на входження/зміну key у composition. <code>rememberCoroutineScope</code> дає scope для запуску coroutine з event handler-а, наприклад button click.</p>
-<p><strong>Коли використовувати <code>snapshotFlow</code>?</strong><br/>
-Коли треба перетворити reads Compose state на Flow, наприклад scroll analytics: читати <code>LazyListState.firstVisibleItemIndex</code>, застосувати <code>distinctUntilChanged</code>, <code>filter</code>, <code>collect</code>.</p>
-<h3>Architecture і modularization</h3>
-<p><strong>Чи завжди потрібен domain layer?</strong><br/>
-Ні. Domain layer потрібен, коли є складна або reusable business logic. Якщо use case просто прокидує repository call — це ceremony.</p>
-<p><strong>Domain model vs DTO?</strong><br/>
-DTO — contract із network/storage layer. Domain model — бізнес-представлення. UI model — presentation-specific shape. Їх не варто змішувати, бо вони змінюються з різних причин.</p>
-<p><strong>Де має бути mapper?</strong><br/>
-На boundary між шарами: DTO → domain у data layer або repository boundary; domain → UI у presentation mapper/use case залежно від архітектури. Головне — не тягнути DTO в UI.</p>
-<p><strong>Як enforce-ити dependency direction у Gradle modules?</strong><br/>
-Через module dependencies, convention plugins, dependency analysis, visibility, package rules, CI checks. Feature не має напряму залежати від implementation іншої feature без explicit API contract.</p>
-<p><strong>Як організувати navigation між feature modules?</strong><br/>
-Через navigation contracts/routes, які не тягнуть implementation feature. Наприклад, feature expose-ить route definition або API, app/navigation module збирає graph.</p>
-<p><strong>Як уникнути core dumping ground?</strong><br/>
-Не складати все в <code>core</code>. Core має містити справді shared infrastructure/contracts/design system. Якщо код shared тільки між двома features, можливо, потрібен окремий shared feature/domain module.</p>
-<h3>Chat/system design</h3>
-<p><strong>Як зберігати message ordering?</strong><br/>
-Через server timestamp/sequence, local client timestamp для pending messages і deterministic merge policy. Не можна покладатися лише на device time.</p>
-<p><strong>Що робити з failed message?</strong><br/>
-Зберегти status <code>FAILED</code>, показати retry UI, не видаляти silently. Retry має використовувати той самий idempotency/client message id.</p>
-<p><strong>Як реалізувати typing indicator?</strong><br/>
-Ephemeral realtime signal через WebSocket/RTDB/stream, debounce/throttle на send, timeout на receive. Typing indicator не має бути durable message entity.</p>
-<h2>1. Lifecycle, configuration changes і process death</h2>
-<h3>Senior-level пояснення</h3>
-<p>Activity/Fragment lifecycle не варто пояснювати як механічний список <code>onCreate → onStart → onResume</code>. На Senior-рівні важливіше показати, що ти розумієш <strong>хто володіє станом</strong>, <strong>коли цей стан зникає</strong>, і <strong>що потрібно відновлювати після system-initiated process death</strong>.</p>
-<p>У production Android застосунку існує кілька різних типів стану:</p>
-<table>
-<thead>
-<tr>
-<th>Тип стану</th>
-<th>Де має жити</th>
-<th>Приклад</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Ephemeral UI state</td>
-<td><code>remember</code>, локальний state composable/view</td>
-<td>відкритий dropdown, focus, локальний input animation state</td>
-</tr>
-<tr>
-<td>UI element state, який треба пережити recreation</td>
-<td><code>rememberSaveable</code>, <code>SavedStateHandle</code></td>
-<td>selected tab, query text, scroll position key</td>
-</tr>
-<tr>
-<td>Screen state</td>
-<td><code>ViewModel</code></td>
-<td>loading/content/error, список елементів, validation state</td>
-</tr>
-<tr>
-<td>Durable business data</td>
-<td>Repository + local DB/DataStore</td>
-<td>user session, cached feed, pending sync writes</td>
-</tr>
-</tbody>
-</table>
-<p><code>ViewModel</code> переживає configuration changes, але не є persistent storage. Якщо процес убито системою, <code>ViewModel</code> буде створений заново. Тому сильна відповідь на lifecycle-питання має включати фразу: <strong>“я не зберігаю весь screen model у Bundle; я зберігаю мінімальний ключ або UI element state і відновлюю screen state з data layer”</strong>.</p>
+<h2>Lifecycle, configuration changes і process death</h2>
 <h3>Production приклад</h3>
 <pre><code class="language-kotlin">@HiltViewModel
 class ProductDetailsViewModel @Inject constructor(
@@ -7169,20 +7031,12 @@ class ProductDetailsViewModel @Inject constructor(
 </code></pre>
 <p>Тут <code>SavedStateHandle</code> не зберігає весь <code>Product</code>. Він зберігає лише <code>productId</code>. Повний екран відновлюється через repository. Це краще для process death, тестованості, кешування і single source of truth.</p>
 <h3>Follow-up відповіді</h3>
-<h4>Чим <code>rememberSaveable</code> відрізняється від <code>SavedStateHandle</code>?</h4>
-<p><code>rememberSaveable</code> — це Compose-level API для збереження UI element state всередині composable. Він добре підходить для локального стану: текст у полі, selected tab, expanded/collapsed стан. <code>SavedStateHandle</code> належить <code>ViewModel</code> і краще підходить для state, який бере участь у screen logic: id відкритого item, selected filter, query, який запускає repository stream.</p>
-<p>На співбесіді добре сказати: <strong>“якщо стан потрібен тільки конкретному composable — <code>rememberSaveable</code>; якщо стан впливає на ViewModel/business flow — <code>SavedStateHandle</code>”</strong>.</p>
 <h4>Коли <code>ViewModel</code> — це overkill?</h4>
 <p><code>ViewModel</code> не потрібен для локального, короткоживучого UI стану, який не має business semantics. Наприклад, expanded state одного accordion item, локальна анімація або тимчасове значення drag gesture не мають жити у <code>ViewModel</code>. Overuse ViewModel робить UI менш автономним, ускладнює preview/test setup і створює зайвий coupling.</p>
-<h4>Що не варто класти в <code>Bundle</code> / <code>SavedStateHandle</code>?</h4>
-<p>Не варто класти великі списки, bitmap-и, повні DTO, response models, складні object graphs або sensitive дані. Bundle має розумні розміри і призначений для малого serializable UI state. Для великих даних краще зберігати ключі, а дані брати з DB/cache/repository.</p>
 <h4>Як відновити scroll position після process death?</h4>
 <p>Для простого Compose списку можна використати <code>rememberSaveable</code> з <code>LazyListState.Saver</code>. Але для production feed краще зберігати не лише pixel/index, а стабільний item key або paging anchor. Після reload дані можуть змінитися: item може зникнути, порядок може змінитися, pagination може не мати потрібної сторінки. Senior-відповідь має згадати fallback: якщо anchor item не знайдено — відкриваємо найближчу позицію або top.</p>
-<h4>Чому у Fragment binding треба чистити в <code>onDestroyView</code>, а не в <code>onDestroy</code>?</h4>
-<p>Fragment instance може жити довше, ніж його View. Якщо тримати binding після <code>onDestroyView</code>, Fragment утримує стару View hierarchy, Context, adapter listeners і потенційно Activity. Це класичний memory leak у Fragment-based UI.</p>
 <hr/>
-<h2>2. Services, BroadcastReceiver, background execution limits і WorkManager</h2>
-<h3>Senior-level пояснення</h3>
+<h2>Services, BroadcastReceiver, background execution limits і WorkManager</h2>
 <p>Сильна відповідь на тему background work починається не з вибору API, а з класифікації задачі:</p>
 <table>
 <thead>
@@ -7214,7 +7068,6 @@ class ProductDetailsViewModel @Inject constructor(
 </tr>
 </tbody>
 </table>
-<p>Після Android 8 background services і implicit broadcasts стали суттєво обмежені. Тому Senior не має відповідати “я б створив Service” як default. Default для persistent background work — <code>WorkManager</code>, особливо якщо робота має пережити process death, reboot, network constraints або retry.</p>
 <h3>Production приклад</h3>
 <pre><code class="language-kotlin">@HiltWorker
 class SyncOrdersWorker @AssistedInject constructor(
@@ -7238,62 +7091,20 @@ class SyncOrdersWorker @AssistedInject constructor(
 }
 </code></pre>
 <h3>Follow-up відповіді</h3>
-<h4>Чому <code>IntentService</code> вже не є хорошим default?</h4>
-<p><code>IntentService</code> історично був зручним для background queue, але сучасні Android background execution limits роблять service-first підхід небезпечним. Для deferrable guaranteed work краще <code>WorkManager</code>, бо він враховує constraints, retry, persistence і OS scheduling.</p>
-<h4>Коли все ж потрібен foreground service?</h4>
-<p>Коли операція реально видима користувачу і повинна продовжуватися зараз і для неї немає спеціалізованого API: navigation (<code>location</code>), active workout tracking, audio recording (<code>microphone</code>), playback (<code>mediaPlayback</code>). Для user-initiated upload/download з Android 14 (API 34) краще user-initiated data transfer job (<code>setUserInitiated</code>), для deferrable transfers — <code>WorkManager</code>; <code>dataSync</code> FGS на Android 15 обмежений за часом і не стартує з <code>BOOT_COMPLETED</code>. Якщо користувач не очікує бачити постійне notification — foreground service, ймовірно, неправильний вибір.</p>
-<h4>Чим one-time work відрізняється від unique work?</h4>
-<p>One-time work — просто одиночна задача. Unique work — задача з іменем і conflict policy: <code>KEEP</code>, <code>REPLACE</code>, <code>APPEND</code>, <code>APPEND_OR_REPLACE</code>. У production це критично для sync, щоб не запустити 10 однакових background jobs після 10 кліків refresh.</p>
 <h4>Як debuggable <code>WorkManager</code>?</h4>
 <p>Логувати work id, name, constraints, run attempt, result. Для локального debug — WorkManager inspector, logs, test driver. У production — analytics/observability навколо failure reason, retry count, network state, payload size. Senior має думати не тільки “як запустити”, а й “як зрозуміти, чому sync не відпрацював”.</p>
 <h4>Як інтегрувати WorkManager з Hilt?</h4>
 <p>Через Hilt Worker integration: <code>@HiltWorker</code>, <code>@AssistedInject</code>, <code>@Assisted</code> для <code>Context</code> і <code>WorkerParameters</code>, плюс <code>HiltWorkerFactory</code>, переданий через <code>Configuration.Provider</code> (з вимкненим default <code>WorkManagerInitializer</code>). Default <code>WorkerFactory</code> створює Worker рефлексією лише через constructor <code>(Context, WorkerParameters)</code>, тож Worker з додатковими dependencies без Hilt або custom <code>WorkerFactory</code> впаде з “Could not instantiate”. Не варто вручну діставати dependencies із singleton/service locator всередині Worker.</p>
 <hr/>
-<h2>3. Kotlin для Android: state modeling замість trivia</h2>
-<h3>Senior-level пояснення</h3>
-<p>На співбесіді Kotlin-питання часто починаються як trivia: <code>val vs var</code>, <code>lateinit vs lazy</code>, <code>data class</code>, <code>sealed class</code>, <code>inline</code>, <code>reified</code>. Але senior-відповідь має швидко переводити це в практичний контекст: <strong>як Kotlin допомагає моделювати стан, зменшувати invalid states і робити код тестованим</strong>.</p>
-<p>Наприклад, <code>sealed interface</code> для UI state кращий за nullable combination flags:</p>
-<pre><code class="language-kotlin">sealed interface CheckoutUiState {
-    data object Loading : CheckoutUiState
-    data class Content(
-        val cart: Cart,
-        val paymentMethods: List&lt;PaymentMethod&gt;,
-        val selectedPaymentMethodId: String?
-    ) : CheckoutUiState
-    data class Error(val message: String) : CheckoutUiState
-}
-</code></pre>
-<p>Це краще, ніж:</p>
-<pre><code class="language-kotlin">// Погано: можливі invalid combinations
-// isLoading = true + error != null + content != null
-// Інтерв’юер обов’язково може спитати про це як follow-up.
-data class CheckoutState(
-    val isLoading: Boolean,
-    val cart: Cart?,
-    val error: String?
-)
-</code></pre>
-<h3>Follow-up відповіді</h3>
-<h4>Коли <code>sealed interface</code> кращий за enum?</h4>
-<p>Коли кожен стан може мати різні дані. <code>enum</code> добре підходить для фіксованого набору значень без payload: <code>SortOrder.ASC/DESC</code>. <code>sealed interface/class</code> краще для <code>Loading</code>, <code>Content(data)</code>, <code>Error(message)</code>, бо тип сам описує, які дані доступні в конкретному стані.</p>
+<h2>Kotlin для Android: follow-up пастки</h2>
 <h4>Коли <code>lateinit</code> доречний?</h4>
 <p><code>lateinit</code> доречний там, де framework створює об’єкт і ти не можеш використати constructor injection: наприклад, деякі Android test rules або legacy Fragment field injection. У production-коді <code>lateinit</code> часто є запахом, якщо його можна замінити constructor injection або nullable-free initialization.</p>
 <h4>Чим небезпечний <code>lazy</code> в Android component?</h4>
 <p><code>lazy</code> прив’язує ініціалізацію до lifetime власника. Якщо власник живе довше, ніж залежність, можна отримати leak або stale reference. Наприклад, lazy adapter, який тримає старий Fragment view listener після <code>onDestroyView</code>, — потенційна проблема.</p>
 <h4>Коли extension function — code smell?</h4>
 <p>Коли вона приховує залежності, робить domain logic невидимою, створює “магічний framework” або конфліктує з discoverability. Extension functions добре підходять для small pure transformations, mapping, formatting, але погано — для логіки з IO, analytics, navigation або hidden dependencies.</p>
-<h4>Чому immutability важлива для Compose і reducer-like state?</h4>
-<p>Immutable state полегшує reasoning: кожна зміна створює новий snapshot. Compose легше відстежує зміни, tests легше assert-ять expected state, а reducer-like logic стає передбачуваною. Mutable public collections у state — часта причина subtle bugs: UI не бачить зміни або бачить їх не в той момент.</p>
 <hr/>
-<h2>4. Coroutines: structured concurrency, cancellation, exceptions</h2>
-<h3>Senior-level пояснення</h3>
-<p>Coroutines на Senior-рівні — це не “я знаю <code>launch</code> і <code>async</code>”. Це вміння відповісти на три питання для будь-якої async операції:</p>
-<ol>
-<li><strong>Хто володіє цією роботою?</strong></li>
-<li><strong>Хто її скасовує?</strong></li>
-<li><strong>Як failure однієї child coroutine впливає на siblings і parent?</strong></li>
-</ol>
-<p>Structured concurrency означає, що coroutine не має бути “сиротою”. Вона має жити в scope, який описує її lifecycle: <code>viewModelScope</code>, <code>lifecycleScope</code>, application scope, repository scope або локальний <code>coroutineScope</code> всередині suspend function.</p>
+<h2>Coroutines: structured concurrency, cancellation, exceptions</h2>
 <h3>Production приклад: all-or-nothing паралельне завантаження</h3>
 <pre><code class="language-kotlin">suspend fun loadCheckoutScreen(
     cartRepository: CartRepository,
@@ -7329,135 +7140,10 @@ data class CheckoutState(
 }
 </code></pre>
 <p>Тут <code>supervisorScope</code> має сенс: failure <code>ads</code> не cancel-ить profile/recommendations, а помилка обробляється на <code>await()</code>. Із <code>coroutineScope</code> падіння ads скасувало б увесь dashboard. Якщо ж ловити помилку всередині самого <code>async</code>, child ніколи не падає, і тоді ізоляцію дає саме обробка, а не <code>supervisorScope</code>. Не обгортай suspend-виклики в голий <code>runCatching</code>: він ковтає <code>CancellationException</code>.</p>
-<h3>Follow-up відповіді</h3>
-<h4>Чому <code>GlobalScope</code> — bad default?</h4>
-<p><code>GlobalScope</code> не має structured parent. Його job не прив’язаний до screen, feature або user flow. Це означає, що робота може продовжитись після того, як користувач пішов зі screen, ViewModel очистився або dependency graph уже не актуальний. Він може бути виправданий лише для дуже обережно спроєктованої application-wide роботи, але тоді краще створити явний <code>ApplicationScope</code> через DI.</p>
 <h4>Коли application-wide scope виправданий?</h4>
 <p>Коли робота логічно переживає конкретний екран: app-level session observer, long-lived WebSocket manager, shared repository cache warmer, analytics event queue. Але такий scope має бути явно інжектований, логований, тестований і контрольовано cancel-итися при shutdown/logout, якщо це потрібно.</p>
-<h4>Чому не можна передавати новий <code>Job()</code> у <code>launch</code>?</h4>
-<p>Якщо ти передаєш новий <code>Job()</code> у builder, ти можеш відірвати child coroutine від parent context і зламати structured concurrency. Parent більше не контролює child належним чином. Senior має уникати ad-hoc job injection у builder і натомість створювати scope з чітким ownership.</p>
-<h4>Де exception з <code>async</code> реально з’явиться?</h4>
-<p><code>async</code> повертає <code>Deferred</code>. Exception з’являється при <code>await()</code>, але це не означає, що вона ізольована. У звичайному parent scope failure child coroutine все одно може cancel-ити parent/siblings. Тому <code>async</code> не є “безпечним контейнером помилки”.</p>
-<h4>Чому <code>CancellationException</code> не треба показувати як error?</h4>
-<p>Cancellation — це контрольований шлях завершення, а не business failure. Якщо користувач пішов з екрана або новий search query скасував старий запит, UI не повинен показувати “Something went wrong”. Якщо ти ловиш <code>Throwable</code>, потрібно не проковтнути <code>CancellationException</code>.</p>
-<pre><code class="language-kotlin">try {
-    repository.search(query)
-} catch (e: CancellationException) {
-    throw e
-} catch (e: Throwable) {
-    _uiState.update { it.copy(error = e.toUserMessage()) }
-}
-</code></pre>
-<h4>Коли <code>SupervisorJob</code> кращий за <code>supervisorScope</code>?</h4>
-<p><code>supervisorScope</code> — локальна structured область у suspend function. <code>SupervisorJob</code> — частина довшоживучого scope, наприклад <code>CoroutineScope(SupervisorJob() + dispatcher)</code> для application-level manager. Тобто <code>supervisorScope</code> відповідає на “як поводяться children у цій операції”, а <code>SupervisorJob</code> — “як поводиться весь scope протягом lifetime owner-а”.</p>
-<h4>Як тестувати timeout/cancellation детерміновано?</h4>
-<p>Через <code>runTest</code>, <code>TestDispatcher</code>, <code>advanceTimeBy</code>, <code>advanceUntilIdle</code>, dependency injection dispatchers і fake suspending dependencies. Не треба використовувати реальні <code>delay(1000)</code> у unit tests.</p>
-<pre><code class="language-kotlin">@Test
-fun cancelsOldSearchWhenNewQueryArrives() = runTest {
-    // Main = StandardTestDispatcher (MainDispatcherRule); fake search suspends on delay(1_000)
-    val repository = FakeSearchRepository()
-    val viewModel = SearchViewModel(repository)
-    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.uiState.collect() }
-
-    viewModel.onQueryChanged("a")
-    advanceTimeBy(301) // debounce пройшов, пошук "a" вже виконується
-    viewModel.onQueryChanged("android")
-    advanceUntilIdle()
-
-    assertEquals(listOf("a"), repository.cancelledQueries)
-    assertEquals(listOf("android"), repository.completedQueries)
-}
-</code></pre>
-<h4>Як пояснити <code>CoroutineExceptionHandler</code>?</h4>
-<p><code>CoroutineExceptionHandler</code> — це не універсальний <code>try/catch</code>. Він працює для uncaught exceptions у root coroutines, але не заміняє structured error handling. У <code>async</code> exception треба обробляти через <code>await</code>. У production ViewModel частіше краще ловити помилки всередині конкретного use case flow і мапити їх у UI state.</p>
 <hr/>
-<h2>5. Flow: cold/hot, StateFlow/SharedFlow/Channel, one-shot events</h2>
-<h3>Senior-level пояснення</h3>
-<p><code>Flow</code> треба пояснювати через <strong>delivery semantics</strong>:</p>
-<table>
-<thead>
-<tr>
-<th>API</th>
-<th>Семантика</th>
-<th>Типовий Android use case</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>Flow</code></td>
-<td>cold stream, запускається на collect</td>
-<td>repository query, Room observable, network polling flow</td>
-</tr>
-<tr>
-<td><code>StateFlow</code></td>
-<td>hot state holder з current value</td>
-<td>screen UI state</td>
-</tr>
-<tr>
-<td><code>SharedFlow</code></td>
-<td>hot broadcast stream з replay/buffer policy</td>
-<td>app-level signals, shared updates, non-state broadcasts</td>
-</tr>
-<tr>
-<td><code>Channel</code></td>
-<td>queue/point-to-point communication</td>
-<td>actor-like processing, internal command queue</td>
-</tr>
-</tbody>
-</table>
-<p>Senior candidate не має казати просто “StateFlow для state, SharedFlow для events”. Це надто коротко. Потрібно пояснити, чи event справді event, чи це latent state.</p>
-<h3>Production приклад: search із cancellation через <code>flatMapLatest</code></h3>
-<pre><code class="language-kotlin">@HiltViewModel
-class SearchViewModel @Inject constructor(
-    private val searchRepository: SearchRepository
-) : ViewModel() {
-
-    private val query = MutableStateFlow("")
-
-    val uiState: StateFlow&lt;SearchUiState&gt; = query
-        .debounce(300)
-        .distinctUntilChanged()
-        .flatMapLatest { q -&gt;
-            if (q.isBlank()) flowOf(SearchUiState.Empty)
-            else searchRepository.search(q)
-                .map&lt;SearchResult, SearchUiState&gt; { SearchUiState.Content(it.items) }
-                .onStart { emit(SearchUiState.Loading) }
-                .catch { emit(SearchUiState.Error(it.toUserMessage())) }
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SearchUiState.Empty)
-
-    fun onQueryChanged(value: String) {
-        query.value = value
-    }
-}
-</code></pre>
-<h3>Follow-up відповіді</h3>
-<h4>Чому звичайний <code>Flow</code> cold?</h4>
-<p>Cold означає, що upstream запускається для кожного collector окремо. Якщо flow робить network call у builder, два collectors можуть запустити два network calls. Це не bug, це semantics. Якщо потрібно share-ити один upstream — використовуй <code>shareIn</code> або <code>stateIn</code> у правильно обраному scope.</p>
-<h4>Чим <code>stateIn</code> відрізняється від <code>shareIn</code>?</h4>
-<p><code>stateIn</code> перетворює flow на <code>StateFlow</code>: потрібен initial value, завжди є current value, добре для UI state. <code>shareIn</code> повертає <code>SharedFlow</code>: можна налаштувати replay, buffer, started policy і використовувати для broadcast-like streams.</p>
-<h4>Що робить <code>SharingStarted.WhileSubscribed(5_000)</code>?</h4>
-<p>Він тримає upstream активним, поки є subscribers, і зупиняє через 5 секунд після зникнення останнього subscriber. У ViewModel це зручно для configuration change: при rotation collector коротко зникає, але upstream не перезапускається миттєво.</p>
-<h4>Коли <code>Channel</code> виправданий?</h4>
-<p>Коли потрібна queue або actor-like processing, а не UI state. Наприклад, внутрішня черга analytics events або serialized command processor. Для UI navigation/snackbar <code>Channel</code> часто створює edge cases: event може загубитися при відсутності collector-а або доставитися не тоді, коли UI готовий.</p>
-<h4>Як правильно моделювати one-shot navigation?</h4>
-<p>Спочатку перевірити, чи це справді one-shot event. Наприклад, “користувач залогінений” — це state. UI може реагувати на <code>isLoggedIn = true</code> і виконати navigation у <code>LaunchedEffect</code>. Якщо ж це справді одноразовий external signal, треба явно описати delivery guarantees: чи можна загубити, чи треба replay, чи має бути ack від UI.</p>
-<pre><code class="language-kotlin">LaunchedEffect(uiState.isLoggedIn) {
-    if (uiState.isLoggedIn) onNavigateHome()
-}
-</code></pre>
-<h4>Чому <code>collectLatest</code> може бути небезпечним?</h4>
-<p><code>collectLatest</code> скасовує попередній block при новій emission. Це ідеально для search або rendering latest state, але погано для операцій, які не можна переривати: write to DB, analytics event, payment operation. Senior має пояснити cancellation semantics, а не тільки “collectLatest бере останнє”.</p>
-<h4>Коли <code>flowOn</code> працює не так, як очікують?</h4>
-<p><code>flowOn</code> змінює context upstream від місця, де він застосований. Він не змінює dispatcher для downstream collector. Якщо розкидати <code>flowOn</code> без розуміння boundary, можна отримати складний для debugging threading. Часто краще, щоб data layer сам відповідав за dispatcher для blocking IO, а UI layer лише collect-ив lifecycle-aware.</p>
-<h4>Як тестувати Flow?</h4>
-<p>Для finite flow можна <code>first()</code>, <code>single()</code>, <code>toList()</code>. Для hot/continuous flow потрібен controlled fake producer і collection у <code>backgroundScope</code>. Turbine зручний, бо дозволяє await item-и, перевіряти completion/error і не писати багато boilerplate.</p>
-<hr/>
-<h2>6. Jetpack Compose: recomposition, side effects, state hoisting, performance</h2>
-<h3>Senior-level пояснення</h3>
-<p>Compose — це не “новий XML”. Senior має пояснювати Compose через <strong>state → composition → recomposition → side-effect boundaries</strong>.</p>
-<p>Composable function може виконуватися багато разів, у будь-якому порядку, а recomposition може бути optimistic і скасованою. Тому composable body має бути idempotent і side-effect free. Усе, що взаємодіє із зовнішнім світом — navigation, snackbar, analytics, listener registration, coroutine launch — має йти через effect APIs.</p>
-<h3>Production приклад: state + effects</h3>
+<h2>Jetpack Compose: effects у коді</h2>
 <pre><code class="language-kotlin">@Composable
 fun CheckoutRoute(
     viewModel: CheckoutViewModel,
@@ -7487,19 +7173,7 @@ fun CheckoutRoute(
     )
 }
 </code></pre>
-<h3>Follow-up відповіді</h3>
-<h4>Чому recomposition — це не full redraw?</h4>
-<p>Recomposition — це повторне виконання composable-функцій, які залежать від зміненого state. Compose runtime може skip-ити частини дерева, якщо параметри стабільні й не змінилися. Це не означає, що весь екран перемальовується щоразу.</p>
-<h4>Чому side effects не можна запускати прямо в composable body?</h4>
-<p>Composable body може виконуватися багато разів. Якщо ти викличеш <code>analytics.logScreen()</code> або <code>navController.navigate()</code> прямо в body, це може виконатися повторно при recomposition. Правильний варіант — <code>LaunchedEffect</code>, <code>DisposableEffect</code>, <code>SideEffect</code> або event handler залежно від semantics.</p>
-<h4>Коли <code>remember</code> достатньо, а коли потрібен <code>rememberSaveable</code>?</h4>
-<p><code>remember</code> переживає recomposition, але не configuration change/process recreation. <code>rememberSaveable</code> використовує saveable state mechanism і підходить для простого UI element state, який має пережити recreation: text field value, selected tab, scroll index.</p>
-<h4>Коли state має жити в UI, а коли у ViewModel?</h4>
-<p>Локальний interaction state — у UI. Business/screen state, який формується repository/use cases, — у ViewModel. Наприклад, expanded state одного card може бути локальним, але selected delivery address для checkout flow має бути у ViewModel.</p>
-<h4>Чим корисний <code>rememberUpdatedState</code>?</h4>
-<p>Він дозволяє довгоживучому effect бачити актуальну lambda/value без перезапуску effect. Наприклад, <code>LaunchedEffect(Unit)</code> може тривати довго, але callback <code>onNavigate</code> може змінитися після recomposition. <code>rememberUpdatedState</code> оновлює reference без restart.</p>
-<h4>Коли <code>DisposableEffect</code> правильний вибір?</h4>
-<p>Коли потрібно зареєструвати listener/observer і гарантовано прибрати його при зміні key або виході з composition: lifecycle observer, broadcast receiver, sensor listener, callback registration.</p>
+<p><code>DisposableEffect</code> — для listener/observer, який треба гарантовано прибрати при зміні key або виході з composition (lifecycle observer, broadcast receiver, sensor listener, callback registration):</p>
 <pre><code class="language-kotlin">DisposableEffect(lifecycleOwner) {
     val observer = LifecycleEventObserver { _, event -&gt;
         if (event == Lifecycle.Event.ON_START) analytics.onScreenVisible()
@@ -7508,27 +7182,8 @@ fun CheckoutRoute(
     onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
 }
 </code></pre>
-<h4>Коли <code>derivedStateOf</code> корисний?</h4>
-<p>Коли input state змінюється часто, а derived result змінюється рідше. Наприклад, <code>firstVisibleItemIndex &gt; 0</code> для show/hide scroll-to-top button. Якщо derived value змінюється так само часто, <code>derivedStateOf</code> додає зайву складність.</p>
-<h4>Навіщо keys у <code>LazyColumn</code>?</h4>
-<p>Keys задають стабільну identity item-а. Без keys Compose може асоціювати remembered state з позицією, а не з item. При insert/remove/reorder це призводить до неправильного state retention, зайвих recompositions і візуальних багів.</p>
-<h4>Що таке Compose stability у практичному сенсі?</h4>
-<p>Stability визначає, як Compose порівнює параметри для skip: stable — через <code>equals()</code>, unstable — за identity (strong skipping, default з Kotlin 2.0.20). Immutable models, уникнення повторного створення inputs у composition, вузькі state reads і уникнення mutable public collections допомагають runtime. Але Senior має казати: “спочатку вимірюю, потім оптимізую”, бо не кожна нестабільність є реальною performance проблемою.</p>
-<h4>Чому <code>collectAsStateWithLifecycle</code> кращий для Android UI?</h4>
-<p>Він collect-ить Flow lifecycle-aware, тобто не продовжує активно збирати UI state, коли Lifecycle нижче потрібного стану. Це допомагає уникнути зайвої роботи, crashes через неактивний UI і неправильних side effects у background.</p>
 <hr/>
-<h2>7. Architecture: MVVM, MVI, Clean Architecture, modularization</h2>
-<h3>Senior-level пояснення</h3>
-<p>Architecture на Senior interview треба пояснювати не назвами патернів, а <strong>потоком даних і межами відповідальності</strong>.</p>
-<p>Хороша відповідь:</p>
-<blockquote>
-<p>UI render-ить immutable state і відправляє user actions. ViewModel — screen-level state holder, який трансформує domain/data streams у UI state. Repository приховує data sources і виступає single source of truth. Domain/use case layer додається тоді, коли бізнес-логіка повторюється або стає складною. Modules відокремлюють ownership, visibility і dependency direction.</p>
-</blockquote>
-<p>Погана відповідь:</p>
-<blockquote>
-<p>У нас Clean Architecture, бо є папки <code>data</code>, <code>domain</code>, <code>presentation</code>.</p>
-</blockquote>
-<h3>Production приклад: explicit UI state</h3>
+<h2>Architecture + Testing: explicit UI state і його тест</h2>
 <pre><code class="language-kotlin">sealed interface FeedUiState {
     data object Loading : FeedUiState
     data class Content(
@@ -7560,84 +7215,6 @@ class FeedViewModel @Inject constructor(
     }
 }
 </code></pre>
-<h3>Follow-up відповіді</h3>
-<h4>Коли domain layer не потрібен?</h4>
-<p>Коли use case просто викликає один repository метод без додаткової логіки і не пере використовується. У такому випадку use case створює ceremony без користі. Domain layer виправданий, коли є orchestration, validation, policy, reuse або складна бізнес-логіка.</p>
-<h4>MVVM vs MVI practically?</h4>
-<p>MVVM описує розділення UI і ViewModel/state holder. MVI додає жорсткіший unidirectional flow: Intent/Action → reducer/processor → State. У production різниця часто не в назві, а в дисципліні: immutable state, single rendering source, predictable actions, no hidden side effects.</p>
-<h4>Як уникнути DTO leaking у UI?</h4>
-<p>Створювати domain/UI models і mappers на boundary. DTO описує transport contract і може змінюватися разом із backend. UI model описує те, що потрібно екрану. Якщо UI напряму залежить від DTO, backend field rename або nullable edge case починає ламати presentation layer.</p>
-<h4>Як обирати module boundaries?</h4>
-<p>За ownership і dependency direction, а не за бажанням “більше модулів”. Типові boundaries: <code>core:network</code>, <code>core:database</code>, <code>core:designsystem</code>, <code>feature:checkout</code>, <code>feature:profile</code>, <code>domain:*</code>. Feature modules мають залежати від core/domain abstractions, але не один від одного напряму без явної причини.</p>
-<h4>Коли modularization шкодить?</h4>
-<p>Коли модулі занадто дрібні, мають circular conceptual dependencies, потребують багато Gradle boilerplate, ускладнюють navigation і testing, але не дають ownership/build/test виграшу. Senior має визнавати, що modularization — це trade-off, а не автоматичне покращення.</p>
-<h4>Як пояснити Clean Architecture trade-off команді?</h4>
-<p>Сказати через cost/benefit: вона покращує separation, testability, replaceability і team ownership, але додає mapping, layers, abstractions і cognitive overhead. Якщо feature проста, повний clean stack може бути overengineering. Якщо domain складний і довгоживучий — abstraction окупається.</p>
-<h4>Як правильно моделювати errors?</h4>
-<p>Не кидати raw exceptions до UI. Data layer може мати technical errors, domain layer — business failures, UI layer — user-facing messages/actions. У складних продуктах краще мати typed error model або result wrapper, але не перетворювати все на <code>String</code> занадто рано.</p>
-<hr/>
-<h2>8. Dependency Injection: Hilt scopes і testing</h2>
-<h3>Senior-level пояснення</h3>
-<p>DI — це не “як створити об’єкт”, а <strong>як керувати graph, lifetimes і replaceability</strong>. Hilt дає Android-aware components, але користь буде тільки якщо команда розуміє scopes.</p>
-<table>
-<thead>
-<tr>
-<th>Scope</th>
-<th>Lifetime</th>
-<th>Типовий use case</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>@Singleton</code></td>
-<td>application</td>
-<td>Retrofit, Room DB, app repositories</td>
-</tr>
-<tr>
-<td><code>@ActivityRetainedScoped</code></td>
-<td>across config changes for activity</td>
-<td>shared flow coordinator, screen-flow state shared by ViewModels</td>
-</tr>
-<tr>
-<td><code>@ViewModelScoped</code></td>
-<td>one ViewModel</td>
-<td>use case/session helper тільки для цього ViewModel</td>
-</tr>
-<tr>
-<td><code>@ActivityScoped</code></td>
-<td>one Activity instance</td>
-<td>Activity-specific objects</td>
-</tr>
-<tr>
-<td><code>@FragmentScoped</code></td>
-<td>one Fragment instance</td>
-<td>Fragment-specific helpers</td>
-</tr>
-</tbody>
-</table>
-<h3>Follow-up відповіді</h3>
-<h4>Коли <code>@ActivityRetainedScoped</code> кращий за <code>@ViewModelScoped</code>?</h4>
-<p>Коли dependency має бути спільною для всіх ViewModels однієї Activity і переживати configuration changes (<code>ActivityRetainedComponent</code> живе стільки, скільки Activity, і не пов’язаний з navigation graph; для per-flow scope — navigation-graph-scoped ViewModel). <code>@ViewModelScoped</code> створить окремий instance на кожен ViewModel.</p>
-<h4>Чому надмірний <code>@Singleton</code> — проблема?</h4>
-<p>Singleton-и живуть весь процес, тому легко тримають stale state, Activity context, caches без eviction, listeners і mutable глобальний стан. Це ускладнює тести й може створити leaks. Singleton має бути або stateless, або дуже чітко керувати своїм state.</p>
-<h4>Як замінювати bindings у тестах?</h4>
-<p>Через Hilt testing APIs: test modules, uninstall modules, bind fake implementations. Ідея — тестувати через graph replacement, а не monkey-patch-ити singleton напряму.</p>
-<h4>Constructor injection vs module provider?</h4>
-<p>Constructor injection — default для власних класів. Module provider потрібен для third-party/framework types, builder APIs або interfaces, де треба явно сказати, яку implementation створювати.</p>
-<h4>Як DI впливає на modularization?</h4>
-<p>Feature modules мають expose мінімальні public contracts. Якщо DI graph змушує feature знати занадто багато про іншу feature — boundaries неправильні. Добрий DI дизайн підтримує dependency direction, а не ламає її.</p>
-<hr/>
-<h2>9. Testing: coroutines, Flow, ViewModel, fake vs mock</h2>
-<h3>Senior-level пояснення</h3>
-<p>Senior testing answer має звучати так: <strong>“я проєктую код так, щоб async behavior був контрольований у тестах”</strong>. Це означає:</p>
-<ul>
-<li>dispatchers інжектяться;</li>
-<li>production code не хардкодить <code>Dispatchers.IO</code> у місцях, які важко контролювати;</li>
-<li>repositories можна замінити fake-ами;</li>
-<li>Flow producers можна вручну emit-ити;</li>
-<li>тести не залежать від real time;</li>
-<li>ViewModel state перевіряється як observable state machine.</li>
-</ul>
 <h3>Production приклад: dispatcher provider</h3>
 <pre><code class="language-kotlin">interface AppDispatchers {
     val io: CoroutineDispatcher
@@ -7670,46 +7247,11 @@ fun emitsLoadingThenContent() = runTest {
     }
 }
 </code></pre>
-<h3>Follow-up відповіді</h3>
-<h4>Коли fake кращий за mock?</h4>
-<p>Fake кращий для stateful/coroutine/Flow behavior, бо він поводиться як маленька in-memory implementation. Mock зручний для interaction verification, але часто стає brittle, особливо коли тест починає перевіряти implementation details замість behavior.</p>
-<h4>Коли <code>StandardTestDispatcher</code>, а коли <code>UnconfinedTestDispatcher</code>?</h4>
-<p><code>StandardTestDispatcher</code> дає точніший контроль: tasks не виконуються автоматично, треба <code>advanceUntilIdle</code>. Це добре для детермінованих unit tests. <code>UnconfinedTestDispatcher</code> простіший і часто зручний для ViewModel state tests, але може приховати scheduling edge cases.</p>
-<h4>Чому всі TestDispatchers мають ділити один scheduler?</h4>
-<p>Якщо у тесті кілька dispatcher-ів із різними schedulers, virtual time роз’їжджається. <code>advanceUntilIdle</code> може просунути один scheduler, але не інший. Це робить tests flaky або misleading.</p>
-<h4>Чому <code>runBlocking</code> — поганий default для coroutine tests?</h4>
-<p><code>runBlocking</code> блокує thread і не дає virtual time control. <code>runTest</code> спеціально створений для coroutine tests: управляє scheduler, virtual time, uncaught exceptions і pending coroutines.</p>
-<h4>Як тестувати нескінченний Flow?</h4>
-<p>Не викликати <code>toList()</code> напряму в основному test scope, бо тест ніколи не завершиться. Collect-ити в <code>backgroundScope</code> або використовувати Turbine й явно cancel-ити collection.</p>
-<h4>Що саме assert-ити у ViewModel test?</h4>
-<p>Не implementation details типу “repository викликався один раз”, якщо це не контракт. Краще assert-ити observable behavior: UI state transitions, emitted effects/state, validation result, retry behavior, error mapping.</p>
 <hr/>
-<h2>10. Performance, memory leaks, ANR, startup</h2>
-<h3>Senior-level пояснення</h3>
-<p>Performance на Senior-рівні — це не набір порад “не роби важке на main thread”. Це процес:</p>
-<ol>
-<li>Визначити user journey: startup, scrolling, checkout, search, image-heavy screen.</li>
-<li>Виміряти: profiler, traces, Macrobenchmark, logs, ANR traces, LeakCanary.</li>
-<li>Знайти bottleneck: main-thread IO, lock contention, overdraw, allocations, recomposition, DB query, image decoding.</li>
-<li>Внести targeted fix.</li>
-<li>Додати regression protection: benchmark, baseline profile, monitoring.</li>
-</ol>
-<h3>Follow-up відповіді</h3>
-<h4>Як пояснити memory leak?</h4>
-<p>Memory leak — це ситуація, коли об’єкт більше не потрібен, але залишається reachable з GC roots. В Android класика: Activity/Fragment leak через static reference, listener, adapter, coroutine, callback, singleton або binding після <code>onDestroyView</code>.</p>
-<h4>Як знайти leak reference chain?</h4>
-<p>Через LeakCanary або heap dump у Memory Profiler. Важливо дивитися не лише на leaked object, а на path from GC root. Fix має прибрати reference owner або правильно очистити listener/job/binding.</p>
-<h4>Що таке ANR?</h4>
-<p>ANR виникає, коли main thread не відповідає достатньо довго: input dispatch, broadcast receiver, service start або content provider operation. Причина може бути не тільки явний <code>Thread.sleep</code>, а й lock contention, binder call, slow disk IO, heavy inflation, synchronous DB query.</p>
-<h4>Як оптимізувати startup?</h4>
-<p>Спочатку розділити cold/warm/hot startup і виміряти. Потім прибрати eager initialization з <code>Application.onCreate</code>, перенести non-critical work lazy/background, оптимізувати DI graph startup, ContentProviders, synchronous IO, heavy logging. Для production — Baseline Profiles і Macrobenchmark.</p>
-<h4>Як говорити про Compose performance?</h4>
-<p>Через measurement і symptoms: recomposition/skip counts, stability reports (зі strong skipping unstable params порівнюються за identity), LazyColumn keys, state read scope, expensive work in composition. Не треба казати “додайте remember всюди”. Це junior-level відповідь.</p>
-<h4>Як оптимізувати bitmap/image-heavy screen?</h4>
-<p>Використовувати image loading library, правильний size, caching, placeholders, downsampling, уникати декодування full-size bitmap на main thread, контролювати memory cache і lifecycle. Для feed — prefetch/paging, stable keys, recycling/lazy list behavior.</p>
+<h2>Performance: ANR</h2>
+<p><strong>Що таке ANR?</strong> Main thread не відповідає достатньо довго: input dispatch, broadcast receiver, service start або content provider operation. Причина може бути не тільки явний <code>Thread.sleep</code>, а й lock contention, binder call, slow disk IO, heavy inflation, synchronous DB query.</p>
 <hr/>
-<h2>11. Android System Design: як відповідати Senior-рівнем</h2>
-<h3>Senior-level framework</h3>
+<h2>Android System Design: як відповідати Senior-рівнем</h2>
 <p>Для Android system design відповідай за такою структурою:</p>
 <ol>
 <li><strong>Requirements</strong>: online/offline, real-time, auth, sync, scale, UX expectations.</li>
@@ -7721,23 +7263,10 @@ fun emitsLoadingThenContent() = runTest {
 <li><strong>Error handling</strong>: retryable vs non-retryable, user-facing vs technical.</li>
 <li><strong>Testing/observability</strong>: fakes, integration tests, sync logs, metrics.</li>
 </ol>
-<h3>Follow-up відповіді</h3>
-<h4>Як уникнути duplicate messages у chat після reconnect?</h4>
-<p>Потрібен stable client-generated id для outgoing message, server id після ack, idempotent send або deduplication strategy. Local DB має зберігати pending/sent/failed states. При reconnect sync має merge-ити server messages із local pending за idempotency key.</p>
 <h4>Коли WebSocket має жити довше, ніж screen?</h4>
 <p>Якщо realtime connection потрібен для app-level presence, notifications, multi-screen updates або shared session. Але якщо stream потрібен тільки на одному screen, owner може бути screen-level. Senior має явно пояснити lifetime owner і battery/network trade-off.</p>
-<h4>Як синхронізувати optimistic write з server ack?</h4>
-<p>Записати local pending entity, одразу показати UI, відправити background/foreground request, при ack оновити status/server id, при failure показати retry або mark failed. Важливо не втратити pending writes при process death — тому вони мають жити в local DB, а не в пам’яті ViewModel.</p>
-<h4>Як зробити token refresh single-flight?</h4>
-<p>Коли кілька requests отримали 401, refresh має виконатися один раз. Для цього використовують synchronized/mutex механізм в authenticator/session manager. Інші requests чекають результат або використовують уже оновлений token. Якщо refresh failure unrecoverable — clear session і emit logout state.</p>
-<h4>Хто має ініціювати navigation: UI чи ViewModel?</h4>
-<p>ViewModel не має напряму знати <code>NavController</code>. Він може оновити state: <code>isLoggedIn</code>, <code>paymentCompleted</code>, <code>selectedItemId</code>. UI реагує на state і виконує navigation side-effect. Для user click navigation, яка не потребує business validation, UI може одразу викликати navigation.</p>
-<h4>Як design offline-first feed?</h4>
-<p>Local DB — source of truth. UI observe-ить DB через Flow/Paging. Refresh завантажує remote data і transactionally оновлює DB. Для pagination — remote keys. Для offline — показ cached data + stale indicator. Для writes — pending queue і retry policy.</p>
-<h4>Як design payment flow?</h4>
-<p>Payment flow має сильні consistency і security constraints. Не можна покладатися лише на локальний state. Потрібні idempotency keys, server-side confirmation, retry-safe operations, clear UI states, timeout handling, no duplicate charge, audit logs. UI має показувати pending/processing/result, але final truth приходить із backend.</p>
 <hr/>
-<h2>12. Готові короткі формулювання для співбесіди</h2>
+<h2>Готові короткі формулювання для співбесіди</h2>
 <h3>Coroutines</h3>
 <blockquote>
 <p>Я не вибираю coroutine API ізольовано. Я спочатку визначаю owner, cancellation path і failure semantics. Якщо підзадачі формують одну операцію — <code>coroutineScope</code>; якщо можуть падати незалежно — <code>supervisorScope</code>. Cancellation я не вважаю error path і не показую як помилку користувачу.</p>
@@ -7760,48 +7289,14 @@ fun emitsLoadingThenContent() = runTest {
 </blockquote>
 </div>
 </details><details class="major-section" data-key="senior-edge-cases" data-title="Senior Edge Cases: банк production-пасток" id="senior-edge-cases" open=""><summary class="major-summary"><span class="major-title">Senior Edge Cases: банк production-пасток</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
-<p>Цей розділ — концентрат пасток, які відрізняють Senior від Middle. Кожен кейс описаний за схемою: проблема → чому виникає → що ламається в production → як діє Senior. На співбесіді саме такі історії звучать найпереконливіше, бо їх неможливо вивчити з документації — лише з досвіду.</p>
+<p><strong>Детальніше:</strong> <a href="#authentication-token-refresh-android-mobile-security">Authentication, token refresh та mobile security</a>, <a href="#advanced-kotlin-flow-production">Advanced Kotlin Flow у production</a>, <a href="#kotlin-hot-flows-ui-state-events">StateFlow, SharedFlow, Channel</a>, <a href="#jetpack-compose-performance">Jetpack Compose performance</a>, <a href="#android-process-lifecycle-state-restoration">Життєвий цикл процесу і відновлення стану</a>, <a href="#android-background-execution">Android background execution</a>, <a href="#local-persistence-sqlite-room-datastore">Local persistence: Room і DataStore</a>, <a href="#offline-first-architecture-paging-3">Offline-first і Paging 3</a>, <a href="#build-release-delivery-engineering">Build, release and delivery engineering</a>, <a href="#android-tasks-back-stack-deep-links-intents-pending-intent">Tasks, deep links, PendingIntent</a>, <a href="#kotlin-coroutines-failures-supervision-testing">Coroutines: failures, cleanup, testing</a>. Тут лишилися production-історії та деталі, яких немає в етапах; кейси про Compose stability, Paging LoadState і проковтнуту <code>CancellationException</code> повністю розібрані в етапах.</p>
+<p>Схема кейсу: проблема → чому виникає → що ламається в production → як діє Senior.</p>
 
-<h2 id="edge-case-token-refresh">1. Token refresh: кілька 401 одночасно<a aria-label="Посилання на розділ: Token refresh" class="heading-anchor" href="#edge-case-token-refresh">#</a></h2>
-<p><strong>Проблема.</strong> Access token протух, і 5 паралельних запитів одночасно отримали 401. Наївна реалізація запускає 5 refresh-запитів.</p>
-<p><strong>Чому виникає.</strong> OkHttp викликає <code>Authenticator</code> для кожного failed response незалежно. Без синхронізації кожен потік вважає, що саме він має оновити токен.</p>
-<p><strong>Що ламається в production.</strong> Якщо backend ротує refresh token (one-time use), перший refresh інвалідовує refresh token, а решта 4 отримують 401 на refresh-ендпоінті — і логіка «401 на refresh = розлогінити користувача» масово викидає людей із сесії. Класичний інцидент: спайк логаутів після деплою без видимої причини.</p>
-<p><strong>Як діє Senior.</strong> Серіалізує refresh через <code>Mutex</code>: перший потік оновлює токен, решта чекають і після входу в критичну секцію перевіряють, чи токен уже не оновлений кимось іншим. Плюс обмежує кількість retry, щоб не зациклитись.</p>
-<pre><code class="language-kotlin">class TokenAuthenticator @Inject constructor(
-    private val tokenStore: TokenStore,
-    private val refreshApi: RefreshApi
-) : Authenticator {
-    private val mutex = Mutex()
+<h2 id="edge-case-token-refresh">Token refresh: кілька 401 одночасно<a aria-label="Посилання на розділ: Token refresh" class="heading-anchor" href="#edge-case-token-refresh">#</a></h2>
+<p><strong>Що ламається в production.</strong> Наївний <code>Authenticator</code> на 5 паралельних 401 запускає 5 refresh-запитів. Якщо backend ротує refresh token (one-time use), перший refresh інвалідовує refresh token, а решта 4 отримують 401 на refresh-ендпоінті — і логіка «401 на refresh = розлогінити користувача» масово викидає людей із сесії. Класичний інцидент: спайк логаутів після деплою без видимої причини. Fix — single-flight refresh під <code>Mutex</code> з перевіркою «токен уже оновив хтось інший» і обмеженням retry (див. етап про token refresh).</p>
 
-    override fun authenticate(route: Route?, response: Response): Request? {
-        if (response.priorCount() &gt;= 2) return null // захист від циклу
-        val failedToken = response.request.header("Authorization")
-            ?.removePrefix("Bearer ")
-
-        val newToken = runBlocking {
-            mutex.withLock {
-                val current = tokenStore.accessToken()
-                // Хтось уже оновив токен, поки ми чекали на mutex
-                if (current != null &amp;&amp; current != failedToken) current
-                else refreshApi.refresh(tokenStore.refreshToken())
-                    ?.also { tokenStore.save(it) }
-            }
-        } ?: return null // refresh не вдався -> logout flow
-
-        return response.request.newBuilder()
-            .header("Authorization", "Bearer $newToken")
-            .build()
-    }
-
-    private fun Response.priorCount(): Int =
-        generateSequence(priorResponse) { it.priorResponse }.count()
-}</code></pre>
-<p>Follow-up, який часто ставлять: чому <code>Authenticator</code>, а не interceptor? Бо Authenticator викликається лише на 401 і вже після отримання response, а interceptor довелось би вручну вчити розрізняти статуси і повторювати запит. Interceptor залишається для додавання актуального заголовка до кожного запиту.</p>
-
-<h2 id="edge-case-flow-catch">2. Flow: catch ловить лише upstream<a aria-label="Посилання на розділ: Flow catch" class="heading-anchor" href="#edge-case-flow-catch">#</a></h2>
-<p><strong>Проблема.</strong> Розробник додає <code>.catch { }</code> і вважає, що Flow тепер «безпечний». Але краш все одно стається.</p>
-<p><strong>Чому виникає.</strong> <code>catch</code> перехоплює винятки лише з операторів <em>вище</em> за ланцюжком (exception transparency). Виняток у <code>collect { }</code> — це downstream, він пролітає повз <code>catch</code> і падає в скоупі колектора.</p>
-<p><strong>Що ламається в production.</strong> Краш у рендер-логіці (наприклад, <code>NumberFormatException</code> при форматуванні даних з беку) без handler-а валить застосунок. Якщо ж <code>CoroutineExceptionHandler</code> чи wrapper його ковтає, колектор все одно мертвий разом з підпискою на стейт, і UI тихо «замерзає»: стейт оновлюється, але ніхто більше не колектить.</p>
+<h2 id="edge-case-flow-catch">Flow: catch ловить лише upstream<a aria-label="Посилання на розділ: Flow catch" class="heading-anchor" href="#edge-case-flow-catch">#</a></h2>
+<p><strong>Що ламається в production.</strong> Краш у рендер-логіці всередині <code>collect { }</code> (наприклад, <code>NumberFormatException</code> при форматуванні даних з беку) пролітає повз <code>catch</code> і без handler-а валить застосунок. Якщо ж <code>CoroutineExceptionHandler</code> чи wrapper його ковтає, колектор все одно мертвий разом з підпискою на стейт, і UI тихо «замерзає»: стейт оновлюється, але ніхто більше не колектить.</p>
 <p><strong>Як діє Senior.</strong> Тримає collect максимально тонким (тільки присвоєння стейту/рендер готової моделі), мапінг і валідацію переносить upstream (<code>map</code>/<code>mapNotNull</code>), а помилки моделює як частину UI state, а не як винятки.</p>
 <pre><code class="language-kotlin">repository.orders()
     .map { it.toUiModel() }          // якщо впаде тут -> catch спрацює
@@ -7810,59 +7305,24 @@ fun emitsLoadingThenContent() = runTest {
         _state.value = ui            // тут лише присвоєння, падати нічому
     }</code></pre>
 
-<h2 id="edge-case-stateflow-conflation">3. StateFlow: рівні значення не доходять до колекторів<a aria-label="Посилання на розділ: StateFlow conflation" class="heading-anchor" href="#edge-case-stateflow-conflation">#</a></h2>
-<p><strong>Проблема.</strong> ViewModel емить «новий» стейт, але UI не оновлюється. Або: швидкі проміжні значення губляться.</p>
-<p><strong>Чому виникає.</strong> StateFlow (1) конфлює — повільний колектор бачить лише останнє значення; (2) порівнює нове значення зі старим через <code>equals()</code> і не емитить, якщо вони рівні. Для <code>data class</code> з тими самими полями <code>copy()</code> створює <em>рівний</em> об'єкт — емісії не буде.</p>
-<p><strong>Що ламається в production.</strong> Типовий кейс — «повторний показ» одноразової події через стейт: <code>state.copy(showToast = true)</code> вдруге не спрацює, бо значення вже <code>true</code> і нове рівне старому. Або snackbar «Помилка» не з'являється на другу однакову помилку.</p>
-<p><strong>Як діє Senior.</strong> Розділяє state і events: state — у StateFlow (там конфляція і дедуплікація бажані), одноразові події — або як state з явним ack/consumption (Android guidance), або через окремий канал ефектів (<code>Channel.receiveAsFlow()</code> або <code>SharedFlow</code> з продуманим replay/buffer), розуміючи, що обробку він не гарантує. Якщо «однакові» емісії все ж семантично різні — додає у модель поле-розрізнювач (timestamp/id), але це вже запах, що подію запхали у state.</p>
+<h2 id="edge-case-stateflow-conflation">StateFlow: рівні значення не доходять до колекторів<a aria-label="Посилання на розділ: StateFlow conflation" class="heading-anchor" href="#edge-case-stateflow-conflation">#</a></h2>
+<p><strong>Що ламається в production.</strong> «Повторний показ» одноразової події через стейт: <code>state.copy(showToast = true)</code> вдруге не спрацює, бо значення вже <code>true</code> і нове рівне старому (StateFlow не емитить рівне за <code>equals()</code>). Або snackbar «Помилка» не з'являється на другу однакову помилку. Якщо «однакові» емісії все ж семантично різні — можна додати у модель поле-розрізнювач (timestamp/id), але це вже запах, що подію запхали у state.</p>
 
-<h2 id="edge-case-sharedflow-overflow">4. SharedFlow: replay, buffer і втрачені події<a aria-label="Посилання на розділ: SharedFlow overflow" class="heading-anchor" href="#edge-case-sharedflow-overflow">#</a></h2>
-<p><strong>Проблема.</strong> Подія, заемічена у <code>SharedFlow(replay = 0)</code> до того, як з'явився підписник, зникає назавжди. Або <code>tryEmit</code> тихо повертає false і подія губиться.</p>
-<p><strong>Чому виникає.</strong> SharedFlow без replay не зберігає історію; <code>emit</code> з <code>BufferOverflow.SUSPEND</code> і нульовим буфером сасспендиться, поки всі підписники не приймуть значення, а <code>tryEmit</code> у цій конфігурації (нульовий буфер) повертає false за наявності будь-якого підписника, навіть швидкого, і «успішно» відкидає значення, якщо підписників немає. Якщо потрібен <code>tryEmit</code> — налаштовують <code>extraBufferCapacity</code>/<code>onBufferOverflow</code>, інакше використовують <code>emit</code> з корутини.</p>
-<p><strong>Що ламається в production.</strong> Навігаційна подія, відправлена під час recreate Activity (підписника тимчасово немає), губиться — користувач тисне кнопку, нічого не відбувається. Це баг, який майже неможливо відтворити локально.</p>
-<p><strong>Як діє Senior.</strong> За Android guidance спершу моделює результат як UI state з явним ack/consumption. Якщо обирає <code>Channel(BUFFERED)</code> + <code>receiveAsFlow()</code>, то знає: канал буферизує події, поки немає споживача, і віддає кожен елемент лише одному отримувачу, але обробку не гарантує — елемент губиться, якщо колектор скасовано посеред доставки. Тому колектить на <code>Dispatchers.Main.immediate</code> і вважає втрату можливою. Свідомо проговорює trade-off: Channel не підтримує кількох підписників, але для навігації/тостів це і є бажана семантика.</p>
+<h2 id="edge-case-sharedflow-overflow">SharedFlow: replay, buffer і втрачені події<a aria-label="Посилання на розділ: SharedFlow overflow" class="heading-anchor" href="#edge-case-sharedflow-overflow">#</a></h2>
+<p><strong>Що ламається в production.</strong> Навігаційна подія, відправлена в <code>SharedFlow(replay = 0)</code> під час recreate Activity (підписника тимчасово немає), губиться — користувач тисне кнопку, нічого не відбувається. Це баг, який майже неможливо відтворити локально. Якщо для таких подій обрано <code>Channel(BUFFERED)</code> + <code>receiveAsFlow()</code>, колектять на <code>Dispatchers.Main.immediate</code> і все одно вважають втрату можливою.</p>
 
-<h2 id="edge-case-compose-stability">5. Compose: нестабільні параметри і зайві recomposition<a aria-label="Посилання на розділ: Compose stability" class="heading-anchor" href="#edge-case-compose-stability">#</a></h2>
-<p><strong>Проблема.</strong> Список смикається, профайлер показує сотні recomposition у composable, чиї дані «не змінювались».</p>
-<p><strong>Чому виникає.</strong> Зі strong skipping (default з Kotlin 2.0.20) нестабільні параметри не блокують skip: stable порівнюються через <code>equals()</code>, unstable (<code>List</code>, класи з <code>var</code>, типи з чужих модулів без compiler metadata) — за identity (<code>===</code>). Тому пастка — новий instance на кожній recomposition: щойно змаплений <code>List</code> чи об'єкт, створений у тілі composable, змушує рекомпозицію, хоча дані «ті самі». Лямбди компілятор запам'ятовує автоматично за захопленими значеннями, тож лямбда, що захоплює такий щоразу новий об'єкт, теж перестворюється.</p>
-<p><strong>Що ламається в production.</strong> Jank на скролі і підвищене споживання батареї на середніх девайсах; на топових телефонах розробників проблема непомітна.</p>
-<p><strong>Як діє Senior.</strong> Дивиться compiler metrics і Layout Inspector (recomposition counts), а не вгадує. Робить UI-моделі immutable (<code>val</code> + <code>kotlinx.collections.immutable</code> або анотації <code>@Immutable</code>/<code>@Stable</code> з реальним дотриманням контракту), не перестворює inputs у composition (мапить у ViewModel або через <code>remember</code>), для класів з інших модулів використовує stability configuration file; ручний <code>remember { { … } }</code> для лямбд зі strong skipping зазвичай не потрібен. І завжди каже на співбесіді: спочатку виміряти, бо не кожна recomposition — проблема.</p>
-<pre><code class="language-kotlin">@Immutable
-data class CartItemUi(
-    val id: String,
-    val title: String,
-    val priceFormatted: String
-)
+<h2 id="edge-case-fragment-lifecyclescope">Fragment: lifecycleScope vs viewLifecycleOwner<a aria-label="Посилання на розділ: Fragment lifecycleScope" class="heading-anchor" href="#edge-case-fragment-lifecyclescope">#</a></h2>
+<p><strong>Що ламається в production.</strong> Колект у <code>fragment.lifecycleScope</code> переживає view; при поверненні з back stack <code>onViewCreated</code> викликається знову — і додається другий колектор: подвоєні обробники (подія приходить двічі), крахи на null binding, витоки view. Найчастіший Android-leak у legacy-кодовій базі; у code review фрагментів це перше, що перевіряється.</p>
 
-@Composable
-fun CartRow(item: CartItemUi, onClick: (String) -&gt; Unit) { /* ... */ }
-// Виклик: onClick = { id -&gt; viewModel.onItemClick(id) } або viewModel::onItemClick
-// зі strong skipping компілятор сам memoize-ить обидва варіанти, remember не потрібен</code></pre>
-
-<h2 id="edge-case-fragment-lifecyclescope">6. Fragment: lifecycleScope vs viewLifecycleOwner<a aria-label="Посилання на розділ: Fragment lifecycleScope" class="heading-anchor" href="#edge-case-fragment-lifecyclescope">#</a></h2>
-<p><strong>Проблема.</strong> Колект у <code>fragment.lifecycleScope</code> оновлює view, якої вже немає, або підписки дублюються.</p>
-<p><strong>Чому виникає.</strong> У Fragment два lifecycle: самого фрагмента і його view. На back stack view руйнується (<code>onDestroyView</code>), а фрагмент живе. Корутина у <code>lifecycleScope</code> переживає view і тримає посилання на знищені binding/views. При поверненні з back stack <code>onViewCreated</code> викликається знову — і додається другий колектор.</p>
-<p><strong>Що ламається в production.</strong> Витоки view, крахи на null binding, подвоєні обробники (подія приходить двічі). Найчастіший Android-leak у legacy-кодовій базі.</p>
-<p><strong>Як діє Senior.</strong> Канонічний патерн: <code>viewLifecycleOwner</code> + <code>repeatOnLifecycle(STARTED)</code>. Binding zеро-їться в <code>onDestroyView</code>. У code review це перше, що перевіряється у фрагментах.</p>
-<pre><code class="language-kotlin">override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-    viewLifecycleOwner.lifecycleScope.launch {
-        viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            viewModel.state.collect(::render)
-        }
-    }
-}</code></pre>
-
-<h2 id="edge-case-workmanager-periodic">7. WorkManager: periodic work — це не точний розклад<a aria-label="Посилання на розділ: WorkManager periodic" class="heading-anchor" href="#edge-case-workmanager-periodic">#</a></h2>
+<h2 id="edge-case-workmanager-periodic">WorkManager: periodic work — це не точний розклад<a aria-label="Посилання на розділ: WorkManager periodic" class="heading-anchor" href="#edge-case-workmanager-periodic">#</a></h2>
 <p><strong>Проблема.</strong> Бізнес просить «синк рівно кожні 15 хвилин», розробник ставить <code>PeriodicWorkRequest(15, MINUTES)</code> — і синк ходить «десь раз на 15–40 хвилин, а вночі взагалі не ходить».</p>
 <p><strong>Чому виникає.</strong> 15 хвилин — мінімальний інтервал, а не гарантія. Система батчить роботу, відкладає її через Doze/App Standby buckets, constraints (мережа, батарея) і вендорні «оптимізатори» (китайські OEM можуть вбивати роботу агресивніше за AOSP).</p>
 <p><strong>Що ламається в production.</strong> Дані «застарівають» непередбачувано; метрики синку виглядають добре в офісі і жахливо у польових умовах. Команда довго звинувачує бекенд.</p>
 <p><strong>Як діє Senior.</strong> Формулює правило: WorkManager — для deferrable guaranteed роботи. Для точного часу — <code>setExactAndAllowWhileIdle</code> з AlarmManager (з дозволом <code>SCHEDULE_EXACT_ALARM</code> і розумінням, що Google обмежує його до справді часових кейсів — будильники, нагадування). Для realtime — FCM push як тригер. І завжди додає sync-on-app-open як компенсацію: користувач бачить свіжі дані тоді, коли дивиться на екран.</p>
 
-<h2 id="edge-case-room-destructive">8. Room: destructive migration на користувацьких даних<a aria-label="Посилання на розділ: Room destructive migration" class="heading-anchor" href="#edge-case-room-destructive">#</a></h2>
-<p><strong>Проблема.</strong> <code>fallbackToDestructiveMigration()</code> залишений з прототипу доїжджає до релізу. Після оновлення версії схеми у частини користувачів зникають локальні дані.</p>
-<p><strong>Чому виникає.</strong> На етапі MVP це зручно, а тести міграцій ніхто не написав, бо «схема ще зміниться».</p>
-<p><strong>Що ламається в production.</strong> Для offline-first застосунку це втрата незасинканих даних користувача: чернетки, кошик, локальні зміни. Це не баг, це втрата довіри і одна зірка в Play Store.</p>
-<p><strong>Як діє Senior.</strong> Вмикає <code>exportSchema = true</code>, зберігає JSON-схеми в VCS, пише явні <code>Migration</code> і тестує їх через <code>MigrationTestHelper</code> на реальних схемах. Destructive fallback допустимий хіба для чистого кешу, який повністю відновлюється з мережі — і це рішення фіксується явно, а не «так залишилось».</p>
+<h2 id="edge-case-room-destructive">Room: destructive migration на користувацьких даних<a aria-label="Посилання на розділ: Room destructive migration" class="heading-anchor" href="#edge-case-room-destructive">#</a></h2>
+<p><strong>Проблема і наслідок.</strong> <code>fallbackToDestructiveMigration()</code> залишений з прототипу («схема ще зміниться», тестів міграцій немає) доїжджає до релізу. Після оновлення версії схеми у частини користувачів зникають локальні дані; для offline-first застосунку це втрата незасинканих даних: чернетки, кошик, локальні зміни. Це не баг, це втрата довіри і одна зірка в Play Store.</p>
+<p><strong>Як діє Senior.</strong> Явні <code>Migration</code>, протестовані на експортованих схемах. Destructive fallback допустимий хіба для чистого кешу, який повністю відновлюється з мережі — і це рішення фіксується явно, а не «так залишилось».</p>
 <pre><code class="language-kotlin">val MIGRATION_5_6 = object : Migration(5, 6) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(
@@ -7874,23 +7334,13 @@ fun CartRow(item: CartItemUi, onClick: (String) -&gt; Unit) { /* ... */ }
     }
 }</code></pre>
 
-<h2 id="edge-case-paging-errors">9. Paging 3: refresh, append і prepend — різні помилки<a aria-label="Посилання на розділ: Paging errors" class="heading-anchor" href="#edge-case-paging-errors">#</a></h2>
-<p><strong>Проблема.</strong> Будь-яка помилка пагінації показується як повноекранний error. Користувач, що догорнув до низу списку при поганій мережі, втрачає весь уже завантажений контент з очей.</p>
-<p><strong>Чому виникає.</strong> <code>LoadState</code> має три незалежні складові — <code>refresh</code>, <code>append</code>, <code>prepend</code> — а UI обробляє лише одну «загальну» помилку.</p>
-<p><strong>Що ламається в production.</strong> UX деградує саме там, де Paging мав допомогти: на повільній мережі. Користувачі скаржаться «список зникає».</p>
-<p><strong>Як діє Senior.</strong> Мапить стани окремо: <code>refresh.Error</code> + порожній кеш → full-screen error з retry; <code>refresh.Error</code> + є дані → snackbar поверх контенту; <code>append.Error</code> → футер з кнопкою retry; <code>mediator.refresh</code> vs <code>source.refresh</code> розрізняє при RemoteMediator (мережа впала, але кеш показуємо).</p>
+<h2 id="edge-case-savedstatehandle">SavedStateHandle — не заміна персистентності<a aria-label="Посилання на розділ: SavedStateHandle" class="heading-anchor" href="#edge-case-savedstatehandle">#</a></h2>
+<p>SavedStateHandle/rememberSaveable передають дані через Binder transaction з лімітом ~1MB на весь стейт. <code>TransactionTooLargeException</code> — краш не у вашому коді, а при збереженні стейту системою.</p>
 
-<h2 id="edge-case-savedstatehandle">10. SavedStateHandle — не заміна персистентності<a aria-label="Посилання на розділ: SavedStateHandle" class="heading-anchor" href="#edge-case-savedstatehandle">#</a></h2>
-<p><strong>Проблема.</strong> У SavedStateHandle кладуть великі об'єкти або критичні дані «щоб пережити process death».</p>
-<p><strong>Чому виникає.</strong> Плутають три механізми з різними гарантіями: SavedStateHandle/rememberSaveable (пережити recreation і process death, але маленькі дані через Binder transaction з лімітом ~1MB на весь стейт), in-memory ViewModel (пережити лише configuration change), persistent storage (пережити все, включно з reboot).</p>
-<p><strong>Що ламається в production.</strong> <code>TransactionTooLargeException</code> — краш не у вашому коді, а при збереженні стейту системою; або «втрачена» форма, бо ViewModel без SavedStateHandle не пережив kill у фоні.</p>
-<p><strong>Як діє Senior.</strong> Правило трьох рівнів: ідентифікатори і дрібний UI-стан (позиція, введений текст, вибраний таб) → SavedStateHandle/rememberSaveable; усе, що можна перезавантажити → перезавантажується по id; усе, що користувач створив і боїться втратити (чернетка) → Room/DataStore одразу при введенні, а не в onStop.</p>
-
-<h2 id="edge-case-datastore-misuse">11. DataStore — не база даних<a aria-label="Посилання на розділ: DataStore misuse" class="heading-anchor" href="#edge-case-datastore-misuse">#</a></h2>
-<p><strong>Проблема.</strong> У Proto/Preferences DataStore складають списки сутностей, історію, кеш стрічки — «бо зручно, один Flow».</p>
-<p><strong>Чому виникає.</strong> DataStore читає і пише файл цілком, атомарно. Немає часткових оновлень, запитів, індексів. Кожна зміна — серіалізація всього об'єкта.</p>
-<p><strong>Що ламається в production.</strong> Зі зростанням файлу кожен запис дорожчає, оновлення стають конкурентними (updateData серіалізується), стартове читання гальмує. Плюс неможливо мігрувати частину даних.</p>
-<p><strong>Як діє Senior.</strong> DataStore — для налаштувань, токенів, прапорців, малих об'єктів конфігурації. Реляційні/спискові дані — Room. Додатково: задає <code>corruptionHandler</code> (файл може побитись) і використовує <code>SharedPreferencesMigration</code> при переїзді зі старих prefs.</p>
+<h2 id="edge-case-datastore-misuse">DataStore — не база даних<a aria-label="Посилання на розділ: DataStore misuse" class="heading-anchor" href="#edge-case-datastore-misuse">#</a></h2>
+<p><strong>Проблема.</strong> У Proto/Preferences DataStore складають списки сутностей, історію, кеш стрічки — «бо зручно, один Flow». Але DataStore читає і пише файл цілком: немає часткових оновлень, запитів, індексів, кожна зміна — серіалізація всього об'єкта.</p>
+<p><strong>Що ламається в production.</strong> Зі зростанням файлу кожен запис дорожчає, оновлення стають конкурентними (<code>updateData</code> серіалізується), стартове читання гальмує. Плюс неможливо мігрувати частину даних.</p>
+<p><strong>Як діє Senior.</strong> DataStore — для налаштувань, токенів, прапорців, малих об'єктів конфігурації; реляційні/спискові дані — Room. Задає <code>corruptionHandler</code> і <code>SharedPreferencesMigration</code> при переїзді зі старих prefs:</p>
 <pre><code class="language-kotlin">val settingsStore: DataStore&lt;Settings&gt; = DataStoreFactory.create(
     serializer = SettingsSerializer,
     corruptionHandler = ReplaceFileCorruptionHandler { Settings.getDefaultInstance() },
@@ -7899,56 +7349,20 @@ fun CartRow(item: CartItemUi, onClick: (String) -&gt; Unit) { /* ... */ }
     })
 ) { context.dataStoreFile("settings.pb") }</code></pre>
 
-<h2 id="edge-case-r8-keep-rules">12. R8: рефлексія, серіалізація і «працює в debug, падає в release»<a aria-label="Посилання на розділ: R8 keep rules" class="heading-anchor" href="#edge-case-r8-keep-rules">#</a></h2>
-<p><strong>Проблема.</strong> Release-збірка падає або тихо повертає null-поля там, де debug працює ідеально.</p>
+<h2 id="edge-case-r8-keep-rules">R8: рефлексія, серіалізація і «працює в debug, падає в release»<a aria-label="Посилання на розділ: R8 keep rules" class="heading-anchor" href="#edge-case-r8-keep-rules">#</a></h2>
 <p><strong>Чому виникає.</strong> R8 видаляє «невикористаний» код і перейменовує класи. Усе, що звертається до коду через рефлексію — Gson, частково Moshi reflection-mode, кастомна серіалізація, JNI, деякі DI-патерни — ламається, бо R8 не бачить цих звернень. Окрема пастка: generic signatures, які Gson читає з метаданих, зникають без <code>-keepattributes Signature</code>.</p>
-<p><strong>Що ламається в production.</strong> Найгірший варіант — не краш, а мовчазні null-и у DTO: бізнес-логіка працює на сміттєвих даних. Краші у Play Console нечитабельні без mapping file.</p>
-<p><strong>Як діє Senior.</strong> (1) Системно прибирає рефлексію: kotlinx.serialization або Moshi codegen замість Gson — keep-правила майже не потрібні. (2) Якщо рефлексія лишається — точкові keep-правила на пакет DTO, не глобальне вимкнення мінфікації. (3) Тестує release-збірку (smoke на minified build у CI). (4) Завантажує mapping.txt у Play Console / Crashlytics для деобфускації стектрейсів і зберігає mapping для кожного релізу.</p>
+<p><strong>Що ламається в production.</strong> Найгірший варіант — не краш, а мовчазні null-и у DTO: бізнес-логіка працює на сміттєвих даних.</p>
+<p><strong>Як діє Senior.</strong> Системно прибирає рефлексію: kotlinx.serialization або Moshi codegen замість Gson — keep-правила майже не потрібні. Якщо рефлексія лишається — точкові keep-правила на пакет DTO, не глобальне вимкнення мінфікації.</p>
 <pre><code class="language-kotlin">// proguard-rules.pro (фрагмент, лише якщо лишилась reflection-серіалізація)
 // -keepattributes Signature, *Annotation*
 // -keep class com.app.network.dto.** { &lt;fields&gt;; }</code></pre>
 
-<h2 id="edge-case-pendingintent">13. PendingIntent: mutability як вектор атаки<a aria-label="Посилання на розділ: PendingIntent mutability" class="heading-anchor" href="#edge-case-pendingintent">#</a></h2>
-<p><strong>Проблема.</strong> PendingIntent — це делегування вашої identity: одержувач виконує Intent від імені вашого застосунку, з вашими дозволами.</p>
-<p><strong>Чому виникає.</strong> Mutable PendingIntent з implicit intent дозволяє зловмисному застосунку дозаповнити порожні поля (компонент, extras) і виконати дію від вашого імені — класична уразливість. Тому з targetSdk 31+ прапор mutability обов'язковий.</p>
-<p><strong>Що ламається в production.</strong> Або security-уразливість (mutable там, де не треба), або краш <code>IllegalArgumentException</code> при таргеті на новий SDK без явного прапора, або зламані notification actions, коли поставили IMMUTABLE там, де системі треба дозаповнити Intent (наприклад, direct reply через RemoteInput вимагає MUTABLE).</p>
-<p><strong>Як діє Senior.</strong> Default — <code>FLAG_IMMUTABLE</code> + explicit intent (заданий компонент). MUTABLE — лише для документованих кейсів (RemoteInput, деякі bubbles/geofencing API), і тоді intent максимально звужений. Розуміє семантику <code>FLAG_UPDATE_CURRENT</code> vs <code>FLAG_CANCEL_CURRENT</code> і те, що PendingIntent-и з однаковими request code/intent (за <code>filterEquals</code>) — це той самий об'єкт у системі.</p>
-<pre><code class="language-kotlin">val pi = PendingIntent.getActivity(
-    context,
-    requestCode,
-    Intent(context, OrderDetailsActivity::class.java)
-        .putExtra("orderId", orderId),
-    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-)</code></pre>
+<h2 id="edge-case-pendingintent">PendingIntent: mutability як вектор атаки<a aria-label="Посилання на розділ: PendingIntent mutability" class="heading-anchor" href="#edge-case-pendingintent">#</a></h2>
+<p><strong>Що ламається в production.</strong> Або security-уразливість (mutable PendingIntent з implicit intent дозволяє зловмисному застосунку дозаповнити порожні поля і виконати дію від вашого імені), або краш <code>IllegalArgumentException</code> при таргеті на SDK 31+ без явного прапора mutability, або зламані notification actions, коли поставили IMMUTABLE там, де системі треба дозаповнити Intent. MUTABLE — лише для документованих кейсів (RemoteInput, деякі bubbles/geofencing API).</p>
 
-<h2 id="edge-case-deeplinks">14. Deep links: вхідні URI — це недовірений ввід<a aria-label="Посилання на розділ: Deep links security" class="heading-anchor" href="#edge-case-deeplinks">#</a></h2>
-<p><strong>Проблема.</strong> Параметри deep link читаються і використовуються напряму: відкривається WebView з URL з параметра, id підставляється у запит, прапорці типу <code>isPremium=true</code> впливають на логіку.</p>
-<p><strong>Чому виникає.</strong> Deep link може створити будь-хто: інший застосунок, шкідливий сайт, лист. Exported Activity з intent-filter — публічний API вашого застосунку.</p>
-<p><strong>Що ламається в production.</strong> Відкриття довільних URL у WebView з сесійними куками (фішинг/викрадення токенів), обхід paywall через прапорці, краші на сміттєвих параметрах, навігація у внутрішні екрани в обхід авторизації.</p>
-<p><strong>Як діє Senior.</strong> Валідовує кожен параметр (тип, формат, allow-list хостів для URL), ніколи не передає рішення авторизації через URI, гейтить deep link через той самий auth-перевірочний шар, що й внутрішню навігацію. Для довірених лінків — App Links з verified domain (<code>assetlinks.json</code>), а не просто custom scheme, який може перехопити інший застосунок. У сумнівних місцях вмикає <code>StrictMode.detectUnsafeIntentLaunch</code>.</p>
-<pre><code class="language-kotlin">fun parseOrderDeepLink(uri: Uri): Screen? {
-    val id = uri.getQueryParameter("orderId")
-        ?.takeIf { it.matches(Regex("^[0-9]{1,12}$")) }
-        ?: return null               // сміття -> на home, без краша
-    return Screen.OrderDetails(id)   // авторизацію перевірить навігаційний шар
-}</code></pre>
-
-<h2 id="edge-case-cancellation">15. Cancellation: проковтнута CancellationException і NonCancellable cleanup<a aria-label="Посилання на розділ: Cancellation cleanup" class="heading-anchor" href="#edge-case-cancellation">#</a></h2>
-<p><strong>Проблема.</strong> Узагальнений <code>catch (e: Exception)</code> навколо suspend-коду ловить і <code>CancellationException</code> — корутина «відмовляється помирати», скоупи перестають коректно скасовуватись. Дзеркальна проблема: cleanup у <code>finally</code> сам кличе suspend-функцію і миттєво обривається, бо корутина вже cancelled.</p>
-<p><strong>Чому виникає.</strong> Cancellation у корутинах кооперативна і реалізована через виняток. Він — службовий сигнал, а не помилка.</p>
-<p><strong>Що ламається в production.</strong> Витоки роботи після виходу з екрана, «зомбі»-запити, незакриті ресурси, флакі тести. Дуже важко дебажиться, бо все виглядає як «іноді щось висить».</p>
-<p><strong>Як діє Senior.</strong> Або ловить конкретні винятки, або прокидає CancellationException далі; для suspend-cleanup використовує <code>withContext(NonCancellable)</code> тільки на короткі критичні операції (закрити транзакцію, дописати лог).</p>
-<pre><code class="language-kotlin">try {
-    syncOrders()
-} catch (e: CancellationException) {
-    throw e                       // ніколи не ковтати
-} catch (e: IOException) {
-    _state.value = SyncState.Error(e)
-} finally {
-    withContext(NonCancellable) { // інакше suspend тут одразу обірветься
-        journal.write("sync finished")
-    }
-}</code></pre>
+<h2 id="edge-case-deeplinks">Deep links: вхідні URI — це недовірений ввід<a aria-label="Посилання на розділ: Deep links security" class="heading-anchor" href="#edge-case-deeplinks">#</a></h2>
+<p><strong>Що ламається в production.</strong> Відкриття довільних URL у WebView з сесійними куками (фішинг/викрадення токенів), обхід paywall через прапорці типу <code>isPremium=true</code> з URI, краші на сміттєвих параметрах, навігація у внутрішні екрани в обхід авторизації.</p>
+<p><strong>Як діє Senior.</strong> Крім валідації параметрів і App Links: пам'ятає, що просто custom scheme може перехопити інший застосунок, а в сумнівних місцях вмикає <code>StrictMode.detectUnsafeIntentLaunch</code>.</p>
 
 <h3 id="edge-cases-follow-up">Follow-up питання за рівнями<a aria-label="Посилання на розділ: Edge cases follow-up" class="heading-anchor" href="#edge-cases-follow-up">#</a></h3>
 <p><strong>Middle+: чим відрізняється поведінка catch і retry у Flow?</strong><br/>
@@ -13237,91 +12651,13 @@ fun `login success emits navigation event`() = runTest {
 <p>Navigation should be explicit, testable, and feature-aware. Avoid passing large objects through navigation arguments. Model deep links, back stack behavior, and one-shot navigation events carefully.</p>
 </div></details><details class="major-section senior-expanded-section" data-key="senior-deep-dive-follow-up-answers" data-title="Senior Deep Dive + Follow-up Answers" id="en-senior-deep-dive-follow-up-answers" open="">
 <summary class="major-summary"><span class="major-title">Senior Deep Dive + Follow-up Answers</span><span class="major-meta">expand / collapse</span></summary>
-<div class="section-body senior-expanded-body"><h2>What was expanded</h2>
-<p>This block adds the missing Senior-level layer: <strong>answers to follow-up questions</strong>, production trade-offs, common mistakes, and interview-ready wording. The goal is not to memorize APIs, but to explain ownership, lifecycle, failure semantics, testability, scalability, and observability.</p>
+<div class="section-body senior-expanded-body"><p><strong>More detail:</strong> <a href="#en-android-process-lifecycle-state-restoration">Android process lifecycle and state restoration</a>, <a href="#en-android-background-execution">Android background execution</a>, <a href="#en-kotlin-type-system-state-modeling">Kotlin type system and state modeling</a>, <a href="#en-kotlin-coroutines-foundations-internals">Kotlin Coroutines: foundations and internals</a>, <a href="#en-kotlin-coroutines-failures-supervision-testing">Kotlin Coroutines: failures, supervision, cleanup, testing</a>, <a href="#en-kotlin-hot-flows-ui-state-events">StateFlow, SharedFlow, Channel</a>, <a href="#en-advanced-kotlin-flow-production">Advanced Kotlin Flow in production</a>, <a href="#en-compose-effects-navigation-viewmodel">Compose effects, navigation, and ViewModel</a>, <a href="#en-jetpack-compose-performance">Jetpack Compose performance</a>, <a href="#en-android-ui-architecture-state-modeling">Android UI architecture</a>, <a href="#en-clean-architecture-android-modularization">Clean Architecture and modularization</a>, <a href="#en-dependency-injection-android">Dependency injection on Android</a>, <a href="#en-senior-android-testing-strategy">Senior Android testing strategy</a>, <a href="#en-android-memory-threading">Android memory and threading</a>, <a href="#en-startup-rendering-performance">Startup and rendering performance</a>, <a href="#en-system-design-chat-real-time-updates">System design: chat</a>. Only follow-up answers and examples not present in the stages remain here.</p>
+<p>The goal is not to memorize APIs, but to explain ownership, lifecycle, failure semantics, testability, scalability, and observability.</p>
 <hr/>
-<h2>Direct answers to follow-up questions from the main guide</h2>
-<h3>Lifecycle</h3>
-<p><strong><code>onPause</code> vs <code>onStop</code>?</strong><br/>
-<code>onPause</code> means the Activity is losing foreground focus and can still be visible. <code>onStop</code> means it is no longer visible. Avoid heavy synchronous work in <code>onPause</code>.</p>
-<p><strong>Is <code>onDestroy</code> always called?</strong><br/>
-No. System process death may skip it, so critical persistence must not depend on <code>onDestroy</code>.</p>
-<p><strong>Why <code>viewLifecycleOwner</code> in Fragment?</strong><br/>
-Fragment instance can outlive its View. View-bound collectors/listeners must use the view lifecycle to avoid leaks.</p>
+<h2>Direct answers to follow-up questions</h2>
 <p><strong>When is Application context not enough?</strong><br/>
 For UI-bound operations requiring an Activity theme, window token, dialog, or activity result.</p>
-<h3>Coroutines</h3>
-<p><strong>Why is <code>GlobalScope</code> dangerous?</strong><br/>
-It creates work without a structured owner. The job may outlive the screen or feature that started it.</p>
-<p><strong>What happens when the parent is cancelled?</strong><br/>
-Children are cancelled too. Cancellation is cooperative, so blocking code may delay it.</p>
-<p><strong><code>launch</code> exception vs <code>async</code> exception?</strong><br/>
-<code>launch</code> propagates uncaught exceptions through the parent/root handler. <code>async</code> stores the exception and rethrows it at <code>await()</code>, but child failure can still affect the parent.</p>
-<p><strong>Does <code>supervisorScope</code> handle errors automatically?</strong><br/>
-No. It isolates sibling cancellation, but you still need explicit error handling.</p>
-<p><strong><code>Dispatchers.IO</code> vs <code>Default</code>?</strong><br/>
-<code>IO</code> is for blocking IO. <code>Default</code> is for CPU-bound work.</p>
-<p><strong>When use <code>NonCancellable</code>?</strong><br/>
-Only for short critical cleanup in <code>finally</code>, not to ignore cancellation for normal work.</p>
-<h3>Flow</h3>
-<p><strong><code>stateIn</code> vs <code>shareIn</code>?</strong><br/>
-<code>stateIn</code> creates a <code>StateFlow</code> with an initial/current value. <code>shareIn</code> creates a configurable <code>SharedFlow</code>.</p>
-<p><strong>What does <code>replay = 0</code> mean?</strong><br/>
-New collectors do not receive previous emissions. This is unsafe for state or critical events.</p>
-<p><strong>Can Channel be used for UI events?</strong><br/>
-Sometimes, but it is not the default. First decide whether the event is actually state.</p>
-<h3>Compose</h3>
-<p><strong>Why must composables be side-effect free?</strong><br/>
-They can be recomposed multiple times. Direct side effects may repeat navigation, analytics, or snackbars.</p>
-<p><strong>When use <code>rememberUpdatedState</code>?</strong><br/>
-When a long-lived effect must use the latest callback/value without restarting.</p>
-<p><strong><code>rememberCoroutineScope</code> vs <code>LaunchedEffect</code>?</strong><br/>
-<code>LaunchedEffect</code> reacts to entering composition/key changes. <code>rememberCoroutineScope</code> is for launching work from event handlers.</p>
-<p><strong>Why LazyColumn keys?</strong><br/>
-Keys preserve item identity and remembered state across insert/remove/reorder.</p>
-<h3>Architecture and system design</h3>
-<p><strong>Is domain layer always needed?</strong><br/>
-No. Add it when business logic is complex or reused; otherwise it can be ceremony.</p>
-<p><strong>DTO vs domain model?</strong><br/>
-DTO is a transport/storage contract. Domain model represents business meaning. UI model represents presentation needs.</p>
-<p><strong>How avoid duplicate chat messages after reconnect?</strong><br/>
-Use client ids, server ids, idempotency, local pending/sent/failed state, and deterministic merge logic.</p>
-<p><strong>How design failed message retry?</strong><br/>
-Keep the failed message locally with a retry action and reuse the same idempotency key.</p>
-<h2>1. Lifecycle, configuration changes, and process death</h2>
-<h3>Senior-level explanation</h3>
-<p>Do not explain Activity/Fragment lifecycle as a callback list. Explain <strong>state ownership</strong>. A ViewModel survives configuration changes, but not system-initiated process death. <code>SavedStateHandle</code> and <code>rememberSaveable</code> are for small recoverable UI state, not for storing full screen models.</p>
-<table>
-<thead>
-<tr>
-<th>State type</th>
-<th>Owner</th>
-<th>Example</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Ephemeral UI state</td>
-<td><code>remember</code></td>
-<td>dropdown expanded state</td>
-</tr>
-<tr>
-<td>Recoverable UI element state</td>
-<td><code>rememberSaveable</code>, <code>SavedStateHandle</code></td>
-<td>selected tab, query text</td>
-</tr>
-<tr>
-<td>Screen state</td>
-<td><code>ViewModel</code></td>
-<td>loading/content/error</td>
-</tr>
-<tr>
-<td>Durable data</td>
-<td>Repository + DB/DataStore</td>
-<td>session, cached feed, pending writes</td>
-</tr>
-</tbody>
-</table>
+<h2>Lifecycle, configuration changes, and process death</h2>
 <pre><code class="language-kotlin">@HiltViewModel
 class ProductDetailsViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
@@ -13336,18 +12672,10 @@ class ProductDetailsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ProductDetailsUiState.Loading)
 }
 </code></pre>
-<h3>Follow-up answers</h3>
-<p><strong>How is <code>rememberSaveable</code> different from <code>SavedStateHandle</code>?</strong><br/>
-<code>rememberSaveable</code> is local Compose UI-element state. <code>SavedStateHandle</code> belongs to the ViewModel and is appropriate when the value affects screen logic or repository queries.</p>
 <p><strong>When is ViewModel overkill?</strong><br/>
 When the state is purely local and short-lived: animation state, a temporary expanded card, drag state, or local focus state.</p>
-<p><strong>What should not go into a Bundle/SavedStateHandle?</strong><br/>
-Large lists, bitmaps, DTO graphs, full API responses, or sensitive data. Store minimal keys and rebuild state from the data layer.</p>
-<p><strong>Why clear Fragment binding in <code>onDestroyView()</code>?</strong><br/>
-The Fragment instance can outlive its View hierarchy. Keeping binding after <code>onDestroyView()</code> leaks views, Context, listeners, and adapters.</p>
 <hr/>
-<h2>2. Background work: Services, BroadcastReceiver, WorkManager</h2>
-<h3>Senior-level explanation</h3>
+<h2>Background work: Services, BroadcastReceiver, WorkManager</h2>
 <p>Choose APIs based on task semantics:</p>
 <table>
 <thead>
@@ -13394,41 +12722,16 @@ class SyncOrdersWorker @AssistedInject constructor(
 }
 </code></pre>
 <p>The default <code>WorkerFactory</code> can only call a <code>(Context, WorkerParameters)</code> constructor, so an extra dependency needs <code>@HiltWorker</code>/<code>@AssistedInject</code> plus <code>HiltWorkerFactory</code> supplied through <code>Configuration.Provider</code> (with the default <code>WorkManagerInitializer</code> removed), or a custom <code>WorkerFactory</code>.</p>
-<h3>Follow-up answers</h3>
-<p><strong>Why is <code>IntentService</code> no longer a good default?</strong><br/>
-Modern Android background limits make service-first designs fragile. Deferrable guaranteed work belongs to WorkManager.</p>
-<p><strong>When is a foreground service justified?</strong><br/>
-Only for genuinely user-visible long-running operations with no purpose-built API, such as navigation (<code>location</code>), active tracking, recording (<code>microphone</code>/<code>camera</code>), or playback (<code>mediaPlayback</code>). For user-initiated uploads/downloads prefer user-initiated data transfer jobs (API 34+); for deferrable transfers, WorkManager. <code>dataSync</code> FGS are time-limited on Android 15 and cannot start from <code>BOOT_COMPLETED</code>.</p>
-<p><strong>What is unique work?</strong><br/>
-Named WorkManager work with a conflict policy. It prevents multiple duplicated sync jobs after repeated user actions or app events.</p>
 <p><strong>How do you debug WorkManager?</strong><br/>
 Log work id, name, constraints, attempt count, result, payload size, and failure reason. Use the inspector locally and production metrics for sync health.</p>
 <hr/>
-<h2>3. Kotlin as state modeling, not trivia</h2>
-<h3>Senior-level explanation</h3>
-<p>Kotlin interview questions should be connected to real Android design. <code>sealed interface</code>, immutable <code>data class</code>, null-safety, constructor injection, and extension functions are useful when they reduce invalid states and improve readability.</p>
-<pre><code class="language-kotlin">sealed interface CheckoutUiState {
-    data object Loading : CheckoutUiState
-    data class Content(
-        val cart: Cart,
-        val paymentMethods: List&lt;PaymentMethod&gt;
-    ) : CheckoutUiState
-    data class Error(val message: String) : CheckoutUiState
-}
-</code></pre>
-<h3>Follow-up answers</h3>
-<p><strong>When is <code>sealed interface</code> better than enum?</strong><br/>
-When each state can carry different data. Enum is better for simple fixed values without payload.</p>
+<h2>Kotlin follow-up traps</h2>
 <p><strong>When is <code>lateinit</code> appropriate?</strong><br/>
 Mostly when framework construction prevents constructor injection. Otherwise, prefer constructor injection or explicit initialization.</p>
 <p><strong>When is an extension function a smell?</strong><br/>
 When it hides dependencies, IO, navigation, analytics, or complex business logic. Extensions are best for small pure transformations.</p>
-<p><strong>Why does immutability matter for Compose?</strong><br/>
-Immutable snapshots make state transitions predictable, easier to test, and easier for Compose to reason about.</p>
 <hr/>
-<h2>4. Coroutines: structured concurrency, cancellation, exceptions</h2>
-<h3>Senior-level explanation</h3>
-<p>A Senior coroutine answer should always cover three questions: who owns the work, who cancels it, and how failures propagate.</p>
+<h2>Coroutines: structured concurrency, cancellation, exceptions</h2>
 <pre><code class="language-kotlin">suspend fun loadCheckoutScreen(
     cartRepository: CartRepository,
     paymentRepository: PaymentRepository
@@ -13439,77 +12742,10 @@ Immutable snapshots make state transitions predictable, easier to test, and easi
 }
 </code></pre>
 <p>Use <code>coroutineScope</code> when child tasks are one all-or-nothing operation. Use <code>supervisorScope</code> when children can fail independently.</p>
-<h3>Follow-up answers</h3>
-<p><strong>Why is <code>GlobalScope</code> a bad default?</strong><br/>
-It has no structured parent and can outlive the screen, ViewModel, or feature that started the work.</p>
 <p><strong>When is an application-wide scope acceptable?</strong><br/>
 For explicitly designed app-level work such as analytics queues, session observers, or shared socket managers. It should be injected, observable, and cancellable when appropriate.</p>
-<p><strong>Where does an exception from <code>async</code> appear?</strong><br/>
-At <code>await()</code>, but that does not mean it is isolated. In a regular parent scope, child failure can still cancel the parent and siblings.</p>
-<p><strong>Why is <code>CancellationException</code> not a user error?</strong><br/>
-Cancellation is a normal control path: screen closed, query changed, job replaced. Do not convert it to “Something went wrong”.</p>
-<p><strong>When use <code>SupervisorJob</code> instead of <code>supervisorScope</code>?</strong><br/>
-<code>supervisorScope</code> is local to a suspend operation. <code>SupervisorJob</code> defines the failure behavior of a longer-lived scope.</p>
-<p><strong>What about <code>CoroutineExceptionHandler</code>?</strong><br/>
-It is not a universal try/catch. It handles uncaught exceptions in root coroutines; <code>async</code> still requires handling around <code>await()</code>.</p>
 <hr/>
-<h2>5. Flow: cold/hot, StateFlow, SharedFlow, Channel, events</h2>
-<h3>Senior-level explanation</h3>
-<p>Explain Flow through delivery semantics.</p>
-<table>
-<thead>
-<tr>
-<th>API</th>
-<th>Semantics</th>
-<th>Android use case</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>Flow</code></td>
-<td>cold stream</td>
-<td>repository query, Room observable</td>
-</tr>
-<tr>
-<td><code>StateFlow</code></td>
-<td>hot state holder with current value</td>
-<td>screen state</td>
-</tr>
-<tr>
-<td><code>SharedFlow</code></td>
-<td>configurable hot broadcast</td>
-<td>shared signals</td>
-</tr>
-<tr>
-<td><code>Channel</code></td>
-<td>queue / point-to-point</td>
-<td>internal command processing</td>
-</tr>
-</tbody>
-</table>
-<pre><code class="language-kotlin">val uiState: StateFlow&lt;SearchUiState&gt; = query
-    .debounce(300)
-    .distinctUntilChanged()
-    .flatMapLatest { q -&gt; repository.search(q) }
-    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SearchUiState.Empty)
-</code></pre>
-<h3>Follow-up answers</h3>
-<p><strong>Why is Flow cold by default?</strong><br/>
-Each collector starts the upstream again. If upstream performs a network call, multiple collectors can trigger multiple calls.</p>
-<p><strong><code>stateIn</code> vs <code>shareIn</code>?</strong><br/>
-<code>stateIn</code> creates <code>StateFlow</code> with initial/current value. <code>shareIn</code> creates <code>SharedFlow</code> with configurable replay and buffer.</p>
-<p><strong>What does <code>WhileSubscribed(5_000)</code> do?</strong><br/>
-It keeps upstream alive briefly after subscribers disappear, which avoids unnecessary restarts during configuration changes.</p>
-<p><strong>When is Channel justified?</strong><br/>
-For queue-like or actor-like internal processing, not as a default UI event mechanism.</p>
-<p><strong>How model one-shot navigation?</strong><br/>
-First check whether it is actually state. For example, login success can be <code>isLoggedIn = true</code>, and the UI performs navigation from a <code>LaunchedEffect</code>.</p>
-<p><strong>Why can <code>collectLatest</code> be dangerous?</strong><br/>
-It cancels the previous block. Good for search, bad for non-interruptible work such as payments, writes, or analytics.</p>
-<hr/>
-<h2>6. Compose: recomposition, state hoisting, side effects, performance</h2>
-<h3>Senior-level explanation</h3>
-<p>Composable functions must be idempotent and side-effect free. Navigation, snackbar, analytics, listeners, and coroutines should go through effect APIs with correct keys.</p>
+<h2>Compose effects in code</h2>
 <pre><code class="language-kotlin">@Composable
 fun CheckoutRoute(
     viewModel: CheckoutViewModel,
@@ -13534,56 +12770,8 @@ fun CheckoutRoute(
     }
 }
 </code></pre>
-<h3>Follow-up answers</h3>
-<p><strong>Why is recomposition not a full redraw?</strong><br/>
-Compose reruns only the relevant parts of the composition that depend on changed state and can skip composables whose parameters are unchanged (with strong skipping, the default since Kotlin 2.0.20, stable params are compared by <code>equals()</code> and unstable ones by identity).</p>
-<p><strong>Why not run side effects directly in a composable body?</strong><br/>
-The body can execute many times. Direct calls can duplicate navigation, analytics, or snackbar events.</p>
-<p><strong><code>remember</code> vs <code>rememberSaveable</code>?</strong><br/>
-<code>remember</code> survives recomposition. <code>rememberSaveable</code> also survives recreation for saveable UI element state.</p>
-<p><strong>Where should state live: UI or ViewModel?</strong><br/>
-Local interaction state in UI; business/screen state in ViewModel. The right owner is more important than dogma.</p>
-<p><strong>Why use <code>rememberUpdatedState</code>?</strong><br/>
-To keep a long-lived effect using the latest lambda/value without restarting the effect.</p>
-<p><strong>When use <code>DisposableEffect</code>?</strong><br/>
-For setup/cleanup: lifecycle observers, listeners, sensors, receivers.</p>
-<p><strong>When is <code>derivedStateOf</code> useful?</strong><br/>
-When inputs change frequently but the derived output changes less often.</p>
-<p><strong>Why LazyColumn keys?</strong><br/>
-They preserve item identity, remembered state, and reduce incorrect state reuse after insert/remove/reorder.</p>
 <hr/>
-<h2>7. Architecture, Clean Architecture, modularization</h2>
-<h3>Senior-level explanation</h3>
-<p>Describe architecture through boundaries and data flow, not labels.</p>
-<blockquote>
-<p>UI renders immutable state and sends actions. ViewModel is the screen state holder. Repository hides data sources and acts as a single source of truth. Use cases are added when complexity or reuse justifies them. Modules exist for ownership, visibility, testability, and build isolation.</p>
-</blockquote>
-<h3>Follow-up answers</h3>
-<p><strong>When is a domain layer unnecessary?</strong><br/>
-When a use case only forwards one repository call and adds no policy, orchestration, validation, or reuse.</p>
-<p><strong>MVVM vs MVI practically?</strong><br/>
-MVVM separates UI and state holder. MVI enforces stricter unidirectional state transitions. In production, discipline matters more than labels.</p>
-<p><strong>How avoid DTO leaking into UI?</strong><br/>
-Map DTOs to domain/UI models at boundaries. DTOs represent transport contracts, not presentation needs.</p>
-<p><strong>How choose module boundaries?</strong><br/>
-By ownership, dependency direction, and change frequency, not by folder aesthetics.</p>
-<p><strong>When does modularization hurt?</strong><br/>
-When modules are too granular, dependency setup becomes noisy, or navigation/testing complexity grows without ownership/build benefits.</p>
-<hr/>
-<h2>8. Hilt and DI scopes</h2>
-<h3>Follow-up answers</h3>
-<p><strong>When is <code>@ActivityRetainedScoped</code> better than <code>@ViewModelScoped</code>?</strong><br/>
-When one instance must be shared by multiple ViewModels and survive configuration changes.</p>
-<p><strong>Why can too many singletons be harmful?</strong><br/>
-They can hold stale state, leak Context, hide mutable global state, and make tests harder.</p>
-<p><strong>Constructor injection vs module provider?</strong><br/>
-Constructor injection is the default for your own classes. Providers are for third-party/framework types or interface bindings.</p>
-<p><strong>How replace dependencies in tests?</strong><br/>
-Use graph replacement with Hilt test modules/fakes instead of monkey-patching global singletons.</p>
-<hr/>
-<h2>9. Testing coroutines, Flow, ViewModel</h2>
-<h3>Senior-level explanation</h3>
-<p>Design async code to be testable: inject dispatchers, use fake repositories, control Flow producers, and avoid real time.</p>
+<h2>Testing coroutines, Flow, ViewModel</h2>
 <pre><code class="language-kotlin">@get:Rule
 val mainDispatcherRule = MainDispatcherRule() // Dispatchers.setMain(StandardTestDispatcher())
 
@@ -13599,36 +12787,12 @@ fun emitsLoadingThenContent() = runTest {
     }
 }
 </code></pre>
-<h3>Follow-up answers</h3>
-<p><strong>Fake vs mock?</strong><br/>
-Use fakes for stateful async behavior. Use mocks when interaction verification is the actual contract.</p>
-<p><strong>StandardTestDispatcher vs UnconfinedTestDispatcher?</strong><br/>
-Standard gives explicit scheduling control. Unconfined is simpler but can hide scheduling issues.</p>
-<p><strong>Why one shared scheduler?</strong><br/>
-Virtual time must be consistent across all test dispatchers, otherwise <code>advanceUntilIdle()</code> may not flush everything.</p>
-<p><strong>Why not <code>runBlocking</code>?</strong><br/>
-It blocks real threads and lacks virtual time control. <code>runTest</code> is built for coroutine tests.</p>
-<p><strong>How test infinite flows?</strong><br/>
-Collect in <code>backgroundScope</code>, use Turbine, and cancel collection explicitly.</p>
 <hr/>
-<h2>10. Performance, leaks, ANR, system design</h2>
-<h3>Follow-up answers</h3>
-<p><strong>How explain a memory leak?</strong><br/>
-An object is no longer needed but remains reachable from GC roots. In Android, common causes are static references, listeners, adapters, binding leaks, callbacks, and long-lived coroutines.</p>
-<p><strong>How find the leak?</strong><br/>
-Inspect the reference chain from GC root using LeakCanary or Memory Profiler, then remove or shorten the owning reference.</p>
+<h2>ANR and system design answers</h2>
 <p><strong>What causes ANR?</strong><br/>
 Main-thread blocking: slow IO, locks, heavy inflation, binder calls, synchronous DB work, or long receiver/service operations.</p>
-<p><strong>How optimize startup?</strong><br/>
-Measure cold/warm/hot startup, remove eager initialization from <code>Application.onCreate</code>, lazy-load non-critical work, optimize DI/content providers, and add Baseline Profiles for critical paths.</p>
 <p><strong>How answer Android system design questions?</strong><br/>
 Start with invariants: source of truth, read path, write path, offline behavior, sync/retry, lifecycle owner, error handling, testing, observability.</p>
-<p><strong>How avoid duplicate chat messages after reconnect?</strong><br/>
-Use client-generated ids, server ids, pending/sent/failed states, idempotent sends, and local DB deduplication.</p>
-<p><strong>How design token refresh?</strong><br/>
-Single-flight refresh using mutex/synchronization, retry original request once, clear session on unrecoverable refresh failure, and keep token logic out of UI.</p>
-<p><strong>Who initiates navigation?</strong><br/>
-UI owns the actual <code>NavController</code>. ViewModel exposes state or result; UI performs navigation as a side effect.</p>
 <hr/>
 <h2>Interview-ready summary</h2>
 <p><strong>Coroutines:</strong> define owner, cancellation, and failure semantics before choosing API.<br/>
@@ -13639,48 +12803,14 @@ UI owns the actual <code>NavController</code>. ViewModel exposes state or result
 <strong>Performance:</strong> measure first, then apply targeted fixes.</p>
 </div>
 </details><details class="major-section" data-key="senior-edge-cases" data-title="Senior Edge Cases: a bank of production traps" id="en-senior-edge-cases" open=""><summary class="major-summary"><span class="major-title">Senior Edge Cases: a bank of production traps</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
-<p>This section is a concentrate of the traps that separate Senior from Middle. Each case follows the same scheme: problem → why it happens → what breaks in production → what a Senior does. In interviews these stories are the most convincing material, because they cannot be memorized from docs — only earned in production.</p>
+<p><strong>More detail:</strong> <a href="#en-authentication-token-refresh-android-mobile-security">Authentication, token refresh, and mobile security</a>, <a href="#en-advanced-kotlin-flow-production">Advanced Kotlin Flow in production</a>, <a href="#en-kotlin-hot-flows-ui-state-events">StateFlow, SharedFlow, Channel</a>, <a href="#en-jetpack-compose-performance">Jetpack Compose performance</a>, <a href="#en-android-process-lifecycle-state-restoration">Android process lifecycle and state restoration</a>, <a href="#en-android-background-execution">Android background execution</a>, <a href="#en-local-persistence-sqlite-room-datastore">Local persistence: Room and DataStore</a>, <a href="#en-offline-first-architecture-paging-3">Offline-first and Paging 3</a>, <a href="#en-build-release-delivery-engineering">Build, release and delivery engineering</a>, <a href="#en-android-tasks-back-stack-deep-links-intents-pending-intent">Tasks, deep links, PendingIntent</a>, <a href="#en-kotlin-coroutines-failures-supervision-testing">Coroutines: failures, cleanup, testing</a>. Only production stories and details absent from the stages remain here; the Compose stability, Paging LoadState, and swallowed <code>CancellationException</code> cases are fully covered in the stages.</p>
+<p>Case scheme: problem → why it happens → what breaks in production → what a Senior does.</p>
 
-<h2 id="en-edge-case-token-refresh">1. Token refresh: several 401s at once<a aria-label="Link to section: Token refresh" class="heading-anchor" href="#en-edge-case-token-refresh">#</a></h2>
-<p><strong>Problem.</strong> The access token expires and 5 parallel requests receive 401 at the same time. A naive implementation fires 5 refresh calls.</p>
-<p><strong>Why.</strong> OkHttp invokes the <code>Authenticator</code> for every failed response independently. Without synchronization, every thread believes it is the one that must refresh.</p>
-<p><strong>Production impact.</strong> If the backend rotates refresh tokens (one-time use), the first refresh invalidates the refresh token and the remaining four get 401 on the refresh endpoint — and the usual "401 on refresh = log the user out" logic mass-evicts users. The classic incident: a logout spike after a release with no visible cause.</p>
-<p><strong>Senior approach.</strong> Serialize refresh behind a <code>Mutex</code>: the first thread refreshes, the rest wait, and after entering the critical section re-check whether someone already refreshed. Plus a retry cap to avoid loops.</p>
-<pre><code class="language-kotlin">class TokenAuthenticator @Inject constructor(
-    private val tokenStore: TokenStore,
-    private val refreshApi: RefreshApi
-) : Authenticator {
-    private val mutex = Mutex()
+<h2 id="en-edge-case-token-refresh">Token refresh: several 401s at once<a aria-label="Link to section: Token refresh" class="heading-anchor" href="#en-edge-case-token-refresh">#</a></h2>
+<p><strong>Production impact.</strong> A naive <code>Authenticator</code> fires 5 refresh calls for 5 parallel 401s. If the backend rotates refresh tokens (one-time use), the first refresh invalidates the refresh token and the remaining four get 401 on the refresh endpoint — and the usual "401 on refresh = log the user out" logic mass-evicts users. The classic incident: a logout spike after a release with no visible cause. The fix is a single-flight refresh behind a <code>Mutex</code> that re-checks whether someone already refreshed, plus a retry cap (see the token refresh stage).</p>
 
-    override fun authenticate(route: Route?, response: Response): Request? {
-        if (response.priorCount() &gt;= 2) return null // loop guard
-        val failedToken = response.request.header("Authorization")
-            ?.removePrefix("Bearer ")
-
-        val newToken = runBlocking {
-            mutex.withLock {
-                val current = tokenStore.accessToken()
-                // Someone refreshed while we were waiting on the mutex
-                if (current != null &amp;&amp; current != failedToken) current
-                else refreshApi.refresh(tokenStore.refreshToken())
-                    ?.also { tokenStore.save(it) }
-            }
-        } ?: return null // refresh failed -> logout flow
-
-        return response.request.newBuilder()
-            .header("Authorization", "Bearer $newToken")
-            .build()
-    }
-
-    private fun Response.priorCount(): Int =
-        generateSequence(priorResponse) { it.priorResponse }.count()
-}</code></pre>
-<p>A common follow-up: why an <code>Authenticator</code> and not an interceptor? Because the Authenticator is invoked only on 401 and already holds the failed response, while an interceptor would have to distinguish statuses and replay requests manually. The interceptor remains responsible for proactively attaching the current token to every request.</p>
-
-<h2 id="en-edge-case-flow-catch">2. Flow: catch only handles upstream<a aria-label="Link to section: Flow catch" class="heading-anchor" href="#en-edge-case-flow-catch">#</a></h2>
-<p><strong>Problem.</strong> A developer adds <code>.catch { }</code> and assumes the Flow is now "safe". The crash still happens.</p>
-<p><strong>Why.</strong> <code>catch</code> intercepts exceptions only from operators <em>above</em> it in the chain (exception transparency). An exception inside <code>collect { }</code> is downstream — it flies past <code>catch</code> and crashes the collector's scope.</p>
-<p><strong>Production impact.</strong> A crash in render logic (say, <code>NumberFormatException</code> while formatting backend data) crashes the app when no handler is installed. If a <code>CoroutineExceptionHandler</code> or wrapper swallows it, the collector is still dead along with the state subscription, and the UI silently "freezes": state keeps updating but nobody collects anymore.</p>
+<h2 id="en-edge-case-flow-catch">Flow: catch only handles upstream<a aria-label="Link to section: Flow catch" class="heading-anchor" href="#en-edge-case-flow-catch">#</a></h2>
+<p><strong>Production impact.</strong> A crash in render logic inside <code>collect { }</code> (say, <code>NumberFormatException</code> while formatting backend data) flies past <code>catch</code> and crashes the app when no handler is installed. If a <code>CoroutineExceptionHandler</code> or wrapper swallows it, the collector is still dead along with the state subscription, and the UI silently "freezes": state keeps updating but nobody collects anymore.</p>
 <p><strong>Senior approach.</strong> Keep collect razor-thin (assignment/rendering of a ready model only), move mapping and validation upstream (<code>map</code>/<code>mapNotNull</code>), and model errors as part of UI state rather than as exceptions.</p>
 <pre><code class="language-kotlin">repository.orders()
     .map { it.toUiModel() }          // a failure here -&gt; catch works
@@ -13689,59 +12819,24 @@ UI owns the actual <code>NavController</code>. ViewModel exposes state or result
         _state.value = ui            // assignment only, nothing to fail
     }</code></pre>
 
-<h2 id="en-edge-case-stateflow-conflation">3. StateFlow: equal values never reach collectors<a aria-label="Link to section: StateFlow conflation" class="heading-anchor" href="#en-edge-case-stateflow-conflation">#</a></h2>
-<p><strong>Problem.</strong> The ViewModel emits a "new" state but the UI does not update. Or fast intermediate values are lost.</p>
-<p><strong>Why.</strong> StateFlow (1) conflates — a slow collector only sees the latest value; (2) compares the new value to the old via <code>equals()</code> and skips emission when they are equal. For a <code>data class</code> with identical fields, <code>copy()</code> produces an <em>equal</em> object — no emission.</p>
-<p><strong>Production impact.</strong> The typical case is "re-showing" a one-shot event via state: <code>state.copy(showToast = true)</code> does nothing the second time because the value is already <code>true</code> and equal. Or an error snackbar fails to appear for the second identical error.</p>
-<p><strong>Senior approach.</strong> Separate state and events: state lives in StateFlow (where conflation and deduplication are desirable), one-shot events are either modeled as state with explicit ack/consumption (Android guidance) or go through a dedicated effects channel (<code>Channel.receiveAsFlow()</code> or a carefully configured <code>SharedFlow</code>), knowing it does not guarantee processing. If "equal" emissions are genuinely semantically distinct, add a discriminator field (timestamp/id) — but that is usually a smell that an event was stuffed into state.</p>
+<h2 id="en-edge-case-stateflow-conflation">StateFlow: equal values never reach collectors<a aria-label="Link to section: StateFlow conflation" class="heading-anchor" href="#en-edge-case-stateflow-conflation">#</a></h2>
+<p><strong>Production impact.</strong> "Re-showing" a one-shot event via state: <code>state.copy(showToast = true)</code> does nothing the second time because the value is already <code>true</code> and equal (StateFlow skips values equal by <code>equals()</code>). Or an error snackbar fails to appear for the second identical error. If "equal" emissions are genuinely semantically distinct, you can add a discriminator field (timestamp/id) — but that is usually a smell that an event was stuffed into state.</p>
 
-<h2 id="en-edge-case-sharedflow-overflow">4. SharedFlow: replay, buffer and dropped events<a aria-label="Link to section: SharedFlow overflow" class="heading-anchor" href="#en-edge-case-sharedflow-overflow">#</a></h2>
-<p><strong>Problem.</strong> An event emitted into a <code>SharedFlow(replay = 0)</code> before any subscriber exists disappears forever. Or <code>tryEmit</code> silently returns false and the event is lost.</p>
-<p><strong>Why.</strong> A SharedFlow without replay keeps no history; <code>emit</code> with <code>BufferOverflow.SUSPEND</code> and zero buffer suspends until all subscribers accept the value, and in that configuration (zero buffer) <code>tryEmit</code> returns false whenever any subscriber is present, however fast, and drops the value (returning true) when there are none. If you need <code>tryEmit</code>, configure <code>extraBufferCapacity</code>/<code>onBufferOverflow</code>; otherwise use <code>emit</code> from a coroutine.</p>
-<p><strong>Production impact.</strong> A navigation event sent during Activity recreation (no subscriber for a moment) is dropped — the user taps a button and nothing happens. Nearly impossible to reproduce locally.</p>
-<p><strong>Senior approach.</strong> Per Android guidance, first model the outcome as UI state with explicit ack/consumption. If you use <code>Channel(BUFFERED)</code> + <code>receiveAsFlow()</code>, know its limits: the channel buffers events while there is no collector and hands each element to only one receiver, but it does not guarantee processing — an element is lost if the receiver is cancelled mid-delivery. So collect on <code>Dispatchers.Main.immediate</code> and treat loss as possible. State the trade-off explicitly: a Channel does not support multiple subscribers, but for navigation/toasts that is precisely the semantics you want.</p>
+<h2 id="en-edge-case-sharedflow-overflow">SharedFlow: replay, buffer and dropped events<a aria-label="Link to section: SharedFlow overflow" class="heading-anchor" href="#en-edge-case-sharedflow-overflow">#</a></h2>
+<p><strong>Production impact.</strong> A navigation event sent into a <code>SharedFlow(replay = 0)</code> during Activity recreation (no subscriber for a moment) is dropped — the user taps a button and nothing happens. Nearly impossible to reproduce locally. If such events go through <code>Channel(BUFFERED)</code> + <code>receiveAsFlow()</code>, collect on <code>Dispatchers.Main.immediate</code> and still treat loss as possible.</p>
 
-<h2 id="en-edge-case-compose-stability">5. Compose: unstable parameters and excessive recomposition<a aria-label="Link to section: Compose stability" class="heading-anchor" href="#en-edge-case-compose-stability">#</a></h2>
-<p><strong>Problem.</strong> The list stutters; the profiler shows hundreds of recompositions in composables whose data "did not change".</p>
-<p><strong>Why.</strong> With strong skipping (default since Kotlin 2.0.20), unstable parameters do not block skipping: stable ones are compared with <code>equals()</code>, unstable ones (<code>List</code>, classes with <code>var</code>, types from modules without compiler metadata) by identity (<code>===</code>). The trap is a new instance on every recomposition: a freshly mapped <code>List</code> or an object created in the composable body forces recomposition even though the data is "the same". The compiler auto-remembers lambdas keyed on their captures, so a lambda capturing such an always-new object is recreated too.</p>
-<p><strong>Production impact.</strong> Scroll jank and extra battery drain on mid-range devices; invisible on the developers' flagship phones.</p>
-<p><strong>Senior approach.</strong> Read compiler metrics and Layout Inspector recomposition counts instead of guessing. Make UI models immutable (<code>val</code> + <code>kotlinx.collections.immutable</code>, or <code>@Immutable</code>/<code>@Stable</code> with the contract actually honored), avoid re-allocating inputs during composition (map in the ViewModel or via <code>remember</code>), use a stability configuration file for classes from other modules; a manual <code>remember { { … } }</code> around lambdas is usually unnecessary with strong skipping. And always add: measure first — not every recomposition is a problem.</p>
-<pre><code class="language-kotlin">@Immutable
-data class CartItemUi(
-    val id: String,
-    val title: String,
-    val priceFormatted: String
-)
+<h2 id="en-edge-case-fragment-lifecyclescope">Fragment: lifecycleScope vs viewLifecycleOwner<a aria-label="Link to section: Fragment lifecycleScope" class="heading-anchor" href="#en-edge-case-fragment-lifecyclescope">#</a></h2>
+<p><strong>Production impact.</strong> A collector in <code>fragment.lifecycleScope</code> outlives the view; returning from the back stack runs <code>onViewCreated</code> again and adds a second collector: doubled handlers (events delivered twice), crashes on a null binding, view leaks. The single most common Android leak in legacy codebases; in code review it is the first thing checked in fragments.</p>
 
-@Composable
-fun CartRow(item: CartItemUi, onClick: (String) -&gt; Unit) { /* ... */ }
-// Call site: onClick = { id -&gt; viewModel.onItemClick(id) } or viewModel::onItemClick
-// with strong skipping the compiler memoizes both, no remember needed</code></pre>
-
-<h2 id="en-edge-case-fragment-lifecyclescope">6. Fragment: lifecycleScope vs viewLifecycleOwner<a aria-label="Link to section: Fragment lifecycleScope" class="heading-anchor" href="#en-edge-case-fragment-lifecyclescope">#</a></h2>
-<p><strong>Problem.</strong> Collecting in <code>fragment.lifecycleScope</code> updates a view that no longer exists, or subscriptions get duplicated.</p>
-<p><strong>Why.</strong> A Fragment has two lifecycles: the fragment itself and its view. On the back stack the view is destroyed (<code>onDestroyView</code>) while the fragment survives. A coroutine in <code>lifecycleScope</code> outlives the view and keeps references to destroyed binding/views. Returning from the back stack runs <code>onViewCreated</code> again — adding a second collector.</p>
-<p><strong>Production impact.</strong> View leaks, crashes on a null binding, doubled handlers (events delivered twice). The single most common Android leak in legacy codebases.</p>
-<p><strong>Senior approach.</strong> The canonical pattern: <code>viewLifecycleOwner</code> + <code>repeatOnLifecycle(STARTED)</code>; binding nulled in <code>onDestroyView</code>. In code review this is the first thing checked in fragments.</p>
-<pre><code class="language-kotlin">override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-    viewLifecycleOwner.lifecycleScope.launch {
-        viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            viewModel.state.collect(::render)
-        }
-    }
-}</code></pre>
-
-<h2 id="en-edge-case-workmanager-periodic">7. WorkManager: periodic work is not exact scheduling<a aria-label="Link to section: WorkManager periodic" class="heading-anchor" href="#en-edge-case-workmanager-periodic">#</a></h2>
+<h2 id="en-edge-case-workmanager-periodic">WorkManager: periodic work is not exact scheduling<a aria-label="Link to section: WorkManager periodic" class="heading-anchor" href="#en-edge-case-workmanager-periodic">#</a></h2>
 <p><strong>Problem.</strong> The business asks for "sync exactly every 15 minutes", the developer schedules <code>PeriodicWorkRequest(15, MINUTES)</code> — and sync runs "somewhere between 15 and 40 minutes, and not at all overnight".</p>
 <p><strong>Why.</strong> 15 minutes is the minimum interval, not a guarantee. The system batches work and defers it for Doze/App Standby buckets, constraints (network, battery) and vendor "optimizers" (some OEMs kill background work far more aggressively than AOSP).</p>
 <p><strong>Production impact.</strong> Data goes stale unpredictably; sync metrics look great in the office and terrible in the field. The team blames the backend for weeks.</p>
 <p><strong>Senior approach.</strong> State the rule: WorkManager is for deferrable guaranteed work. For exact timing — AlarmManager's <code>setExactAndAllowWhileIdle</code> (with the <code>SCHEDULE_EXACT_ALARM</code> permission and the awareness that Google restricts it to genuinely time-critical cases — alarms, reminders). For realtime — FCM push as a trigger. And always add sync-on-app-open as compensation: users see fresh data exactly when they look at the screen.</p>
 
-<h2 id="en-edge-case-room-destructive">8. Room: destructive migration on user data<a aria-label="Link to section: Room destructive migration" class="heading-anchor" href="#en-edge-case-room-destructive">#</a></h2>
-<p><strong>Problem.</strong> A <code>fallbackToDestructiveMigration()</code> left over from prototyping ships to production. After a schema bump, part of the user base loses local data.</p>
-<p><strong>Why.</strong> It was convenient at MVP stage, and nobody wrote migration tests because "the schema will change anyway".</p>
-<p><strong>Production impact.</strong> For an offline-first app this is loss of unsynced user data: drafts, cart, local edits. That is not a bug — it is lost trust and a one-star review.</p>
-<p><strong>Senior approach.</strong> Enable <code>exportSchema = true</code>, keep schema JSONs in VCS, write explicit <code>Migration</code>s and test them with <code>MigrationTestHelper</code> against real schemas. A destructive fallback is acceptable only for a pure cache fully recoverable from the network — and that decision is recorded explicitly, not "left as is".</p>
+<h2 id="en-edge-case-room-destructive">Room: destructive migration on user data<a aria-label="Link to section: Room destructive migration" class="heading-anchor" href="#en-edge-case-room-destructive">#</a></h2>
+<p><strong>Problem and impact.</strong> A <code>fallbackToDestructiveMigration()</code> left over from prototyping ("the schema will change anyway", no migration tests) ships to production. After a schema bump, part of the user base loses local data; for an offline-first app this is loss of unsynced user data: drafts, cart, local edits. That is not a bug — it is lost trust and a one-star review.</p>
+<p><strong>Senior approach.</strong> Explicit <code>Migration</code>s tested against exported schemas. A destructive fallback is acceptable only for a pure cache fully recoverable from the network — and that decision is recorded explicitly, not "left as is".</p>
 <pre><code class="language-kotlin">val MIGRATION_5_6 = object : Migration(5, 6) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(
@@ -13753,23 +12848,13 @@ fun CartRow(item: CartItemUi, onClick: (String) -&gt; Unit) { /* ... */ }
     }
 }</code></pre>
 
-<h2 id="en-edge-case-paging-errors">9. Paging 3: refresh, append and prepend are different errors<a aria-label="Link to section: Paging errors" class="heading-anchor" href="#en-edge-case-paging-errors">#</a></h2>
-<p><strong>Problem.</strong> Every paging error is rendered as a full-screen error. A user who scrolled deep into the list on a flaky network loses all already-loaded content from view.</p>
-<p><strong>Why.</strong> <code>LoadState</code> has three independent components — <code>refresh</code>, <code>append</code>, <code>prepend</code> — while the UI handles only one "generic" error.</p>
-<p><strong>Production impact.</strong> UX degrades exactly where Paging was supposed to help: on slow networks. Users report "the list disappears".</p>
-<p><strong>Senior approach.</strong> Map states separately: <code>refresh.Error</code> + empty cache → full-screen error with retry; <code>refresh.Error</code> + cached data → snackbar over content; <code>append.Error</code> → footer with a retry button; with a RemoteMediator, distinguish <code>mediator.refresh</code> from <code>source.refresh</code> (network failed, but the cache is still shown).</p>
+<h2 id="en-edge-case-savedstatehandle">SavedStateHandle is not persistence<a aria-label="Link to section: SavedStateHandle" class="heading-anchor" href="#en-edge-case-savedstatehandle">#</a></h2>
+<p>SavedStateHandle/rememberSaveable move the whole saved state through a Binder transaction with a ~1MB limit. <code>TransactionTooLargeException</code> is a crash not in your code but when the system saves state.</p>
 
-<h2 id="en-edge-case-savedstatehandle">10. SavedStateHandle is not persistence<a aria-label="Link to section: SavedStateHandle" class="heading-anchor" href="#en-edge-case-savedstatehandle">#</a></h2>
-<p><strong>Problem.</strong> Large objects or critical data get stuffed into SavedStateHandle "to survive process death".</p>
-<p><strong>Why.</strong> Three mechanisms with different guarantees get confused: SavedStateHandle/rememberSaveable (survive recreation and process death, but small data only — the whole state goes through a Binder transaction with a ~1MB limit), in-memory ViewModel (survives only configuration change), persistent storage (survives everything including reboot).</p>
-<p><strong>Production impact.</strong> <code>TransactionTooLargeException</code> — a crash not in your code but when the system saves state; or a "lost" form because a ViewModel without SavedStateHandle did not survive a background kill.</p>
-<p><strong>Senior approach.</strong> A three-tier rule: identifiers and small UI state (scroll position, entered text, selected tab) → SavedStateHandle/rememberSaveable; anything reloadable → reload by id; anything the user created and fears losing (a draft) → Room/DataStore at input time, not in onStop.</p>
-
-<h2 id="en-edge-case-datastore-misuse">11. DataStore is not a database<a aria-label="Link to section: DataStore misuse" class="heading-anchor" href="#en-edge-case-datastore-misuse">#</a></h2>
-<p><strong>Problem.</strong> Entity lists, history, feed caches end up in Proto/Preferences DataStore — "because it is convenient, one Flow".</p>
-<p><strong>Why.</strong> DataStore reads and writes the whole file atomically. No partial updates, no queries, no indexes. Every change serializes the entire object.</p>
-<p><strong>Production impact.</strong> As the file grows, every write gets more expensive, updates contend (updateData is serialized), startup reads slow down. And partial data migration becomes impossible.</p>
-<p><strong>Senior approach.</strong> DataStore is for settings, tokens, flags, small config objects. Relational/list data belongs in Room. Additionally: always set a <code>corruptionHandler</code> (files do get corrupted) and use <code>SharedPreferencesMigration</code> when moving off legacy prefs.</p>
+<h2 id="en-edge-case-datastore-misuse">DataStore is not a database<a aria-label="Link to section: DataStore misuse" class="heading-anchor" href="#en-edge-case-datastore-misuse">#</a></h2>
+<p><strong>Problem.</strong> Entity lists, history, feed caches end up in Proto/Preferences DataStore — "because it is convenient, one Flow". But DataStore reads and writes the whole file: no partial updates, no queries, no indexes; every change serializes the entire object.</p>
+<p><strong>Production impact.</strong> As the file grows, every write gets more expensive, updates contend (<code>updateData</code> is serialized), startup reads slow down. And partial data migration becomes impossible.</p>
+<p><strong>Senior approach.</strong> DataStore is for settings, tokens, flags, small config objects; relational/list data belongs in Room. Set a <code>corruptionHandler</code> and use <code>SharedPreferencesMigration</code> when moving off legacy prefs:</p>
 <pre><code class="language-kotlin">val settingsStore: DataStore&lt;Settings&gt; = DataStoreFactory.create(
     serializer = SettingsSerializer,
     corruptionHandler = ReplaceFileCorruptionHandler { Settings.getDefaultInstance() },
@@ -13778,56 +12863,20 @@ fun CartRow(item: CartItemUi, onClick: (String) -&gt; Unit) { /* ... */ }
     })
 ) { context.dataStoreFile("settings.pb") }</code></pre>
 
-<h2 id="en-edge-case-r8-keep-rules">12. R8: reflection, serialization and "works in debug, crashes in release"<a aria-label="Link to section: R8 keep rules" class="heading-anchor" href="#en-edge-case-r8-keep-rules">#</a></h2>
-<p><strong>Problem.</strong> The release build crashes or silently returns null fields where debug works perfectly.</p>
+<h2 id="en-edge-case-r8-keep-rules">R8: reflection, serialization and "works in debug, crashes in release"<a aria-label="Link to section: R8 keep rules" class="heading-anchor" href="#en-edge-case-r8-keep-rules">#</a></h2>
 <p><strong>Why.</strong> R8 removes "unused" code and renames classes. Anything reached via reflection — Gson, Moshi in reflection mode, custom serialization, JNI, some DI patterns — breaks, because R8 cannot see those accesses. A separate trap: generic signatures that Gson reads from metadata vanish without <code>-keepattributes Signature</code>.</p>
-<p><strong>Production impact.</strong> The worst case is not a crash but silent nulls in DTOs: business logic runs on garbage data. Play Console crashes are unreadable without the mapping file.</p>
-<p><strong>Senior approach.</strong> (1) Remove reflection systematically: kotlinx.serialization or Moshi codegen instead of Gson — almost no keep rules needed. (2) Where reflection remains — targeted keep rules on the DTO package, never a global minification opt-out. (3) Test the release build (a smoke suite on the minified build in CI). (4) Upload mapping.txt to Play Console / Crashlytics and archive the mapping for every release.</p>
+<p><strong>Production impact.</strong> The worst case is not a crash but silent nulls in DTOs: business logic runs on garbage data.</p>
+<p><strong>Senior approach.</strong> Remove reflection systematically: kotlinx.serialization or Moshi codegen instead of Gson — almost no keep rules needed. Where reflection remains — targeted keep rules on the DTO package, never a global minification opt-out.</p>
 <pre><code class="language-kotlin">// proguard-rules.pro (fragment, only if reflection-based serialization remains)
 // -keepattributes Signature, *Annotation*
 // -keep class com.app.network.dto.** { &lt;fields&gt;; }</code></pre>
 
-<h2 id="en-edge-case-pendingintent">13. PendingIntent: mutability as an attack vector<a aria-label="Link to section: PendingIntent mutability" class="heading-anchor" href="#en-edge-case-pendingintent">#</a></h2>
-<p><strong>Problem.</strong> A PendingIntent delegates your identity: the receiver executes the Intent on behalf of your app, with your permissions.</p>
-<p><strong>Why.</strong> A mutable PendingIntent wrapping an implicit intent lets a malicious app fill in the blanks (component, extras) and act in your name — a classic vulnerability. That is why targetSdk 31+ makes the mutability flag mandatory.</p>
-<p><strong>Production impact.</strong> Either a security hole (mutable where unnecessary), or an <code>IllegalArgumentException</code> crash when targeting a new SDK without an explicit flag, or broken notification actions when IMMUTABLE was set where the system must fill the Intent in (direct reply via RemoteInput requires MUTABLE).</p>
-<p><strong>Senior approach.</strong> Default — <code>FLAG_IMMUTABLE</code> + an explicit intent (component set). MUTABLE only for documented cases (RemoteInput, some bubbles/geofencing APIs), with the intent narrowed as much as possible. Knows <code>FLAG_UPDATE_CURRENT</code> vs <code>FLAG_CANCEL_CURRENT</code> semantics and that PendingIntents with the same request code/intent (per <code>filterEquals</code>) are the same system object.</p>
-<pre><code class="language-kotlin">val pi = PendingIntent.getActivity(
-    context,
-    requestCode,
-    Intent(context, OrderDetailsActivity::class.java)
-        .putExtra("orderId", orderId),
-    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-)</code></pre>
+<h2 id="en-edge-case-pendingintent">PendingIntent: mutability as an attack vector<a aria-label="Link to section: PendingIntent mutability" class="heading-anchor" href="#en-edge-case-pendingintent">#</a></h2>
+<p><strong>Production impact.</strong> Either a security hole (a mutable PendingIntent wrapping an implicit intent lets a malicious app fill in the blanks and act in your name), or an <code>IllegalArgumentException</code> crash when targeting SDK 31+ without an explicit mutability flag, or broken notification actions when IMMUTABLE was set where the system must fill the Intent in. MUTABLE only for documented cases (RemoteInput, some bubbles/geofencing APIs).</p>
 
-<h2 id="en-edge-case-deeplinks">14. Deep links: an incoming URI is untrusted input<a aria-label="Link to section: Deep links security" class="heading-anchor" href="#en-edge-case-deeplinks">#</a></h2>
-<p><strong>Problem.</strong> Deep link parameters are consumed directly: a WebView opens a URL from a parameter, an id is plugged into a request, flags like <code>isPremium=true</code> influence logic.</p>
-<p><strong>Why.</strong> Anyone can craft a deep link: another app, a malicious site, an email. An exported Activity with an intent-filter is a public API of your app.</p>
-<p><strong>Production impact.</strong> Arbitrary URLs opened in a WebView carrying session cookies (phishing/token theft), paywall bypass via flags, crashes on garbage parameters, navigation into internal screens around authorization.</p>
-<p><strong>Senior approach.</strong> Validate every parameter (type, format, allow-list of hosts for URLs), never carry authorization decisions in a URI, gate deep links through the same auth-check layer as internal navigation. For trusted links — App Links with a verified domain (<code>assetlinks.json</code>) rather than a custom scheme any app can hijack. Enable <code>StrictMode.detectUnsafeIntentLaunch</code> in suspicious areas.</p>
-<pre><code class="language-kotlin">fun parseOrderDeepLink(uri: Uri): Screen? {
-    val id = uri.getQueryParameter("orderId")
-        ?.takeIf { it.matches(Regex("^[0-9]{1,12}$")) }
-        ?: return null               // garbage -&gt; home, no crash
-    return Screen.OrderDetails(id)   // the navigation layer re-checks auth
-}</code></pre>
-
-<h2 id="en-edge-case-cancellation">15. Cancellation: swallowed CancellationException and NonCancellable cleanup<a aria-label="Link to section: Cancellation cleanup" class="heading-anchor" href="#en-edge-case-cancellation">#</a></h2>
-<p><strong>Problem.</strong> A blanket <code>catch (e: Exception)</code> around suspend code also catches <code>CancellationException</code> — the coroutine "refuses to die" and scopes stop cancelling cleanly. The mirror problem: cleanup in <code>finally</code> calls a suspend function and is cut off immediately because the coroutine is already cancelled.</p>
-<p><strong>Why.</strong> Cancellation in coroutines is cooperative and implemented via an exception. It is a control signal, not an error.</p>
-<p><strong>Production impact.</strong> Work leaking past screen exit, zombie requests, unclosed resources, flaky tests. Very hard to debug because everything just "sometimes hangs".</p>
-<p><strong>Senior approach.</strong> Either catch specific exceptions or rethrow CancellationException; for suspend cleanup use <code>withContext(NonCancellable)</code> only for short critical operations (closing a transaction, finishing a log write).</p>
-<pre><code class="language-kotlin">try {
-    syncOrders()
-} catch (e: CancellationException) {
-    throw e                       // never swallow
-} catch (e: IOException) {
-    _state.value = SyncState.Error(e)
-} finally {
-    withContext(NonCancellable) { // otherwise a suspend call here dies instantly
-        journal.write("sync finished")
-    }
-}</code></pre>
+<h2 id="en-edge-case-deeplinks">Deep links: an incoming URI is untrusted input<a aria-label="Link to section: Deep links security" class="heading-anchor" href="#en-edge-case-deeplinks">#</a></h2>
+<p><strong>Production impact.</strong> Arbitrary URLs opened in a WebView carrying session cookies (phishing/token theft), paywall bypass via flags like <code>isPremium=true</code> in the URI, crashes on garbage parameters, navigation into internal screens around authorization.</p>
+<p><strong>Senior approach.</strong> Beyond parameter validation and App Links: remember that a plain custom scheme can be hijacked by another app, and enable <code>StrictMode.detectUnsafeIntentLaunch</code> in suspicious areas.</p>
 
 <h3 id="en-edge-cases-follow-up">Follow-up questions by level<a aria-label="Link to section: Edge cases follow-up" class="heading-anchor" href="#en-edge-cases-follow-up">#</a></h3>
 <p><strong>Middle+: how do catch and retry differ in Flow?</strong><br/>
