@@ -588,28 +588,6 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </ol>
 </li>
 <li class="toc-major">
-<a data-target="architecture" href="#architecture">Architecture</a>
-<ol class="toc-children">
-<li><a data-target="mvvm" href="#mvvm">MVVM</a></li>
-<li><a data-target="mvi-and-unidirectional-data-flow" href="#mvi-and-unidirectional-data-flow">MVI and unidirectional data flow</a></li>
-<li><a data-target="clean-architecture-trade-offs" href="#clean-architecture-trade-offs">Clean Architecture trade-offs</a></li>
-<li><a data-target="repository-pattern" href="#repository-pattern">Repository pattern</a></li>
-<li><a data-target="ui-state-modeling-and-one-shot-events" href="#ui-state-modeling-and-one-shot-events">UI state modeling and one-shot events</a></li>
-<li><a data-target="modularization" href="#modularization">Modularization</a></li>
-<li><a data-target="error-handling-strategy" href="#error-handling-strategy">Error handling strategy</a></li>
-<li><a data-target="architecture-підсумок" href="#architecture-підсумок">Architecture — підсумок</a></li>
-</ol>
-</li>
-<li class="toc-major">
-<a data-target="dependency-injection" href="#dependency-injection">Dependency Injection</a>
-<ol class="toc-children">
-<li><a data-target="manual-di-service-locator-dagger-hilt" href="#manual-di-service-locator-dagger-hilt">Manual DI, Service Locator, Dagger, Hilt</a></li>
-<li><a data-target="hilt-scopes-and-component-lifecycle" href="#hilt-scopes-and-component-lifecycle">Hilt scopes and component lifecycle</a></li>
-<li><a data-target="testing-with-di" href="#testing-with-di">Testing with DI</a></li>
-<li><a data-target="dependency-injection-підсумок" href="#dependency-injection-підсумок">Dependency Injection — підсумок</a></li>
-</ol>
-</li>
-<li class="toc-major">
 <a data-target="networking" href="#networking">Networking</a>
 <ol class="toc-children">
 <li><a data-target="networking-підсумок" href="#networking-підсумок">Networking — підсумок</a></li>
@@ -881,20 +859,6 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="en-coroutines-and-concurrency" href="#en-coroutines-and-concurrency">Coroutines and Concurrency</a>
 <ol class="toc-children">
 <li><a data-target="en-structured-concurrency" href="#en-structured-concurrency">Structured concurrency</a></li>
-</ol>
-</li>
-<li class="toc-major">
-<a data-target="en-architecture" href="#en-architecture">Architecture</a>
-<ol class="toc-children">
-<li><a data-target="en-mvvm-and-mvi" href="#en-mvvm-and-mvi">MVVM and MVI</a></li>
-<li><a data-target="en-clean-architecture" href="#en-clean-architecture">Clean Architecture</a></li>
-<li><a data-target="en-repository-pattern-and-source-of-truth" href="#en-repository-pattern-and-source-of-truth">Repository pattern and source of truth</a></li>
-</ol>
-</li>
-<li class="toc-major">
-<a data-target="en-dependency-injection" href="#en-dependency-injection">Dependency Injection</a>
-<ol class="toc-children">
-<li><a data-target="en-scopes" href="#en-scopes">Scopes</a></li>
 </ol>
 </li>
 <li class="toc-major">
@@ -3466,6 +3430,7 @@ Durable outcome     → source of truth → UI state (safe after recreation)</co
 <li>Не кодуйте <code>isLoading + data? + error?</code> без invariants: це створює impossible або неоднозначні combinations. Але й один giant sealed tree може спричинити combinatorial explosion і сховати незалежні owners.</li>
 <li><code>Empty</code> — успішно завантажений нульовий результат, не initial loading. Stale content лишається renderable з freshness/retry metadata. Initial failure блокує screen; refresh failure з cache зазвичай non-blocking. Pagination окремо моделює initial load, append in flight, end reached і append error.</li>
 <li>Публікуйте immutable snapshots і робіть pure atomic transforms через <code>MutableStateFlow.update</code>. <code>val</code>/<code>copy</code> не захищають nested mutable list, map або element; snapshot/copy ownership на boundary.</li>
+<li>UI state не містить DTO/entity, raw exceptions чи Android <code>Context</code> (і неправильно resolved string resources). Який error показати, вирішує ViewModel (typed domain error → UI message/action), а не UI.</li>
 </ul>
 <pre><code class="language-kotlin">sealed interface Body {
     data object InitialLoading : Body
@@ -3489,7 +3454,7 @@ fun reduce(result: Result, id: Long) = _state.update { old -&gt;
 <h3 id="stage12-uk-ownership">State holder vs ViewModel; Compose та XML parity<a aria-label="Посилання на розділ: State holder versus ViewModel" class="heading-anchor" href="#stage12-uk-ownership">#</a></h3>
 <ul>
 <li>Keep simple element state local; hoist to the lowest common reader/writer. Extract a plain state holder for cohesive UI logic involving focus, scroll, sheet or selection. Use a ViewModel/screen holder when app data, business rules, repositories or survival across configuration change are involved.</li>
-<li>A ViewModel should not retain Activity, Fragment, View, NavController, Composer, focus/scroll runtime objects or callbacks. Create it through the owner/factory/DI path and scope it deliberately to destination, graph, Activity or other <code>ViewModelStoreOwner</code>; scope determines sharing and lifetime.</li>
+<li>A ViewModel should not retain Activity, Fragment, View, NavController, Composer, focus/scroll runtime objects or callbacks. Create it through the owner/factory/DI path and scope it deliberately to destination, graph, Activity or other <code>ViewModelStoreOwner</code>; scope determines sharing and lifetime. Share ViewModel між Fragment-ами через <code>activityViewModels()</code> (Activity scope) або <code>navGraphViewModels()</code> (navigation graph scope); scope обирайте за ownership: state належить всій Activity чи конкретному flow.</li>
 <li>Compose: stateful route collects with <code>collectAsStateWithLifecycle()</code> and passes plain state/callbacks to stateless content. <code>remember</code> survives recomposition only; <code>rememberSaveable</code> restores saveable UI input across recreation but is not durable storage. Do not move frame-clock UI operations into <code>viewModelScope</code>.</li>
 <li>XML/Fragment has the same architecture: observe inside <code>viewLifecycleOwner.lifecycleScope.repeatOnLifecycle</code>, render Views, send semantic callbacks, and never outlive the Fragment view. Compose is not required for UDF.</li>
 </ul>
@@ -3596,6 +3561,73 @@ fun refresh() = viewModelScope.launch {
 <li>Observability uses stable state/event names, correlation and request generation, transition latency, effect enqueue/handle/drop reason, retries and rejected stale results; avoid logging PII/secrets or high-cardinality payloads.</li>
 </ul>
 
+<h2 id="stage12-uk-practice-notes">Практичні нотатки<a aria-label="Посилання на розділ: Практичні нотатки" class="heading-anchor" href="#stage12-uk-practice-notes">#</a></h2>
+<h3>Анти-патерн «Massive ViewModel»</h3>
+<p>Networking, mapping, validation, analytics, navigation, retry, formatting і бізнес-правила в одному класі. ViewModel не має знати DTO, Retrofit response чи деталі Room entity — лише domain або UI models; вона не викликає Retrofit API напряму і не повертає mutable state, а UI не вирішує business rules.</p>
+<h3>Коли строгий MVI доречний</h3>
+<p>Строгий MVI доречний для складних форм, checkout/payment, realtime screens, екранів із багатьма async sources або коли потрібен replay/debug state transitions; вибір pattern також залежить від team maturity і maintainability. Типова помилка — називати «MVI» будь-який ViewModel зі StateFlow. Мінімальний intent → reducer приклад:</p>
+<pre><code class="language-kotlin">sealed interface CartIntent {
+    data class QuantityChanged(val itemId: String, val quantity: Int) : CartIntent
+    data object CheckoutClicked : CartIntent
+    data object RetryClicked : CartIntent
+}
+
+data class CartState(
+    val items: List&lt;CartItemUiModel&gt; = emptyList(),
+    val isLoading: Boolean = false,
+    val error: String? = null
+)
+
+fun reduce(state: CartState, intent: CartIntent): CartState {
+    return when (intent) {
+        is CartIntent.QuantityChanged -&gt; state.copy(
+            items = state.items.map {
+                if (it.id == intent.itemId) it.copy(quantity = intent.quantity) else it
+            }
+        )
+        CartIntent.CheckoutClicked -&gt; state.copy(isLoading = true)
+        CartIntent.RetryClicked -&gt; state.copy(error = null, isLoading = true)
+    }
+}
+</code></pre>
+<h3>Explicit UI state і ViewModel</h3>
+<p>ViewModel отримує use cases через constructor injection, мапить domain models в UI models і публікує read-only <code>StateFlow</code> із sealed станом:</p>
+<pre><code class="language-kotlin">sealed interface FeedUiState {
+    data object Loading : FeedUiState
+    data class Content(
+        val items: List&lt;FeedItemUiModel&gt;,
+        val isRefreshing: Boolean
+    ) : FeedUiState
+    data class Error(val message: String) : FeedUiState
+}
+
+@HiltViewModel
+class FeedViewModel @Inject constructor(
+    observeFeed: ObserveFeedUseCase,
+    private val refreshFeed: RefreshFeedUseCase
+) : ViewModel() {
+
+    val uiState: StateFlow&lt;FeedUiState&gt; = observeFeed()
+        .map&lt;List&lt;Article&gt;, FeedUiState&gt; { articles -&gt;
+            FeedUiState.Content(
+                items = articles.map(Article::toUiModel),
+                isRefreshing = false
+            )
+        }
+        .onStart { emit(FeedUiState.Loading) }
+        .catch { emit(FeedUiState.Error(it.toUserMessage())) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FeedUiState.Loading)
+
+    fun onRefresh() {
+        viewModelScope.launch { refreshFeed() }
+    }
+}
+</code></pre>
+<h3>Коротке формулювання для співбесіди</h3>
+<blockquote>
+<p>Я описую architecture через boundaries і data flow. UI render-ить immutable state. ViewModel — state holder. Repository — single source of truth і boundary до data sources. Use cases додаю там, де вони зменшують складність або дають reuse, а не автоматично для кожного repository call.</p>
+</blockquote>
+
 <h2 id="stage12-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice questions and answers" class="heading-anchor" href="#stage12-uk-likely-qa">#</a></h2>
 <p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
 <ol>
@@ -3679,19 +3711,55 @@ Risk: feature A ↔ feature B cycle; shared module with unbounded fan-out</code>
 <li>Domain layer допомагає, коли правило повторно використовується кількома callers, комбінує repositories, має нетривіальні invariants або потребує platform-free тестів. Він шкодить, коли кожен клас лише делегує один method, дублює names/types і розтягує tracing.</li>
 <li><strong>DTO</strong> відображає wire schema і tolerates transport concerns; database entity — storage schema/index/relations; domain model виражає validated business meaning; UI model — formatted/permission-aware display contract. Не називайте Room entity «domain entity» лише через Clean Architecture vocabulary.</li>
 <li>Mapping ізолює schema evolution і invalid data, але коштує allocations, boilerplate, defaults, lost fields та debugging hops. Мапте на trust/change boundaries; не створюйте чотири ідентичні моделі автоматично. Для простого stable internal value спільна модель може бути чеснішою.</li>
+<li>DTO повторює форму API: nullable-поля, snake_case, версіюється бекендом; domain model виражає інваріанти продукту і не знає про транспорт — розділення ізолює UI від змін контракту API. Mapper живе на межі шару, що володіє форматом: DTO→domain — у data-шарі (поряд із DTO), domain→UI model — у presentation. Мапери — прості чисті функції, які легко покривати тестами.</li>
+<li>Domain layer не має залежати від Android <code>Context</code>, <code>Resources</code>, <code>LiveData</code>.</li>
 </ul>
 
 <h2 id="stage13-uk-inversion-use-cases">Repository ownership, inversion та use cases<a aria-label="Посилання на розділ: Repository inversion and use cases" class="heading-anchor" href="#stage13-uk-inversion-use-cases">#</a></h2>
 <p>Repository не є автоматично domain abstraction. Якщо API — CRUD façade над endpoint і витікає paging/HTTP DTO, це data gateway незалежно від назви. Repository interface належить policy-side consumer, коли policy визначає потрібні capability й має кілька implementations/test substitutes; adapter module реалізує цей port. Якщо contract суто data-centric і використовується багатьма features, ownership у data API може бути кращим. Уникайте одного god repository.</p>
 <p><strong>Interfaces alone do not decouple.</strong> Consumer лишається coupled до semantics, models, errors, threading, versioning і lifetime. Interface корисний, коли відділяє volatile implementation або формує consumer-owned narrow port; one-to-one interface для кожного concrete class лише додає navigation cost.</p>
 <p>Use case виправданий, коли називає business operation, оркеструє кілька ports, enforce-ить policy/transaction boundary або повторно використовується. <code>GetUserUseCase(repo).invoke() = repo.getUser()</code> без окремої semantics — pass-through layer. Простий call можна лишити на repository; додайте use case, коли виникне policy seam.</p>
+<p>Use case виправданий, бо містить business rule (валідація payment method перед submit):</p>
+<pre><code class="language-kotlin">class SubmitOrderUseCase @Inject constructor(
+    private val checkoutRepository: CheckoutRepository,
+    private val paymentValidator: PaymentValidator
+) {
+    suspend operator fun invoke(request: SubmitOrderRequest): SubmitOrderResult {
+        val validation = paymentValidator.validate(request.paymentMethod)
+        if (validation !is ValidationResult.Valid) {
+            return SubmitOrderResult.InvalidPayment(validation.reason)
+        }
+
+        return checkoutRepository.submitOrder(request)
+    }
+}
+</code></pre>
 
 <h2 id="stage13-uk-packages-modules">Package-by-feature/layer; logical та Gradle modules<a aria-label="Посилання на розділ: Packages and modules" class="heading-anchor" href="#stage13-uk-packages-modules">#</a></h2>
 <ul>
 <li><strong>package-by-layer</strong> (<code>ui/</code>, <code>domain/</code>, <code>data/</code>) показує technical role, але feature change розкиданий і accidental cross-feature access легкий. <strong>Package-by-feature</strong> colocalizes change та ownership; усередині великої feature можна мати локальні layers. Packages — logical organization/visibility, не окрема compilation unit.</li>
 <li>Gradle module дає enforced dependency edge, окрему compilation/cache/task/API surface і ownership boundary, але додає configuration, variants, plugins, resources, dependency wiring та IDE/build overhead. Спочатку доведіть seam logical packages/internal visibility; фізично виділяйте за change cadence, reuse, build graph або командною межею.</li>
 <li>Типовий graph: thin <code>:app</code> як composition/manifest entry; vertical <code>:feature:*</code>; вузькі <code>:core:*</code>; конкретні <code>:data:*</code>; <code>:design-system</code> для owned tokens/components/resources; <code>:testing</code> або test fixtures для reusable test tools. Не робіть <code>:core:common</code> звалищем.</li>
+<li>Domain models тримайте в <code>core:model</code> / <code>core:domain</code> — нижче за всі фічі, без Android-залежностей. Тоді фічі діляться типами без залежностей одна від одної.</li>
+<li>Як уникнути core dumping ground: <code>core:common</code> без бізнес-логіки, тематичні <code>core:*</code> замість одного «common», бюджет на розмір/залежності, регулярний розпил, гейт на code review «чому це не у фічі?». Деталі — System Design сценарій <a href="#stage31-uk-practice-notes">«Великий мультимодульний застосунок»</a>.</li>
 </ul>
+<p>Package-by-feature з локальними шарами всередині feature:</p>
+<pre><code class="language-text">feature-checkout/
+  presentation/
+    CheckoutViewModel.kt
+    CheckoutScreen.kt
+    CheckoutUiState.kt
+  domain/
+    SubmitOrderUseCase.kt
+    ObserveCheckoutSummaryUseCase.kt
+    CheckoutRepository.kt
+    CheckoutError.kt
+  data/
+    CheckoutRepositoryImpl.kt
+    CheckoutApi.kt
+    CheckoutDao.kt
+    mapper/
+</code></pre>
 
 <h2 id="stage13-uk-module-types">Module types, <code>api</code>/<code>implementation</code> та delivery<a aria-label="Посилання на розділ: Module types and dependency exposure" class="heading-anchor" href="#stage13-uk-module-types">#</a></h2>
 <ul>
@@ -3767,10 +3835,49 @@ interface CheckoutRepository // declared beside the implementation, no consumer 
 <h2 id="stage13-uk-fitness-rules">Dependency fitness rules у CI<a aria-label="Посилання на розділ: Dependency fitness rules in CI" class="heading-anchor" href="#stage13-uk-fitness-rules">#</a></h2>
 <ul>
 <li>Fail CI on project/package cycles, forbidden edges (<code>domain → android.*</code>, <code>feature → feature:impl</code>) і unexpected public API growth; allowlist має owner/expiry.</li>
+<li>Dependency direction enforce-иться фізично модульним графом: чого немає в dependencies, те неможливо імпортнути. Плюс convention plugins з правилами, Konsist/ArchUnit-тести на архітектурні інваріанти, дисципліна <code>api</code> vs <code>implementation</code>.</li>
 <li>Перевіряйте graph snapshot, dependency locks/verification, lint/architecture tests, Kotlin explicit API/API dumps для published contracts і Android resource-prefix/namespace conventions.</li>
 <li>Track fan-out/fan-in, changed modules per PR, ABI vs implementation invalidation, configuration/critical-path time, cache hits, flaky tests і cross-team review count. Threshold має сигналізувати regression, не gamify число modules.</li>
 <li>CI rule повинно пояснювати violation і локальну команду; version convention plugins і contract tests разом із boundary.</li>
 </ul>
+
+<h2 id="stage13-uk-practice-notes">Практичні нотатки<a aria-label="Посилання на розділ: Практичні нотатки" class="heading-anchor" href="#stage13-uk-practice-notes">#</a></h2>
+<h3>Repository: мінімальний offline-first shape</h3>
+<p>Спрощений offline-first repository: UI observe-ить local DB як source of truth, refresh пише remote-дані в DB однією транзакцією (ризики повного clear-and-replace — у <a href="#offline-first-architecture-paging-3">Stage 21</a>):</p>
+<pre><code class="language-kotlin">class OfflineFirstProductRepository @Inject constructor(
+    private val api: ProductApi,
+    private val db: AppDatabase,
+    private val dao: ProductDao,
+    @IoDispatcher private val io: CoroutineDispatcher
+) : ProductRepository {
+
+    override fun observeProducts(): Flow&lt;List&lt;Product&gt;&gt; {
+        return dao.observeProducts()
+            .map { entities -&gt; entities.map { it.toDomain() } }
+    }
+
+    override suspend fun refreshProducts() = withContext(io) {
+        val remote = api.getProducts()
+        db.withTransaction {
+            dao.deleteAll()
+            dao.insertAll(remote.map { it.toEntity() })
+        }
+    }
+}
+</code></pre>
+<p>Типові помилки: repository повертає Retrofit <code>Response&lt;T&gt;</code> у ViewModel; business validation живе в repository, хоча має бути в domain; mapping розкиданий по UI.</p>
+<h3>Error handling strategy через шари</h3>
+<p>Errors класифікують за рівнями: network/transport, API/protocol, domain/business, validation, unexpected (мережева taxonomy — у <a href="#android-networking-fundamentals">Stage 18</a>). Data layer на boundary мапить raw exceptions/HTTP codes у typed domain errors, ViewModel — domain errors у UI state/message/action: full-screen error, inline validation, snackbar або silent retry. Raw <code>Throwable</code> до UI не передається — так error behavior consistent і тестований.</p>
+<pre><code class="language-kotlin">sealed interface AppError {
+    data object NetworkUnavailable : AppError
+    data object Unauthorized : AppError
+    data class Validation(val field: String, val reason: String) : AppError
+    data object Unknown : AppError
+}
+</code></pre>
+<p>Потрібно визначити: які errors retryable; які потребують logout/token refresh; які показувати inline, а які snackbar/dialog/full-screen; які логувати як non-fatal; які метрики збирати.</p>
+<h3>Підсумкова позиція для співбесіди</h3>
+<p>Senior architecture answer має бути прагматичною. Не треба продавати MVVM/Clean/MVI як silver bullet. Треба показати, що ти вмієш вибирати boundaries, контролювати coupling, моделювати state/errors, будувати offline-first flows, масштабувати codebase і пояснювати trade-offs команді.</p>
 
 <h2 id="stage13-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice questions and answers" class="heading-anchor" href="#stage13-uk-likely-qa">#</a></h2>
 <p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
@@ -4589,6 +4696,14 @@ scope = reuse rule inside compatible component lifetime</code></pre>
 <tr><td><code>ServiceComponent</code></td><td>Конкретний Service instance</td><td><code>@ServiceScoped</code></td></tr>
 </tbody></table>
 <p>Hilt hierarchy дозволяє child бачити ancestor bindings, але не навпаки. Component lifetime і scoped object lifetime пов’язані: scoped instance живе, доки живе component instance, якщо зовнішня reference не leak-ить його довше. Scope annotation controls graph reuse/lifetime, not thread safety or durability. Short-lived object/context у long-lived binding створює captive dependency і leak; application dependency у short-lived object зазвичай безпечніша direction.</p>
+<p><code>@ApplicationContext</code> — для singleton, <code>@ActivityContext</code> — тільки для activity-bound dependencies. Production rule of thumb:</p>
+<ul>
+<li>Retrofit/OkHttp/Room/DataStore — Singleton.</li>
+<li>Repository — часто Singleton, якщо stateless або cache-aware.</li>
+<li>UseCase — unscoped або ViewModel scoped, залежно від state.</li>
+<li>ViewModel dependencies — constructor injection.</li>
+<li>UI components — не inject-ити в singleton.</li>
+</ul>
 <p><code>@Singleton</code> singleton є один на generated component/process instance, не cross-process і не durable global singleton. Multi-process app має окремі graphs; process death стирає memory. Mutable singleton потребує synchronization/serialization і чіткої consistency model: scope не дає thread safety.</p>
 
 <h2 id="stage17-uk-bindings">Constructor injection, modules, qualifiers<a aria-label="Посилання на розділ: Constructor injection modules and qualifiers" class="heading-anchor" href="#stage17-uk-bindings">#</a></h2>
@@ -4611,7 +4726,7 @@ object SdkModule {
         PaymentSdk.create(context)
 }</code></pre>
 <ul>
-<li><code>@Inject constructor</code> для типу, який ви контролюєте; graph бачить dependencies прямо. Не додавайте interface лише заради Dagger.</li>
+<li><code>@Inject constructor</code> для типу, який ви контролюєте; graph бачить dependencies прямо. Не додавайте interface лише заради Dagger. Типова помилка: field injection там, де constructor injection можливий.</li>
 <li><code>@Binds</code> — abstract alias implementation→API без custom construction; <code>@Provides</code> — factory logic, third-party type, builder або runtime-derived value. Provider method має залишатися deterministic щодо declared inputs.</li>
 <li>Qualifier є частиною key. Використовуйте semantic qualifier (<code>@IoDispatcher</code>, <code>@AuthenticatedClient</code>), а не fragile string; якщо маєте qualified і unqualified instances одного type, перевірте кожний injection site.</li>
 </ul>
@@ -4630,6 +4745,7 @@ object SdkModule {
 
 <h2 id="stage17-uk-modules">Gradle/feature modules та graph ownership<a aria-label="Посилання на розділ: Module graph ownership" class="heading-anchor" href="#stage17-uk-modules">#</a></h2>
 <p>Graph ownership має слідувати deploy/lifetime boundary, а не просто package tree. Feature/API module експонує мінімальний contract або factory; app/composition module обирає implementation. Hilt code generation має бачити transitive modules у app compilation; dynamic feature або інша compilation boundary може потребувати explicit Dagger component dependencies. Plain Dagger subcomponents успадковують parent graph і lifecycle ownership; component dependencies споживають лише exposed dependency API. Це mechanics composition, не повтор Stage 13 про layer/module taxonomy.</p>
+<p>Hilt у multi-module project: модулі декларують свої <code>@Module</code>/<code>@InstallIn</code> у себе; Hilt Gradle plugin (aggregating task, default з 2.40) агрегує всі Hilt modules та entry points з транзитивних залежностей app, включно з <code>implementation</code>, і генерує компоненти на рівні app — <code>api</code> для цього не потрібен. Фічам не треба знати одна про одну — лише app бачить усе.</p>
 <ul>
 <li>Не експортуйте concrete generated types між Gradle modules; стабільні API contracts мають бути source-level.</li>
 <li>Уникайте mega-module, що знає всі features, і reverse dependency лише щоб встановити binding. Multibindings або feature-owned factory можуть зменшити central coupling.</li>
@@ -4640,7 +4756,7 @@ object SdkModule {
 <ul>
 <li>Constructor-injected class тестуйте напряму з fake dependencies; Dagger/Hilt не потрібні в більшості unit tests. Саме explicit constructor seam зменшує DI-framework testing.</li>
 <li>Окремо майте graph/component smoke test для production bindings і Android integration test. Pure unit tests доводять behavior, не wiring.</li>
-<li>Hilt tests можуть замінювати module через test module replacement/<code>@TestInstallIn</code>, видаляти production module через <code>@UninstallModules</code> або давати per-test binding; generated test components ізолюють graph.</li>
+<li>Hilt tests можуть замінювати module через test module replacement/<code>@TestInstallIn</code>, видаляти production module через <code>@UninstallModules</code> або давати per-test binding (<code>@BindValue</code>); тест-клас позначають <code>@HiltAndroidTest</code>; generated test components ізолюють graph. Типові помилки: немає interfaces/abstractions для replaceable dependencies; тестові modules конфліктують із production modules.</li>
 <li>Test module replacement does not prove production wiring: replacement навмисно обходить production provider/qualifier/config. Залиште хоча б production graph build/smoke path.</li>
 </ul>
 
@@ -4691,6 +4807,7 @@ object SdkModule {
 <li>Locator/entry-point creep приховує dependencies; giant constructor може чесно показати, що class має забагато responsibilities — не маскуйте його locator-ом.</li>
 <li>Duplicate/missing qualifier, wrong <code>@InstallIn</code>, inaccessible binding across feature compilation, або scope mismatch ламають graph; runtime config/credentials можуть зламатися після успішної compilation.</li>
 <li>Cycle через repositories/managers часто означає двосторонній ownership; Lazy лікує construction timing, не design.</li>
+<li>Dependency graph занадто глобальний (усе в <code>SingletonComponent</code>); ViewModel створюють вручну, обходячи Hilt, — губляться injected dependencies, <code>SavedStateHandle</code> і правильний owner.</li>
 </ul>
 
 <h2 id="stage17-uk-production-scenario">Production migration scenario: locator → Hilt<a aria-label="Посилання на розділ: Production migration scenario" class="heading-anchor" href="#stage17-uk-production-scenario">#</a></h2>
@@ -6505,169 +6622,6 @@ class ProductViewModelTest {
 <hr/>
 <h2 id="coroutines-and-concurrency-підсумок">Coroutines and Concurrency — підсумок<a aria-label="Посилання на розділ: Coroutines and Concurrency — підсумок" class="heading-anchor" href="#coroutines-and-concurrency-підсумок">#</a></h2>
 <p>На Senior Android interview Coroutines — одна з найважливіших тем. Недостатньо сказати “launch запускає, async повертає результат”. Треба пояснити structured concurrency, lifecycle ownership, cancellation, exception propagation, partial failure, dispatcher strategy і testing. Найсильніша відповідь завжди прив’язує concurrency design до business semantics.</p>
-</div></details><details class="major-section" data-key="architecture" data-title="Architecture" id="architecture" open=""><summary class="major-summary"><span class="major-title">Architecture</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
-<p><strong>Детальніше:</strong> <a href="#android-ui-architecture-state-modeling">Android UI architecture та state modeling: MVVM, MVI, UDF</a>, <a href="#clean-architecture-android-modularization">Clean Architecture та Android modularization</a>, <a href="#offline-first-architecture-paging-3">Offline-first architecture і Paging 3</a>, <a href="#android-networking-fundamentals">Android networking fundamentals</a> (error taxonomy). Нижче — лише доповнення, яких немає в цих етапах.</p>
-<h2 id="mvvm">MVVM<a aria-label="Посилання на розділ: MVVM" class="heading-anchor" href="#mvvm">#</a></h2>
-<p>Анти-патерн «Massive ViewModel»: networking, mapping, validation, analytics, navigation, retry, formatting і бізнес-правила в одному класі. ViewModel не має знати DTO, Retrofit response чи деталі Room entity — лише domain або UI models; вона не викликає Retrofit API напряму і не повертає mutable state, а UI не вирішує business rules.</p>
-<pre><code class="language-kotlin">@HiltViewModel
-class MealsViewModel @Inject constructor(
-    private val observeMeals: ObserveMealsUseCase,
-    private val deleteMeal: DeleteMealUseCase
-) : ViewModel() {
-
-    val uiState: StateFlow&lt;MealsUiState&gt; = observeMeals()
-        .map&lt;List&lt;Meal&gt;, MealsUiState&gt; { meals -&gt; MealsUiState.Content(meals.map { it.toUiModel() }) }
-        .catch { emit(MealsUiState.Error) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MealsUiState.Loading)
-
-    fun onDeleteMealClicked(id: MealId) {
-        viewModelScope.launch {
-            deleteMeal(id)
-        }
-    }
-}
-</code></pre>
-<hr/>
-<h2 id="mvi-and-unidirectional-data-flow">MVI and unidirectional data flow<a aria-label="Посилання на розділ: MVI and unidirectional data flow" class="heading-anchor" href="#mvi-and-unidirectional-data-flow">#</a></h2>
-<p>Строгий MVI доречний для складних форм, checkout/payment, realtime screens, екранів із багатьма async sources або коли потрібен replay/debug state transitions; вибір pattern також залежить від team maturity і maintainability. Типова помилка — називати «MVI» будь-який ViewModel зі StateFlow. Мінімальний intent → reducer приклад:</p>
-<pre><code class="language-kotlin">sealed interface CartIntent {
-    data class QuantityChanged(val itemId: String, val quantity: Int) : CartIntent
-    data object CheckoutClicked : CartIntent
-    data object RetryClicked : CartIntent
-}
-
-data class CartState(
-    val items: List&lt;CartItemUiModel&gt; = emptyList(),
-    val isLoading: Boolean = false,
-    val error: String? = null
-)
-
-fun reduce(state: CartState, intent: CartIntent): CartState {
-    return when (intent) {
-        is CartIntent.QuantityChanged -&gt; state.copy(
-            items = state.items.map {
-                if (it.id == intent.itemId) it.copy(quantity = intent.quantity) else it
-            }
-        )
-        CartIntent.CheckoutClicked -&gt; state.copy(isLoading = true)
-        CartIntent.RetryClicked -&gt; state.copy(error = null, isLoading = true)
-    }
-}
-</code></pre>
-<hr/>
-<h2 id="clean-architecture-trade-offs">Clean Architecture trade-offs<a aria-label="Посилання на розділ: Clean Architecture trade-offs" class="heading-anchor" href="#clean-architecture-trade-offs">#</a></h2>
-<p>Package-by-feature з локальними шарами всередині feature:</p>
-<pre><code class="language-text">feature-checkout/
-  presentation/
-    CheckoutViewModel.kt
-    CheckoutScreen.kt
-    CheckoutUiState.kt
-  domain/
-    SubmitOrderUseCase.kt
-    ObserveCheckoutSummaryUseCase.kt
-    CheckoutRepository.kt
-    CheckoutError.kt
-  data/
-    CheckoutRepositoryImpl.kt
-    CheckoutApi.kt
-    CheckoutDao.kt
-    mapper/
-</code></pre>
-<p>Use case виправданий, бо містить business rule (валідація payment method перед submit):</p>
-<pre><code class="language-kotlin">class SubmitOrderUseCase @Inject constructor(
-    private val checkoutRepository: CheckoutRepository,
-    private val paymentValidator: PaymentValidator
-) {
-    suspend operator fun invoke(request: SubmitOrderRequest): SubmitOrderResult {
-        val validation = paymentValidator.validate(request.paymentMethod)
-        if (validation !is ValidationResult.Valid) {
-            return SubmitOrderResult.InvalidPayment(validation.reason)
-        }
-
-        return checkoutRepository.submitOrder(request)
-    }
-}
-</code></pre>
-<p>Domain layer не має залежати від Android <code>Context</code>, <code>Resources</code>, <code>LiveData</code>.</p>
-<p><strong>Чим domain model відрізняється від DTO?</strong><br/>
-DTO повторює форму API: nullable-поля, snake_case, версіюється бекендом. Domain model виражає інваріанти продукту і не знає про транспорт. Розділення ізолює UI від змін контракту API.</p>
-<p><strong>Де має бути mapper?</strong><br/>
-На межі шару, що володіє форматом: DTO→domain — у data-шарі (поряд із DTO), domain→UI model — у presentation. Мапери — прості чисті функції, які легко покривати тестами.</p>
-<p><strong>Як enforce-ити dependency direction у Gradle modules?</strong><br/>
-Фізично — модульним графом: чого немає в dependencies, те неможливо імпортнути. Плюс convention plugins з правилами, konsist/ArchUnit-тести на архітектурні інваріанти, дисципліна api vs implementation.</p>
-<hr/>
-<h2 id="repository-pattern">Repository pattern<a aria-label="Посилання на розділ: Repository pattern" class="heading-anchor" href="#repository-pattern">#</a></h2>
-<p>Спрощений offline-first repository: UI observe-ить local DB як source of truth, refresh пише remote-дані в DB однією транзакцією (ризики повного clear-and-replace — у Stage 21):</p>
-<pre><code class="language-kotlin">class OfflineFirstProductRepository @Inject constructor(
-    private val api: ProductApi,
-    private val db: AppDatabase,
-    private val dao: ProductDao,
-    @IoDispatcher private val io: CoroutineDispatcher
-) : ProductRepository {
-
-    override fun observeProducts(): Flow&lt;List&lt;Product&gt;&gt; {
-        return dao.observeProducts()
-            .map { entities -&gt; entities.map { it.toDomain() } }
-    }
-
-    override suspend fun refreshProducts() = withContext(io) {
-        val remote = api.getProducts()
-        db.withTransaction {
-            dao.deleteAll()
-            dao.insertAll(remote.map { it.toEntity() })
-        }
-    }
-}
-</code></pre>
-<p>Типові помилки: repository повертає Retrofit <code>Response&lt;T&gt;</code> у ViewModel; business validation живе в repository, хоча має бути в domain; mapping розкиданий по UI.</p>
-<hr/>
-<h2 id="ui-state-modeling-and-one-shot-events">UI state modeling and one-shot events<a aria-label="Посилання на розділ: UI state modeling and one-shot events" class="heading-anchor" href="#ui-state-modeling-and-one-shot-events">#</a></h2>
-<p>Доповнення до Stage 12: UI state не містить DTO/entity, raw exceptions чи Android <code>Context</code> (і неправильно resolved string resources); який error показати, вирішує ViewModel, а не UI.</p>
-<hr/>
-<h2 id="modularization">Modularization<a aria-label="Посилання на розділ: Modularization" class="heading-anchor" href="#modularization">#</a></h2>
-<p><strong>Де тримати domain models?</strong><br/>
-У core:model / core:domain — нижче за всі фічі, без Android-залежностей. Тоді фічі діляться типами без залежностей одна від одної.</p>
-<p><strong>Як Hilt працює у multi-module project?</strong><br/>
-Модулі декларують свої @Module/@InstallIn у себе; Hilt Gradle plugin (aggregating task, default з 2.40) агрегує всі Hilt modules та entry points з транзитивних залежностей app, включно з <code>implementation</code>, і генерує компоненти на рівні app — <code>api</code> для цього не потрібен. Фічам не треба знати одна про одну — лише app бачить усе.</p>
-<p><strong>Як уникнути core dumping ground?</strong><br/>
-Правила: core:common без бізнес-логіки, тематичні core:* замість одного «common», бюджет на розмір/залежності, регулярний розпил, гейт на code review «чому це не у фічі?». Деталі — System Design сценарій <a href="#stage31-uk-practice-notes">«Великий мультимодульний застосунок»</a>.</p>
-<hr/>
-<h2 id="error-handling-strategy">Error handling strategy<a aria-label="Посилання на розділ: Error handling strategy" class="heading-anchor" href="#error-handling-strategy">#</a></h2>
-<p>Errors класифікують за рівнями: network/transport, API/protocol, domain/business, validation, unexpected (мережева taxonomy — у Stage 18). Data layer на boundary мапить raw exceptions/HTTP codes у typed domain errors, ViewModel — domain errors у UI state/message/action: full-screen error, inline validation, snackbar або silent retry. Raw <code>Throwable</code> до UI не передається — так error behavior consistent і тестований.</p>
-<pre><code class="language-kotlin">sealed interface AppError {
-    data object NetworkUnavailable : AppError
-    data object Unauthorized : AppError
-    data class Validation(val field: String, val reason: String) : AppError
-    data object Unknown : AppError
-}
-</code></pre>
-<p>Потрібно визначити: які errors retryable; які потребують logout/token refresh; які показувати inline, а які snackbar/dialog/full-screen; які логувати як non-fatal; які метрики збирати.</p>
-<hr/>
-<h2 id="architecture-підсумок">Architecture — підсумок<a aria-label="Посилання на розділ: Architecture — підсумок" class="heading-anchor" href="#architecture-підсумок">#</a></h2>
-<p>Senior architecture answer має бути прагматичною. Не треба продавати MVVM/Clean/MVI як silver bullet. Треба показати, що ти вмієш вибирати boundaries, контролювати coupling, моделювати state/errors, будувати offline-first flows, масштабувати codebase і пояснювати trade-offs команді.</p>
-<hr/>
-</div></details><details class="major-section" data-key="dependency-injection" data-title="Dependency Injection" id="dependency-injection" open=""><summary class="major-summary"><span class="major-title">Dependency Injection</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
-<p><strong>Детальніше:</strong> <a href="#dependency-injection-android">Dependency injection на Android</a>, <a href="#senior-android-testing-strategy">Senior Android testing strategy</a> (Hilt testing, fakes vs mocks). Нижче — лише доповнення, яких немає в цих етапах.</p>
-<h2 id="manual-di-service-locator-dagger-hilt">Manual DI, Service Locator, Dagger, Hilt<a aria-label="Посилання на розділ: Manual DI, Service Locator, Dagger, Hilt" class="heading-anchor" href="#manual-di-service-locator-dagger-hilt">#</a></h2>
-<p>Додаткові типові помилки: робити dependency graph занадто глобальним; створювати ViewModel вручну, обходячи Hilt.</p>
-<hr/>
-<h2 id="hilt-scopes-and-component-lifecycle">Hilt scopes and component lifecycle<a aria-label="Посилання на розділ: Hilt scopes and component lifecycle" class="heading-anchor" href="#hilt-scopes-and-component-lifecycle">#</a></h2>
-<p><code>@ApplicationContext</code> — для singleton, <code>@ActivityContext</code> — тільки для activity-bound dependencies. Production rule of thumb:</p>
-<ul>
-<li>Retrofit/OkHttp/Room/DataStore — Singleton.</li>
-<li>Repository — часто Singleton, якщо stateless або cache-aware.</li>
-<li>UseCase — unscoped або ViewModel scoped, залежно від state.</li>
-<li>ViewModel dependencies — constructor injection.</li>
-<li>UI components — не inject-ити в singleton.</li>
-</ul>
-<p>Типова помилка: inject field замість constructor injection там, де constructor можливий.</p>
-<hr/>
-<h2 id="testing-with-di">Testing with DI<a aria-label="Посилання на розділ: Testing with DI" class="heading-anchor" href="#testing-with-di">#</a></h2>
-<p>Для instrumentation/Hilt tests: <code>@HiltAndroidTest</code>, test modules, <code>@UninstallModules</code>, <code>@BindValue</code>. Типові помилки: немає interfaces/abstractions для replaceable dependencies; тестові modules конфліктують із production modules.</p>
-<hr/>
-<h2 id="dependency-injection-підсумок">Dependency Injection — підсумок<a aria-label="Посилання на розділ: Dependency Injection — підсумок" class="heading-anchor" href="#dependency-injection-підсумок">#</a></h2>
-<p>DI на Senior-рівні — це про dependency ownership, lifecycle і testability. Hilt/Dagger не замінюють архітектуру; вони тільки будують object graph. Важливо пояснити scopes, context leaks, constructor injection, module boundaries і testing strategy.</p>
-<hr/>
 </div></details><details class="major-section" data-key="networking" data-title="Networking" id="networking" open=""><summary class="major-summary"><span class="major-title">Networking</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
 <p><strong>Детальніше:</strong> <a href="#android-networking-fundamentals">Android networking fundamentals</a>, <a href="#authentication-token-refresh-android-mobile-security">Authentication, token refresh та Android mobile security</a>, <a href="#offline-first-architecture-paging-3">Offline-first architecture і Paging 3</a>.</p>
 <p>Retrofit (declarative API layer) vs OkHttp (transport), interceptors, timeouts, HTTP cache, error taxonomy, idempotent retry, offset/cursor pagination, single-flight token refresh і loading states розібрані в етапах вище. Тут — лише доповнення:</p>
@@ -10017,6 +9971,11 @@ fun refresh() = viewModelScope.launch {
 <p>The review trap is believing that ViewModel, <code>UiState</code>, and “MVI” naming imply safe ownership. Ask which combinations are legal, who writes, whether refresh preserves content, which request owns the spinner, whether nested data is mutable, what survives rotation/process death, and whether payment truth is durable. Debug with typed <code>previousState → event/result → nextState</code>, correlation/request ID, owner/lifecycle, active operations, and stale rejection. Redact payloads; transition logs complement repository traces.</p>
 <h2 id="en-stage12-testing-observability">Testing reducers, holders, and integration boundaries<a aria-label="Link to section: Testing and observability" class="heading-anchor" href="#en-stage12-testing-observability">#</a></h2>
 <ul><li>Pure reducer table/property tests cover each event/result × phase, invariants, empty/stale/refresh/append behavior, stale rejection, and forbidden combinations.</li><li>ViewModel tests inject fake repositories, IDs, and dispatchers; virtual time scripts out-of-order completion, cancellation, duplicate submit, and operation recovery. Test public transitions, not private Flow details.</li><li>Plain state-driven Compose/View tests render loading/content/empty/blocking/non-blocking error and callbacks. Add a small wiring test for lifecycle collection and effects.</li><li>Integration tests prove repository source-of-truth writes, <code>SavedStateHandle</code> reconstruction, graph scoping, Fragment view recreation, and critical process-recreation paths.</li><li>Observability uses stable state/event names, correlation/request generation, transition latency, effect enqueue/handle/drop reason, retries, and rejected stale results without PII or secrets.</li></ul>
+<h2 id="en-stage12-practice-notes">Practice notes<a aria-label="Link to section: Practice notes" class="heading-anchor" href="#en-stage12-practice-notes">#</a></h2>
+<h3>Choosing MVVM or MVI</h3>
+<p>Choosing between MVVM and MVI also depends on team size, testing needs, and consistency across the codebase, not only on screen complexity.</p>
+<h3>Interview-ready summary</h3>
+<p><strong>Architecture:</strong> talk in boundaries, source of truth, and trade-offs.</p>
 <h2 id="en-stage12-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice questions and answers" class="heading-anchor" href="#en-stage12-likely-qa">#</a></h2>
 <p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
 <ol>
@@ -10088,6 +10047,27 @@ Risk: feature A ↔ feature B cycle; shared module with unbounded fan-out</code>
 <p>A repository is not automatically a domain abstraction. A CRUD façade that leaks paging or HTTP DTOs remains a data gateway. A repository interface belongs to the policy-side consumer when that consumer defines a narrow capability and adapters or substitutes vary. A broadly shared data capability can instead be owned by a stable data API. Avoid one god repository.</p>
 <p><strong>Interfaces alone do not decouple.</strong> The consumer still depends on semantics, models, errors, threading, versioning, and lifetime. An interface is valuable when it protects a volatile implementation or defines a consumer-owned port; one interface per concrete class only adds navigation cost.</p>
 <p>A use case earns its place by naming a business operation, coordinating ports, enforcing policy/transaction rules, or supporting reuse. <code>GetUserUseCase.invoke() = repository.getUser()</code> with no distinct semantics is a pass-through layer. Keep a simple call on the repository until a policy seam appears.</p>
+<p>A use case that earns its place: it orchestrates two repositories and enforces an invariant.</p>
+<pre><code class="language-kotlin">class PlaceOrderUseCase @Inject constructor(
+    private val cartRepository: CartRepository,
+    private val paymentRepository: PaymentRepository
+) {
+    suspend operator fun invoke(request: PlaceOrderRequest): PlaceOrderResult {
+        val cart = cartRepository.getCart()
+        require(cart.items.isNotEmpty())
+        return paymentRepository.placeOrder(cart, request.paymentMethod)
+    }
+}
+</code></pre>
+<p>Minimal offline-first repository shape: UI observes local data, refresh writes network results into the database (replace-all risks are covered in <a href="#en-offline-first-architecture-paging-3">Stage 21</a>).</p>
+<pre><code class="language-kotlin">fun observeProducts(): Flow&lt;List&lt;Product&gt;&gt; =
+    productDao.observeAll().map { entities -&gt; entities.map { it.toDomain() } }
+
+suspend fun refreshProducts() {
+    val remote = api.getProducts()
+    productDao.replaceAll(remote.map { it.toEntity() })
+}
+</code></pre>
 
 <h2 id="en-stage13-packages-modules">Package-by-feature/layer; logical versus Gradle modules<a aria-label="Link to section: Packages and modules" class="heading-anchor" href="#en-stage13-packages-modules">#</a></h2>
 <ul><li><strong>Package-by-layer</strong> shows technical roles but scatters a feature change and permits accidental cross-feature access. <strong>Package-by-feature</strong> colocates change and ownership; a large feature can have local layers. Packages provide logical organization and language visibility, not a separate compilation unit.</li><li>A Gradle module enforces project edges and adds compilation/cache/task/API and ownership boundaries, but also configuration, variants, plugins, resources, dependency wiring, and IDE/build overhead. Prove a seam with packages and <code>internal</code> first; extract for change cadence, reuse, build graph, delivery, or team ownership.</li><li>A common graph uses a thin <code>:app</code> composition/manifest entry, vertical <code>:feature:*</code>, narrow <code>:core:*</code>, concrete <code>:data:*</code>, an owned <code>:design-system</code>, and <code>:testing</code> or test fixtures for reusable test support. Do not turn <code>:core:common</code> into a dump.</li></ul>
@@ -10934,7 +10914,7 @@ object SdkModule {
         PaymentSdk.create(context)
 }</code></pre>
 <ul>
-<li>Use an <code>@Inject constructor</code> for an owned constructible type; the graph sees dependencies directly. Do not introduce an interface solely for Dagger.</li>
+<li>Use an <code>@Inject constructor</code> for an owned constructible type; the graph sees dependencies directly. Do not introduce an interface solely for Dagger. A common mistake is using field injection where constructor injection is possible.</li>
 <li><code>@Binds</code> is an abstract implementation-to-API alias with no custom construction; <code>@Provides</code> handles factory logic, third-party types, builders, or derived values. A provider method should be deterministic with respect to declared inputs.</li>
 <li>A qualifier is part of the binding key. Prefer a semantic qualifier such as <code>@IoDispatcher</code> or <code>@AuthenticatedClient</code> over a fragile string, and audit every injection site when qualified and unqualified instances coexist.</li>
 </ul>
@@ -12563,37 +12543,6 @@ Result (verified metrics only) → learning/revisit trigger
 <h2 id="en-structured-concurrency">Structured concurrency<a aria-label="Link to section: Structured concurrency" class="heading-anchor" href="#en-structured-concurrency">#</a></h2>
 <h3 id="en-interview-wording-5">Interview wording<a aria-label="Link to section: Interview wording" class="heading-anchor" href="#en-interview-wording-5">#</a></h3>
 <p>“I design coroutine ownership explicitly. UI work belongs to <code>viewModelScope</code> or lifecycle scopes; domain suspend functions do not launch unowned background work. If a parent operation is cancelled, its children should normally be cancelled too.”</p>
-</div></details><details class="major-section" data-key="architecture" data-title="Architecture" id="en-architecture" open=""><summary class="major-summary"><span class="major-title">Architecture</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
-<p><strong>More detail:</strong> <a href="#en-android-ui-architecture-state-modeling">Android UI architecture and state modeling: MVVM, MVI, UDF</a>, <a href="#en-clean-architecture-android-modularization">Clean Architecture and Android modularization</a>, <a href="#en-offline-first-architecture-paging-3">Offline-first architecture and Paging 3</a>. Only points not covered there remain below.</p>
-<h2 id="en-mvvm-and-mvi">MVVM and MVI<a aria-label="Link to section: MVVM and MVI" class="heading-anchor" href="#en-mvvm-and-mvi">#</a></h2>
-<p>Choosing between MVVM and MVI also depends on team size, testing needs, and consistency across the codebase, not only on screen complexity.</p>
-<h2 id="en-clean-architecture">Clean Architecture<a aria-label="Link to section: Clean Architecture" class="heading-anchor" href="#en-clean-architecture">#</a></h2>
-<p>A use case that earns its place: it orchestrates two repositories and enforces an invariant.</p>
-<pre><code class="language-kotlin">class PlaceOrderUseCase @Inject constructor(
-    private val cartRepository: CartRepository,
-    private val paymentRepository: PaymentRepository
-) {
-    suspend operator fun invoke(request: PlaceOrderRequest): PlaceOrderResult {
-        val cart = cartRepository.getCart()
-        require(cart.items.isNotEmpty())
-        return paymentRepository.placeOrder(cart, request.paymentMethod)
-    }
-}
-</code></pre>
-<h2 id="en-repository-pattern-and-source-of-truth">Repository pattern and source of truth<a aria-label="Link to section: Repository pattern and source of truth" class="heading-anchor" href="#en-repository-pattern-and-source-of-truth">#</a></h2>
-<p>Minimal offline-first repository shape: UI observes local data, refresh writes network results into the database (replace-all risks are covered in Stage 21).</p>
-<pre><code class="language-kotlin">fun observeProducts(): Flow&lt;List&lt;Product&gt;&gt; =
-    productDao.observeAll().map { entities -&gt; entities.map { it.toDomain() } }
-
-suspend fun refreshProducts() {
-    val remote = api.getProducts()
-    productDao.replaceAll(remote.map { it.toEntity() })
-}
-</code></pre>
-</div></details><details class="major-section" data-key="dependency-injection" data-title="Dependency Injection" id="en-dependency-injection" open=""><summary class="major-summary"><span class="major-title">Dependency Injection</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
-<p><strong>More detail:</strong> <a href="#en-dependency-injection-android">Dependency injection on Android</a>, <a href="#en-senior-android-testing-strategy">Senior Android testing strategy</a> (Hilt testing, fakes vs mocks). Only points not covered there remain below.</p>
-<h2 id="en-scopes">Scopes<a aria-label="Link to section: Scopes" class="heading-anchor" href="#en-scopes">#</a></h2>
-<p>Common mistake not covered in Stage 17: using field injection in places where constructor injection is possible.</p>
 </div></details><details class="major-section" data-key="networking" data-title="Networking" id="en-networking" open=""><summary class="major-summary"><span class="major-title">Networking</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
 <p><strong>More detail:</strong> <a href="#en-android-networking-fundamentals">Android networking fundamentals</a>, <a href="#en-authentication-token-refresh-android-mobile-security">Authentication, token refresh, and Android mobile security</a>, <a href="#en-offline-first-architecture-paging-3">Offline-first architecture and Paging 3</a>, <a href="#en-networking-data-senior">Networking and Data: Senior deep dive</a> (typed <code>NetworkError</code>).</p>
 <p>Retrofit vs OkHttp, interceptors, token refresh, error taxonomy, pagination and retry policy are covered in the stages above. Additions only:</p>
