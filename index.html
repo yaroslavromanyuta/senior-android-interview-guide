@@ -9247,7 +9247,7 @@ interface AnalyticsTracker {
 Через lifecycle-aware collection: <code>repeatOnLifecycle</code> у Views/Fragments або <code>collectAsStateWithLifecycle</code> у Compose. Простий <code>launch { flow.collect() }</code> може collect-ити, коли UI вже stopped, і провокувати зайву роботу або crashes.</p>
 <h3>Fragment lifecycle</h3>
 <p><strong>Чому не можна використовувати non-default constructor для Fragment?</strong><br/>
-System може recreate Fragment через FragmentManager і очікує default constructor. Аргументи треба передавати через <code>arguments</code>, Navigation args або SavedStateHandle.</p>
+Default <code>FragmentFactory</code> перестворює Fragment рефлексією через no-arg constructor, тому аргументи треба передавати через <code>arguments</code>, Navigation args або SavedStateHandle. Dependencies через constructor можна передавати лише з custom <code>FragmentFactory</code> (<code>supportFragmentManager.fragmentFactory</code>, Fragment 1.1.0+).</p>
 <p><strong>Що таке <code>viewLifecycleOwner</code>?</strong><br/>
 Це lifecycle owner для View hierarchy Fragment-а. Він коротший за lifecycle Fragment instance. Collectors, binding observers і view-related jobs треба прив’язувати до <code>viewLifecycleOwner</code>, щоб не тримати стару View після <code>onDestroyView</code>.</p>
 <p><strong>Коли викликається <code>onDestroyView</code>, але не <code>onDestroy</code>?</strong><br/>
@@ -9291,7 +9291,7 @@ Exception буде збережений у <code>Deferred</code> і rethrow на
 <p><strong>Коли використовувати <code>awaitAll()</code>?</strong><br/>
 Коли є колекція <code>Deferred</code> і всі результати потрібні як одна операція. Якщо потрібні partial results, краще явно обробляти кожен async або використовувати supervisor semantics.</p>
 <p><strong>Як обробити partial failures?</strong><br/>
-Через <code>supervisorScope</code> + <code>runCatching</code> на незалежних child tasks. Але треба чесно визначити, які частини UI можуть існувати без інших.</p>
+Обробляти помилку кожного незалежного child явно (try/catch конкретних exceptions на <code>await()</code> або wrapper, що rethrow-ить <code>CancellationException</code>; голий <code>runCatching</code> її ковтає). <code>supervisorScope</code> потрібен, коли uncaught failure одного child не має cancel-ити siblings. Але треба чесно визначити, які частини UI можуть існувати без інших.</p>
 <p><strong>Чи ловить <code>supervisorScope</code> exceptions автоматично?</strong><br/>
 Ні. Він не cancel-ить siblings автоматично, але exception треба обробити. <code>supervisorScope</code> — це failure isolation, не error handling magic.</p>
 <p><strong><code>SupervisorJob</code> vs <code>Job</code>?</strong><br/>
@@ -9315,9 +9315,9 @@ Flow interface cold, collection запускає observation. Room оптимі�
 Не тримати navigation як <code>StateFlow&lt;Event?&gt;</code>, який replay-иться після rotation. Краще моделювати результат як state і робити navigation у UI з ack/consumption, або мати чітку event delivery strategy.</p>
 <h3>Compose</h3>
 <p><strong>Що може спричинити зайві recompositions?</strong><br/>
-Занадто широкий state read, нестабільні параметри, створення нових lambdas/objects без потреби, mutable collections у state, відсутність keys у lazy lists, expensive derived computation у composition.</p>
+Занадто широкий state read, нові instances unstable параметрів на кожній recomposition (наприклад, щойно змаплений <code>List</code>), mutable collections у state, відсутність keys у lazy lists, expensive derived computation у composition.</p>
 <p><strong>Stable vs unstable type?</strong><br/>
-Stable type дозволяє Compose краще визначати, чи можна skip-ити recomposition. Mutable public properties або unknown mutable collections часто роблять тип unstable.</p>
+Зі strong skipping (default з Kotlin 2.0.20) усі restartable composables skippable: stable параметри порівнюються через <code>equals()</code>, unstable — за identity (<code>===</code>), а lambdas компілятор запам’ятовує автоматично. Stability досі важлива: новий instance unstable об’єкта на кожній recomposition все одно спричиняє recomposition. Mutable public properties або unknown mutable collections часто роблять тип unstable.</p>
 <p><strong>Як debug-ити recomposition?</strong><br/>
 Layout Inspector, Compose compiler reports, logging counters, recomposition highlights, profiling. Senior-відповідь: спочатку виміряти, потім оптимізувати.</p>
 <p><strong>Чому <code>LaunchedEffect(Unit)</code> може бути problem?</strong><br/>
@@ -9455,9 +9455,10 @@ class ProductDetailsViewModel @Inject constructor(
 </table>
 <p>Після Android 8 background services і implicit broadcasts стали суттєво обмежені. Тому Senior не має відповідати “я б створив Service” як default. Default для persistent background work — <code>WorkManager</code>, особливо якщо робота має пережити process death, reboot, network constraints або retry.</p>
 <h3>Production приклад</h3>
-<pre><code class="language-kotlin">class SyncOrdersWorker(
-    appContext: Context,
-    params: WorkerParameters,
+<pre><code class="language-kotlin">@HiltWorker
+class SyncOrdersWorker @AssistedInject constructor(
+    @Assisted appContext: Context,
+    @Assisted params: WorkerParameters,
     private val repository: OrdersRepository
 ) : CoroutineWorker(appContext, params) {
 
@@ -9467,7 +9468,9 @@ class ProductDetailsViewModel @Inject constructor(
             Result.success()
         } catch (e: IOException) {
             if (runAttemptCount &lt; 3) Result.retry() else Result.failure()
-        } catch (e: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             Result.failure()
         }
     }
@@ -9477,13 +9480,13 @@ class ProductDetailsViewModel @Inject constructor(
 <h4>Чому <code>IntentService</code> вже не є хорошим default?</h4>
 <p><code>IntentService</code> історично був зручним для background queue, але сучасні Android background execution limits роблять service-first підхід небезпечним. Для deferrable guaranteed work краще <code>WorkManager</code>, бо він враховує constraints, retry, persistence і OS scheduling.</p>
 <h4>Коли все ж потрібен foreground service?</h4>
-<p>Коли операція реально видима користувачу і повинна продовжуватися зараз: navigation, active workout tracking, audio recording, active upload/download із явним notification. Якщо користувач не очікує бачити постійне notification — foreground service, ймовірно, неправильний вибір.</p>
+<p>Коли операція реально видима користувачу і повинна продовжуватися зараз і для неї немає спеціалізованого API: navigation (<code>location</code>), active workout tracking, audio recording (<code>microphone</code>), playback (<code>mediaPlayback</code>). Для user-initiated upload/download з Android 14 (API 34) краще user-initiated data transfer job (<code>setUserInitiated</code>), для deferrable transfers — <code>WorkManager</code>; <code>dataSync</code> FGS на Android 15 обмежений за часом і не стартує з <code>BOOT_COMPLETED</code>. Якщо користувач не очікує бачити постійне notification — foreground service, ймовірно, неправильний вибір.</p>
 <h4>Чим one-time work відрізняється від unique work?</h4>
 <p>One-time work — просто одиночна задача. Unique work — задача з іменем і conflict policy: <code>KEEP</code>, <code>REPLACE</code>, <code>APPEND</code>, <code>APPEND_OR_REPLACE</code>. У production це критично для sync, щоб не запустити 10 однакових background jobs після 10 кліків refresh.</p>
 <h4>Як debuggable <code>WorkManager</code>?</h4>
 <p>Логувати work id, name, constraints, run attempt, result. Для локального debug — WorkManager inspector, logs, test driver. У production — analytics/observability навколо failure reason, retry count, network state, payload size. Senior має думати не тільки “як запустити”, а й “як зрозуміти, чому sync не відпрацював”.</p>
 <h4>Як інтегрувати WorkManager з Hilt?</h4>
-<p>Через Hilt Worker integration: <code>@HiltWorker</code>, <code>@AssistedInject</code>, <code>@Assisted</code> для <code>Context</code> і <code>WorkerParameters</code>. Не варто вручну діставати dependencies із singleton/service locator всередині Worker.</p>
+<p>Через Hilt Worker integration: <code>@HiltWorker</code>, <code>@AssistedInject</code>, <code>@Assisted</code> для <code>Context</code> і <code>WorkerParameters</code>, плюс <code>HiltWorkerFactory</code>, переданий через <code>Configuration.Provider</code> (з вимкненим default <code>WorkManagerInitializer</code>). Default <code>WorkerFactory</code> створює Worker рефлексією лише через constructor <code>(Context, WorkerParameters)</code>, тож Worker з додатковими dependencies без Hilt або custom <code>WorkerFactory</code> впаде з “Could not instantiate”. Не варто вручну діставати dependencies із singleton/service locator всередині Worker.</p>
 <hr/>
 <h2>3. Kotlin для Android: state modeling замість trivia</h2>
 <h3>Senior-level пояснення</h3>
@@ -9549,16 +9552,22 @@ data class CheckoutState(
 <pre><code class="language-kotlin">suspend fun loadDashboard(): DashboardUiModel = supervisorScope {
     val profile = async { profileRepository.getProfile() }
     val recommendations = async { recommendationsRepository.getRecommendations() }
-    val ads = async { runCatching { adsRepository.getAds() }.getOrDefault(emptyList()) }
+    val ads = async { adsRepository.getAds() }
 
     DashboardUiModel(
         profile = profile.await(),
         recommendations = recommendations.await(),
-        ads = ads.await()
+        ads = try {
+            ads.await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emptyList()
+        }
     )
 }
 </code></pre>
-<p>Тут <code>supervisorScope</code> має сенс, бо ads не повинні ламати весь dashboard.</p>
+<p>Тут <code>supervisorScope</code> має сенс: failure <code>ads</code> не cancel-ить profile/recommendations, а помилка обробляється на <code>await()</code>. Із <code>coroutineScope</code> падіння ads скасувало б увесь dashboard. Якщо ж ловити помилку всередині самого <code>async</code>, child ніколи не падає, і тоді ізоляцію дає саме обробка, а не <code>supervisorScope</code>. Не обгортай suspend-виклики в голий <code>runCatching</code>: він ковтає <code>CancellationException</code>.</p>
 <h3>Follow-up відповіді</h3>
 <h4>Чому <code>GlobalScope</code> — bad default?</h4>
 <p><code>GlobalScope</code> не має structured parent. Його job не прив’язаний до screen, feature або user flow. Це означає, що робота може продовжитись після того, як користувач пішов зі screen, ViewModel очистився або dependency graph уже не актуальний. Він може бути виправданий лише для дуже обережно спроєктованої application-wide роботи, але тоді краще створити явний <code>ApplicationScope</code> через DI.</p>
@@ -9584,13 +9593,17 @@ data class CheckoutState(
 <p>Через <code>runTest</code>, <code>TestDispatcher</code>, <code>advanceTimeBy</code>, <code>advanceUntilIdle</code>, dependency injection dispatchers і fake suspending dependencies. Не треба використовувати реальні <code>delay(1000)</code> у unit tests.</p>
 <pre><code class="language-kotlin">@Test
 fun cancelsOldSearchWhenNewQueryArrives() = runTest {
+    // Main = StandardTestDispatcher (MainDispatcherRule); fake search suspends on delay(1_000)
     val repository = FakeSearchRepository()
-    val viewModel = SearchViewModel(repository, testDispatcher)
+    val viewModel = SearchViewModel(repository)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.uiState.collect() }
 
     viewModel.onQueryChanged("a")
+    advanceTimeBy(301) // debounce пройшов, пошук "a" вже виконується
     viewModel.onQueryChanged("android")
     advanceUntilIdle()
 
+    assertEquals(listOf("a"), repository.cancelledQueries)
     assertEquals(listOf("android"), repository.completedQueries)
 }
 </code></pre>
@@ -9633,7 +9646,8 @@ fun cancelsOldSearchWhenNewQueryArrives() = runTest {
 </table>
 <p>Senior candidate не має казати просто “StateFlow для state, SharedFlow для events”. Це надто коротко. Потрібно пояснити, чи event справді event, чи це latent state.</p>
 <h3>Production приклад: search із cancellation через <code>flatMapLatest</code></h3>
-<pre><code class="language-kotlin">class SearchViewModel @Inject constructor(
+<pre><code class="language-kotlin">@HiltViewModel
+class SearchViewModel @Inject constructor(
     private val searchRepository: SearchRepository
 ) : ViewModel() {
 
@@ -9693,7 +9707,10 @@ fun CheckoutRoute(
     val latestOnPaymentSuccess by rememberUpdatedState(onPaymentSuccess)
 
     LaunchedEffect(uiState.paymentCompleted) {
-        if (uiState.paymentCompleted) latestOnPaymentSuccess()
+        if (uiState.paymentCompleted) {
+            latestOnPaymentSuccess()
+            viewModel.onPaymentSuccessHandled()
+        }
     }
 
     LaunchedEffect(uiState.errorMessage) {
@@ -9735,7 +9752,7 @@ fun CheckoutRoute(
 <h4>Навіщо keys у <code>LazyColumn</code>?</h4>
 <p>Keys задають стабільну identity item-а. Без keys Compose може асоціювати remembered state з позицією, а не з item. При insert/remove/reorder це призводить до неправильного state retention, зайвих recompositions і візуальних багів.</p>
 <h4>Що таке Compose stability у практичному сенсі?</h4>
-<p>Stability визначає, чи може Compose безпечно skip-ити recomposition, якщо параметри не змінилися. Immutable models, стабільні lambdas, вузькі state reads і уникнення mutable public collections допомагають runtime. Але Senior має казати: “спочатку вимірюю, потім оптимізую”, бо не кожна нестабільність є реальною performance проблемою.</p>
+<p>Stability визначає, як Compose порівнює параметри для skip: stable — через <code>equals()</code>, unstable — за identity (strong skipping, default з Kotlin 2.0.20). Immutable models, уникнення повторного створення inputs у composition, вузькі state reads і уникнення mutable public collections допомагають runtime. Але Senior має казати: “спочатку вимірюю, потім оптимізую”, бо не кожна нестабільність є реальною performance проблемою.</p>
 <h4>Чому <code>collectAsStateWithLifecycle</code> кращий для Android UI?</h4>
 <p>Він collect-ить Flow lifecycle-aware, тобто не продовжує активно збирати UI state, коли Lifecycle нижче потрібного стану. Це допомагає уникнути зайвої роботи, crashes через неактивний UI і неправильних side effects у background.</p>
 <hr/>
@@ -9760,6 +9777,7 @@ fun CheckoutRoute(
     data class Error(val message: String) : FeedUiState
 }
 
+@HiltViewModel
 class FeedViewModel @Inject constructor(
     observeFeed: ObserveFeedUseCase,
     private val refreshFeed: RefreshFeedUseCase
@@ -9838,7 +9856,7 @@ class FeedViewModel @Inject constructor(
 </table>
 <h3>Follow-up відповіді</h3>
 <h4>Коли <code>@ActivityRetainedScoped</code> кращий за <code>@ViewModelScoped</code>?</h4>
-<p>Коли dependency має бути спільною для кількох ViewModels у межах одного activity/navigation flow і переживати configuration changes. <code>@ViewModelScoped</code> створить окремий instance на кожен ViewModel.</p>
+<p>Коли dependency має бути спільною для всіх ViewModels однієї Activity і переживати configuration changes (<code>ActivityRetainedComponent</code> живе стільки, скільки Activity, і не пов’язаний з navigation graph; для per-flow scope — navigation-graph-scoped ViewModel). <code>@ViewModelScoped</code> створить окремий instance на кожен ViewModel.</p>
 <h4>Чому надмірний <code>@Singleton</code> — проблема?</h4>
 <p>Singleton-и живуть весь процес, тому легко тримають stale state, Activity context, caches без eviction, listeners і mutable глобальний стан. Це ускладнює тести й може створити leaks. Singleton має бути або stateless, або дуже чітко керувати своїм state.</p>
 <h4>Як замінювати bindings у тестах?</h4>
@@ -9873,10 +9891,13 @@ class DefaultAppDispatchers @Inject constructor() : AppDispatchers {
 }
 </code></pre>
 <h3>Production приклад: Flow test з Turbine</h3>
-<pre><code class="language-kotlin">@Test
+<pre><code class="language-kotlin">@get:Rule
+val mainDispatcherRule = MainDispatcherRule() // Dispatchers.setMain(StandardTestDispatcher())
+
+@Test
 fun emitsLoadingThenContent() = runTest {
     val repository = FakeArticlesRepository()
-    val viewModel = FeedViewModel(repository)
+    val viewModel = FeedViewModel(ObserveFeedUseCase(repository), RefreshFeedUseCase(repository))
 
     viewModel.uiState.test {
         assertEquals(FeedUiState.Loading, awaitItem())
@@ -9922,7 +9943,7 @@ fun emitsLoadingThenContent() = runTest {
 <h4>Як оптимізувати startup?</h4>
 <p>Спочатку розділити cold/warm/hot startup і виміряти. Потім прибрати eager initialization з <code>Application.onCreate</code>, перенести non-critical work lazy/background, оптимізувати DI graph startup, ContentProviders, synchronous IO, heavy logging. Для production — Baseline Profiles і Macrobenchmark.</p>
 <h4>Як говорити про Compose performance?</h4>
-<p>Через measurement і symptoms: recomposition counts, skipped/non-skippable composables, stability reports, LazyColumn keys, state read scope, expensive work in composition. Не треба казати “додайте remember всюди”. Це junior-level відповідь.</p>
+<p>Через measurement і symptoms: recomposition/skip counts, stability reports (зі strong skipping unstable params порівнюються за identity), LazyColumn keys, state read scope, expensive work in composition. Не треба казати “додайте remember всюди”. Це junior-level відповідь.</p>
 <h4>Як оптимізувати bitmap/image-heavy screen?</h4>
 <p>Використовувати image loading library, правильний size, caching, placeholders, downsampling, уникати декодування full-size bitmap на main thread, контролювати memory cache і lifecycle. Для feed — prefetch/paging, stable keys, recycling/lazy list behavior.</p>
 <hr/>
@@ -10019,7 +10040,7 @@ fun emitsLoadingThenContent() = runTest {
 <h2 id="edge-case-flow-catch">2. Flow: catch ловить лише upstream<a aria-label="Посилання на розділ: Flow catch" class="heading-anchor" href="#edge-case-flow-catch">#</a></h2>
 <p><strong>Проблема.</strong> Розробник додає <code>.catch { }</code> і вважає, що Flow тепер «безпечний». Але краш все одно стається.</p>
 <p><strong>Чому виникає.</strong> <code>catch</code> перехоплює винятки лише з операторів <em>вище</em> за ланцюжком (exception transparency). Виняток у <code>collect { }</code> — це downstream, він пролітає повз <code>catch</code> і падає в скоупі колектора.</p>
-<p><strong>Що ламається в production.</strong> Краш у рендер-логіці (наприклад, <code>NumberFormatException</code> при форматуванні даних з беку) валить корутину, а з нею — підписку на стейт. UI «замерзає»: стейт оновлюється, але ніхто більше не колектить.</p>
+<p><strong>Що ламається в production.</strong> Краш у рендер-логіці (наприклад, <code>NumberFormatException</code> при форматуванні даних з беку) без handler-а валить застосунок. Якщо ж <code>CoroutineExceptionHandler</code> чи wrapper його ковтає, колектор все одно мертвий разом з підпискою на стейт, і UI тихо «замерзає»: стейт оновлюється, але ніхто більше не колектить.</p>
 <p><strong>Як діє Senior.</strong> Тримає collect максимально тонким (тільки присвоєння стейту/рендер готової моделі), мапінг і валідацію переносить upstream (<code>map</code>/<code>mapNotNull</code>), а помилки моделює як частину UI state, а не як винятки.</p>
 <pre><code class="language-kotlin">repository.orders()
     .map { it.toUiModel() }          // якщо впаде тут -> catch спрацює
@@ -10032,19 +10053,19 @@ fun emitsLoadingThenContent() = runTest {
 <p><strong>Проблема.</strong> ViewModel емить «новий» стейт, але UI не оновлюється. Або: швидкі проміжні значення губляться.</p>
 <p><strong>Чому виникає.</strong> StateFlow (1) конфлює — повільний колектор бачить лише останнє значення; (2) порівнює нове значення зі старим через <code>equals()</code> і не емитить, якщо вони рівні. Для <code>data class</code> з тими самими полями <code>copy()</code> створює <em>рівний</em> об'єкт — емісії не буде.</p>
 <p><strong>Що ламається в production.</strong> Типовий кейс — «повторний показ» одноразової події через стейт: <code>state.copy(showToast = true)</code> вдруге не спрацює, бо значення вже <code>true</code> і нове рівне старому. Або snackbar «Помилка» не з'являється на другу однакову помилку.</p>
-<p><strong>Як діє Senior.</strong> Розділяє state і events: state — у StateFlow (там конфляція і дедуплікація бажані), одноразові події — через окремий канал ефектів (<code>Channel.receiveAsFlow()</code> або <code>SharedFlow</code> з продуманим replay/buffer). Якщо «однакові» емісії все ж семантично різні — додає у модель поле-розрізнювач (timestamp/id), але це вже запах, що подію запхали у state.</p>
+<p><strong>Як діє Senior.</strong> Розділяє state і events: state — у StateFlow (там конфляція і дедуплікація бажані), одноразові події — або як state з явним ack/consumption (Android guidance), або через окремий канал ефектів (<code>Channel.receiveAsFlow()</code> або <code>SharedFlow</code> з продуманим replay/buffer), розуміючи, що обробку він не гарантує. Якщо «однакові» емісії все ж семантично різні — додає у модель поле-розрізнювач (timestamp/id), але це вже запах, що подію запхали у state.</p>
 
 <h2 id="edge-case-sharedflow-overflow">4. SharedFlow: replay, buffer і втрачені події<a aria-label="Посилання на розділ: SharedFlow overflow" class="heading-anchor" href="#edge-case-sharedflow-overflow">#</a></h2>
 <p><strong>Проблема.</strong> Подія, заемічена у <code>SharedFlow(replay = 0)</code> до того, як з'явився підписник, зникає назавжди. Або <code>tryEmit</code> тихо повертає false і подія губиться.</p>
-<p><strong>Чому виникає.</strong> SharedFlow без replay не зберігає історію; <code>emit</code> з <code>BufferOverflow.SUSPEND</code> і нульовим буфером сасспендиться, поки всі підписники не приймуть значення, а <code>tryEmit</code> у цій конфігурації при наявності повільного підписника просто не зможе заемітити.</p>
+<p><strong>Чому виникає.</strong> SharedFlow без replay не зберігає історію; <code>emit</code> з <code>BufferOverflow.SUSPEND</code> і нульовим буфером сасспендиться, поки всі підписники не приймуть значення, а <code>tryEmit</code> у цій конфігурації (нульовий буфер) повертає false за наявності будь-якого підписника, навіть швидкого, і «успішно» відкидає значення, якщо підписників немає. Якщо потрібен <code>tryEmit</code> — налаштовують <code>extraBufferCapacity</code>/<code>onBufferOverflow</code>, інакше використовують <code>emit</code> з корутини.</p>
 <p><strong>Що ламається в production.</strong> Навігаційна подія, відправлена під час recreate Activity (підписника тимчасово немає), губиться — користувач тисне кнопку, нічого не відбувається. Це баг, який майже неможливо відтворити локально.</p>
-<p><strong>Як діє Senior.</strong> Для one-shot подій використовує <code>Channel(BUFFERED)</code> + <code>receiveAsFlow()</code>: канал зберігає події до появи споживача і гарантує доставку одному споживачу. Свідомо проговорює trade-off: Channel не підтримує кількох підписників, але для навігації/тостів це і є бажана семантика.</p>
+<p><strong>Як діє Senior.</strong> За Android guidance спершу моделює результат як UI state з явним ack/consumption. Якщо обирає <code>Channel(BUFFERED)</code> + <code>receiveAsFlow()</code>, то знає: канал буферизує події, поки немає споживача, і віддає кожен елемент лише одному отримувачу, але обробку не гарантує — елемент губиться, якщо колектор скасовано посеред доставки. Тому колектить на <code>Dispatchers.Main.immediate</code> і вважає втрату можливою. Свідомо проговорює trade-off: Channel не підтримує кількох підписників, але для навігації/тостів це і є бажана семантика.</p>
 
 <h2 id="edge-case-compose-stability">5. Compose: нестабільні параметри і зайві recomposition<a aria-label="Посилання на розділ: Compose stability" class="heading-anchor" href="#edge-case-compose-stability">#</a></h2>
 <p><strong>Проблема.</strong> Список смикається, профайлер показує сотні recomposition у composable, чиї дані «не змінювались».</p>
-<p><strong>Чому виникає.</strong> Compose може пропустити recomposition лише якщо всі параметри стабільні і рівні попереднім. <code>List</code>, класи з <code>var</code>, типи з чужих модулів без compiler metadata — нестабільні, тому Compose перестраховується і рекомпозить завжди. Окрема пастка — лямбди, що захоплюють нестабільний об'єкт.</p>
+<p><strong>Чому виникає.</strong> Зі strong skipping (default з Kotlin 2.0.20) нестабільні параметри не блокують skip: stable порівнюються через <code>equals()</code>, unstable (<code>List</code>, класи з <code>var</code>, типи з чужих модулів без compiler metadata) — за identity (<code>===</code>). Тому пастка — новий instance на кожній recomposition: щойно змаплений <code>List</code> чи об'єкт, створений у тілі composable, змушує рекомпозицію, хоча дані «ті самі». Лямбди компілятор запам'ятовує автоматично за захопленими значеннями, тож лямбда, що захоплює такий щоразу новий об'єкт, теж перестворюється.</p>
 <p><strong>Що ламається в production.</strong> Jank на скролі і підвищене споживання батареї на середніх девайсах; на топових телефонах розробників проблема непомітна.</p>
-<p><strong>Як діє Senior.</strong> Дивиться compiler metrics і Layout Inspector (recomposition counts), а не вгадує. Робить UI-моделі immutable (<code>val</code> + <code>kotlinx.collections.immutable</code> або анотації <code>@Immutable</code>/<code>@Stable</code> з реальним дотриманням контракту), виносить лямбди у remember або method references, для класів з інших модулів використовує stability configuration file. І завжди каже на співбесіді: спочатку виміряти, бо не кожна recomposition — проблема.</p>
+<p><strong>Як діє Senior.</strong> Дивиться compiler metrics і Layout Inspector (recomposition counts), а не вгадує. Робить UI-моделі immutable (<code>val</code> + <code>kotlinx.collections.immutable</code> або анотації <code>@Immutable</code>/<code>@Stable</code> з реальним дотриманням контракту), не перестворює inputs у composition (мапить у ViewModel або через <code>remember</code>), для класів з інших модулів використовує stability configuration file; ручний <code>remember { { … } }</code> для лямбд зі strong skipping зазвичай не потрібен. І завжди каже на співбесіді: спочатку виміряти, бо не кожна recomposition — проблема.</p>
 <pre><code class="language-kotlin">@Immutable
 data class CartItemUi(
     val id: String,
@@ -10054,8 +10075,8 @@ data class CartItemUi(
 
 @Composable
 fun CartRow(item: CartItemUi, onClick: (String) -&gt; Unit) { /* ... */ }
-// Виклик: onClick = remember { { id -&gt; viewModel.onItemClick(id) } }
-// або методом: viewModel::onItemClick (стабільна після першої композиції)</code></pre>
+// Виклик: onClick = { id -&gt; viewModel.onItemClick(id) } або viewModel::onItemClick
+// зі strong skipping компілятор сам memoize-ить обидва варіанти, remember не потрібен</code></pre>
 
 <h2 id="edge-case-fragment-lifecyclescope">6. Fragment: lifecycleScope vs viewLifecycleOwner<a aria-label="Посилання на розділ: Fragment lifecycleScope" class="heading-anchor" href="#edge-case-fragment-lifecyclescope">#</a></h2>
 <p><strong>Проблема.</strong> Колект у <code>fragment.lifecycleScope</code> оновлює view, якої вже немає, або підписки дублюються.</p>
@@ -10172,7 +10193,7 @@ fun CartRow(item: CartItemUi, onClick: (String) -&gt; Unit) { /* ... */ }
 <p><strong>Middle+: чим відрізняється поведінка catch і retry у Flow?</strong><br/>
 Обидва працюють лише з upstream-винятками. <code>retry</code> переподписується на upstream задану кількість разів (можна з предикатом і backoff через <code>retryWhen</code>), <code>catch</code> — термінально обробляє: після нього upstream завершений, можна хіба заемітити fallback. Порядок операторів критичний: <code>retry</code> до <code>catch</code>.</p>
 <p><strong>Senior: як ви тестуєте сценарій паралельних 401 з одним refresh?</strong><br/>
-MockWebServer: ставлю в чергу кілька 401, один успішний refresh і успішні повтори; запускаю N конкурентних запитів через <code>async</code> і assert-ом перевіряю, що на refresh-ендпоінт прийшов рівно один запит (рахую recorded requests за шляхом). Окремий тест — refresh повертає 401 і всі запити завершуються logout-сигналом рівно один раз.</p>
+MockWebServer із кастомним <code>Dispatcher</code>, що маршрутизує за шляхом/заголовком (refresh-ендпоінт → новий токен, запити зі старим токеном → 401, з новим → 200), бо дефолтна FIFO-черга при конкурентних запитах недетермінована; запускаю N конкурентних запитів через <code>async</code> і assert-ом перевіряю, що на refresh-ендпоінт прийшов рівно один запит (рахую recorded requests за шляхом). Окремий тест — refresh повертає 401 і всі запити завершуються logout-сигналом рівно один раз.</p>
 <p><strong>Staff/Lead: як масштабувати ці знання на команду, а не тримати в голові одної людини?</strong><br/>
 Перетворюю кейси на інфраструктуру: lint-правила (заборона fragment.lifecycleScope для collect, заборона mutable PendingIntent без suppress-обґрунтування), базові класи/конвенції (єдиний TokenAuthenticator, єдиний LoadState-маппер), CI-перевірки (тест міграцій обов'язковий при зміні схеми, smoke на minified build), і ADR-документи, чому так. Знання, яке не закодоване в тулінг, губиться з ротацією людей.</p>
 </div></details><details class="major-section" data-key="platform-deep-dive" data-title="Android Platform Deep Dive: permissions, storage, notifications, startup" id="android-platform-deep-dive" open=""><summary class="major-summary"><span class="major-title">Android Platform Deep Dive: permissions, storage, notifications, startup</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
@@ -10611,7 +10632,7 @@ AAB — формат публікації, не встановлення: Play �
 <ul>
 <li>30 секунд: “ізолює child failures”.</li>
 <li>2 хвилини: “для partial content dashboard”.</li>
-<li>5 хвилин: “failure semantics, runCatching per child, cancellation parent, UI state modeling, tests”.</li>
+<li>5 хвилин: “failure semantics, error handling per child без проковтування CancellationException, cancellation parent, UI state modeling, tests”.</li>
 </ul>
 <hr/>
 <h2 id="як-пояснювати-production-experience">Як пояснювати production experience<a aria-label="Посилання на розділ: Як пояснювати production experience" class="heading-anchor" href="#як-пояснювати-production-experience">#</a></h2>
@@ -15977,9 +15998,10 @@ The Fragment instance can outlive its View hierarchy. Keeping binding after <cod
 </tr>
 </tbody>
 </table>
-<pre><code class="language-kotlin">class SyncOrdersWorker(
-    appContext: Context,
-    params: WorkerParameters,
+<pre><code class="language-kotlin">@HiltWorker
+class SyncOrdersWorker @AssistedInject constructor(
+    @Assisted appContext: Context,
+    @Assisted params: WorkerParameters,
     private val repository: OrdersRepository
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result = try {
@@ -15990,11 +16012,12 @@ The Fragment instance can outlive its View hierarchy. Keeping binding after <cod
     }
 }
 </code></pre>
+<p>The default <code>WorkerFactory</code> can only call a <code>(Context, WorkerParameters)</code> constructor, so an extra dependency needs <code>@HiltWorker</code>/<code>@AssistedInject</code> plus <code>HiltWorkerFactory</code> supplied through <code>Configuration.Provider</code> (with the default <code>WorkManagerInitializer</code> removed), or a custom <code>WorkerFactory</code>.</p>
 <h3>Follow-up answers</h3>
 <p><strong>Why is <code>IntentService</code> no longer a good default?</strong><br/>
 Modern Android background limits make service-first designs fragile. Deferrable guaranteed work belongs to WorkManager.</p>
 <p><strong>When is a foreground service justified?</strong><br/>
-Only for genuinely user-visible long-running operations such as navigation, active tracking, recording, or explicit upload/download.</p>
+Only for genuinely user-visible long-running operations with no purpose-built API, such as navigation (<code>location</code>), active tracking, recording (<code>microphone</code>/<code>camera</code>), or playback (<code>mediaPlayback</code>). For user-initiated uploads/downloads prefer user-initiated data transfer jobs (API 34+); for deferrable transfers, WorkManager. <code>dataSync</code> FGS are time-limited on Android 15 and cannot start from <code>BOOT_COMPLETED</code>.</p>
 <p><strong>What is unique work?</strong><br/>
 Named WorkManager work with a conflict policy. It prevents multiple duplicated sync jobs after repeated user actions or app events.</p>
 <p><strong>How do you debug WorkManager?</strong><br/>
@@ -16116,17 +16139,23 @@ fun CheckoutRoute(
     val latestSuccess by rememberUpdatedState(onPaymentSuccess)
 
     LaunchedEffect(uiState.paymentCompleted) {
-        if (uiState.paymentCompleted) latestSuccess()
+        if (uiState.paymentCompleted) {
+            latestSuccess()
+            viewModel.onPaymentSuccessHandled()
+        }
     }
 
     LaunchedEffect(uiState.errorMessage) {
-        uiState.errorMessage?.let { snackbarHostState.showSnackbar(it) }
+        uiState.errorMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.onErrorShown()
+        }
     }
 }
 </code></pre>
 <h3>Follow-up answers</h3>
 <p><strong>Why is recomposition not a full redraw?</strong><br/>
-Compose reruns only the relevant parts of the composition that depend on changed state and can skip stable unchanged parts.</p>
+Compose reruns only the relevant parts of the composition that depend on changed state and can skip composables whose parameters are unchanged (with strong skipping, the default since Kotlin 2.0.20, stable params are compared by <code>equals()</code> and unstable ones by identity).</p>
 <p><strong>Why not run side effects directly in a composable body?</strong><br/>
 The body can execute many times. Direct calls can duplicate navigation, analytics, or snackbar events.</p>
 <p><strong><code>remember</code> vs <code>rememberSaveable</code>?</strong><br/>
@@ -16174,10 +16203,13 @@ Use graph replacement with Hilt test modules/fakes instead of monkey-patching gl
 <h2>9. Testing coroutines, Flow, ViewModel</h2>
 <h3>Senior-level explanation</h3>
 <p>Design async code to be testable: inject dispatchers, use fake repositories, control Flow producers, and avoid real time.</p>
-<pre><code class="language-kotlin">@Test
+<pre><code class="language-kotlin">@get:Rule
+val mainDispatcherRule = MainDispatcherRule() // Dispatchers.setMain(StandardTestDispatcher())
+
+@Test
 fun emitsLoadingThenContent() = runTest {
     val repository = FakeArticlesRepository()
-    val viewModel = FeedViewModel(repository)
+    val viewModel = FeedViewModel(ObserveFeedUseCase(repository), RefreshFeedUseCase(repository))
 
     viewModel.uiState.test {
         assertEquals(FeedUiState.Loading, awaitItem())
@@ -16267,7 +16299,7 @@ UI owns the actual <code>NavController</code>. ViewModel exposes state or result
 <h2 id="en-edge-case-flow-catch">2. Flow: catch only handles upstream<a aria-label="Link to section: Flow catch" class="heading-anchor" href="#en-edge-case-flow-catch">#</a></h2>
 <p><strong>Problem.</strong> A developer adds <code>.catch { }</code> and assumes the Flow is now "safe". The crash still happens.</p>
 <p><strong>Why.</strong> <code>catch</code> intercepts exceptions only from operators <em>above</em> it in the chain (exception transparency). An exception inside <code>collect { }</code> is downstream — it flies past <code>catch</code> and crashes the collector's scope.</p>
-<p><strong>Production impact.</strong> A crash in render logic (say, <code>NumberFormatException</code> while formatting backend data) kills the coroutine and with it the state subscription. The UI "freezes": state keeps updating but nobody collects anymore.</p>
+<p><strong>Production impact.</strong> A crash in render logic (say, <code>NumberFormatException</code> while formatting backend data) crashes the app when no handler is installed. If a <code>CoroutineExceptionHandler</code> or wrapper swallows it, the collector is still dead along with the state subscription, and the UI silently "freezes": state keeps updating but nobody collects anymore.</p>
 <p><strong>Senior approach.</strong> Keep collect razor-thin (assignment/rendering of a ready model only), move mapping and validation upstream (<code>map</code>/<code>mapNotNull</code>), and model errors as part of UI state rather than as exceptions.</p>
 <pre><code class="language-kotlin">repository.orders()
     .map { it.toUiModel() }          // a failure here -&gt; catch works
@@ -16280,19 +16312,19 @@ UI owns the actual <code>NavController</code>. ViewModel exposes state or result
 <p><strong>Problem.</strong> The ViewModel emits a "new" state but the UI does not update. Or fast intermediate values are lost.</p>
 <p><strong>Why.</strong> StateFlow (1) conflates — a slow collector only sees the latest value; (2) compares the new value to the old via <code>equals()</code> and skips emission when they are equal. For a <code>data class</code> with identical fields, <code>copy()</code> produces an <em>equal</em> object — no emission.</p>
 <p><strong>Production impact.</strong> The typical case is "re-showing" a one-shot event via state: <code>state.copy(showToast = true)</code> does nothing the second time because the value is already <code>true</code> and equal. Or an error snackbar fails to appear for the second identical error.</p>
-<p><strong>Senior approach.</strong> Separate state and events: state lives in StateFlow (where conflation and deduplication are desirable), one-shot events go through a dedicated effects channel (<code>Channel.receiveAsFlow()</code> or a carefully configured <code>SharedFlow</code>). If "equal" emissions are genuinely semantically distinct, add a discriminator field (timestamp/id) — but that is usually a smell that an event was stuffed into state.</p>
+<p><strong>Senior approach.</strong> Separate state and events: state lives in StateFlow (where conflation and deduplication are desirable), one-shot events are either modeled as state with explicit ack/consumption (Android guidance) or go through a dedicated effects channel (<code>Channel.receiveAsFlow()</code> or a carefully configured <code>SharedFlow</code>), knowing it does not guarantee processing. If "equal" emissions are genuinely semantically distinct, add a discriminator field (timestamp/id) — but that is usually a smell that an event was stuffed into state.</p>
 
 <h2 id="en-edge-case-sharedflow-overflow">4. SharedFlow: replay, buffer and dropped events<a aria-label="Link to section: SharedFlow overflow" class="heading-anchor" href="#en-edge-case-sharedflow-overflow">#</a></h2>
 <p><strong>Problem.</strong> An event emitted into a <code>SharedFlow(replay = 0)</code> before any subscriber exists disappears forever. Or <code>tryEmit</code> silently returns false and the event is lost.</p>
-<p><strong>Why.</strong> A SharedFlow without replay keeps no history; <code>emit</code> with <code>BufferOverflow.SUSPEND</code> and zero buffer suspends until all subscribers accept the value, and in that configuration <code>tryEmit</code> simply fails when a slow subscriber exists.</p>
+<p><strong>Why.</strong> A SharedFlow without replay keeps no history; <code>emit</code> with <code>BufferOverflow.SUSPEND</code> and zero buffer suspends until all subscribers accept the value, and in that configuration (zero buffer) <code>tryEmit</code> returns false whenever any subscriber is present, however fast, and drops the value (returning true) when there are none. If you need <code>tryEmit</code>, configure <code>extraBufferCapacity</code>/<code>onBufferOverflow</code>; otherwise use <code>emit</code> from a coroutine.</p>
 <p><strong>Production impact.</strong> A navigation event sent during Activity recreation (no subscriber for a moment) is dropped — the user taps a button and nothing happens. Nearly impossible to reproduce locally.</p>
-<p><strong>Senior approach.</strong> For one-shot events use <code>Channel(BUFFERED)</code> + <code>receiveAsFlow()</code>: the channel holds events until a consumer appears and guarantees delivery to exactly one consumer. State the trade-off explicitly: a Channel does not support multiple subscribers, but for navigation/toasts that is precisely the semantics you want.</p>
+<p><strong>Senior approach.</strong> Per Android guidance, first model the outcome as UI state with explicit ack/consumption. If you use <code>Channel(BUFFERED)</code> + <code>receiveAsFlow()</code>, know its limits: the channel buffers events while there is no collector and hands each element to only one receiver, but it does not guarantee processing — an element is lost if the receiver is cancelled mid-delivery. So collect on <code>Dispatchers.Main.immediate</code> and treat loss as possible. State the trade-off explicitly: a Channel does not support multiple subscribers, but for navigation/toasts that is precisely the semantics you want.</p>
 
 <h2 id="en-edge-case-compose-stability">5. Compose: unstable parameters and excessive recomposition<a aria-label="Link to section: Compose stability" class="heading-anchor" href="#en-edge-case-compose-stability">#</a></h2>
 <p><strong>Problem.</strong> The list stutters; the profiler shows hundreds of recompositions in composables whose data "did not change".</p>
-<p><strong>Why.</strong> Compose can skip recomposition only when all parameters are stable and equal to the previous ones. <code>List</code>, classes with <code>var</code>, types from modules without compiler metadata are unstable — Compose plays safe and always recomposes. A separate trap: lambdas capturing an unstable object.</p>
+<p><strong>Why.</strong> With strong skipping (default since Kotlin 2.0.20), unstable parameters do not block skipping: stable ones are compared with <code>equals()</code>, unstable ones (<code>List</code>, classes with <code>var</code>, types from modules without compiler metadata) by identity (<code>===</code>). The trap is a new instance on every recomposition: a freshly mapped <code>List</code> or an object created in the composable body forces recomposition even though the data is "the same". The compiler auto-remembers lambdas keyed on their captures, so a lambda capturing such an always-new object is recreated too.</p>
 <p><strong>Production impact.</strong> Scroll jank and extra battery drain on mid-range devices; invisible on the developers' flagship phones.</p>
-<p><strong>Senior approach.</strong> Read compiler metrics and Layout Inspector recomposition counts instead of guessing. Make UI models immutable (<code>val</code> + <code>kotlinx.collections.immutable</code>, or <code>@Immutable</code>/<code>@Stable</code> with the contract actually honored), hoist lambdas into remember or method references, use a stability configuration file for classes from other modules. And always add: measure first — not every recomposition is a problem.</p>
+<p><strong>Senior approach.</strong> Read compiler metrics and Layout Inspector recomposition counts instead of guessing. Make UI models immutable (<code>val</code> + <code>kotlinx.collections.immutable</code>, or <code>@Immutable</code>/<code>@Stable</code> with the contract actually honored), avoid re-allocating inputs during composition (map in the ViewModel or via <code>remember</code>), use a stability configuration file for classes from other modules; a manual <code>remember { { … } }</code> around lambdas is usually unnecessary with strong skipping. And always add: measure first — not every recomposition is a problem.</p>
 <pre><code class="language-kotlin">@Immutable
 data class CartItemUi(
     val id: String,
@@ -16302,8 +16334,8 @@ data class CartItemUi(
 
 @Composable
 fun CartRow(item: CartItemUi, onClick: (String) -&gt; Unit) { /* ... */ }
-// Call site: onClick = remember { { id -&gt; viewModel.onItemClick(id) } }
-// or a method reference: viewModel::onItemClick</code></pre>
+// Call site: onClick = { id -&gt; viewModel.onItemClick(id) } or viewModel::onItemClick
+// with strong skipping the compiler memoizes both, no remember needed</code></pre>
 
 <h2 id="en-edge-case-fragment-lifecyclescope">6. Fragment: lifecycleScope vs viewLifecycleOwner<a aria-label="Link to section: Fragment lifecycleScope" class="heading-anchor" href="#en-edge-case-fragment-lifecyclescope">#</a></h2>
 <p><strong>Problem.</strong> Collecting in <code>fragment.lifecycleScope</code> updates a view that no longer exists, or subscriptions get duplicated.</p>
@@ -16420,7 +16452,7 @@ fun CartRow(item: CartItemUi, onClick: (String) -&gt; Unit) { /* ... */ }
 <p><strong>Middle+: how do catch and retry differ in Flow?</strong><br/>
 Both operate only on upstream exceptions. <code>retry</code> re-subscribes to the upstream a given number of times (with a predicate and backoff via <code>retryWhen</code>); <code>catch</code> handles terminally: after it the upstream is complete, you can at most emit a fallback. Operator order is critical: <code>retry</code> before <code>catch</code>.</p>
 <p><strong>Senior: how do you test the "parallel 401s, single refresh" scenario?</strong><br/>
-MockWebServer: enqueue several 401s, one successful refresh and successful replays; launch N concurrent requests via <code>async</code> and assert exactly one request hit the refresh endpoint (counting recorded requests by path). A separate test: refresh returns 401 and all requests resolve into exactly one logout signal.</p>
+MockWebServer with a custom <code>Dispatcher</code> that routes by path/header (refresh endpoint → new token, calls with the old token → 401, with the new token → 200), because the default FIFO queue is non-deterministic under concurrent requests; launch N concurrent requests via <code>async</code> and assert exactly one request hit the refresh endpoint (counting recorded requests by path). A separate test: refresh returns 401 and all requests resolve into exactly one logout signal.</p>
 <p><strong>Staff/Lead: how do you scale this knowledge to the team instead of keeping it in one head?</strong><br/>
 Turn the cases into infrastructure: lint rules (ban fragment.lifecycleScope for collect, ban mutable PendingIntent without a justified suppress), shared base classes/conventions (a single TokenAuthenticator, a single LoadState mapper), CI gates (migration tests mandatory on schema change, smoke on the minified build), and ADRs explaining why. Knowledge not encoded into tooling leaves with people.</p>
 </div></details><details class="major-section" data-key="platform-deep-dive" data-title="Android Platform Deep Dive: permissions, storage, notifications, startup" id="en-android-platform-deep-dive" open=""><summary class="major-summary"><span class="major-title">Android Platform Deep Dive: permissions, storage, notifications, startup</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
@@ -16721,12 +16753,12 @@ Translate technical debt into risk and velocity: "without X every next feature i
 <h2 id="en-four-week-preparation-plan">Four-week preparation plan<a aria-label="Link to section: Four-week preparation plan" class="heading-anchor" href="#en-four-week-preparation-plan">#</a></h2>
 <h3 id="en-week-1-android-fundamentals-and-kotlin">Week 1: Android fundamentals and Kotlin<a aria-label="Link to section: Week 1: Android fundamentals and Kotlin" class="heading-anchor" href="#en-week-1-android-fundamentals-and-kotlin">#</a></h3>
 <p>Review Activity/Fragment lifecycle, process death, permissions, background execution, Kotlin nullability, sealed classes, immutability, generics, and collections.</p>
-<h3 id="en-week-2-coroutines-flow-and-compose">Week 2: Coroutines, Flow, and Compose<a aria-label="Link to section: Week 2: Coroutines, Flow, and Compose" class="heading-anchor" href="#en-week-2-coroutines-flow-and-compose">#</a></h3>
-<p>Focus on structured concurrency, cancellation, exception handling, <code>launch</code> vs <code>async</code>, Flow operators, StateFlow/SharedFlow, recomposition, state hoisting, and side effects.</p>
-<h3 id="en-week-3-architecture-di-networking-persistence">Week 3: Architecture, DI, networking, persistence<a aria-label="Link to section: Week 3: Architecture, DI, networking, persistence" class="heading-anchor" href="#en-week-3-architecture-di-networking-persistence">#</a></h3>
-<p>Practice explaining MVVM/MVI, Clean Architecture trade-offs, repository/source of truth, modularization, Hilt scopes, token refresh, caching, Room, DataStore, and migrations.</p>
-<h3 id="en-week-4-testing-performance-and-system-design">Week 4: Testing, performance, and system design<a aria-label="Link to section: Week 4: Testing, performance, and system design" class="heading-anchor" href="#en-week-4-testing-performance-and-system-design">#</a></h3>
-<p>Prepare stories about tests you wrote, bugs you fixed, performance problems you diagnosed, and systems you designed. Practice chat/offline/payment/feed designs aloud.</p>
+<h3 id="en-week-2-coroutines-flow-and-compose">Week 2: Coroutines and Flow<a aria-label="Link to section: Week 2: Coroutines and Flow" class="heading-anchor" href="#en-week-2-coroutines-flow-and-compose">#</a></h3>
+<p>Focus on structured concurrency, cancellation, exception handling, <code>launch</code> vs <code>async</code>, dispatchers, lifecycle-aware scopes, cold/hot Flow, Flow operators, StateFlow/SharedFlow/Channel, and testing coroutines/Flow.</p>
+<h3 id="en-week-3-architecture-di-networking-persistence">Week 3: Compose, architecture, and DI<a aria-label="Link to section: Week 3: Compose, architecture, and DI" class="heading-anchor" href="#en-week-3-architecture-di-networking-persistence">#</a></h3>
+<p>Practice explaining recomposition, remember/rememberSaveable, state hoisting, side effects, stability/keys, MVVM/MVI, Clean Architecture trade-offs, repository/source of truth, modularization, and Hilt scopes.</p>
+<h3 id="en-week-4-testing-performance-and-system-design">Week 4: Networking, persistence, testing, performance, and system design<a aria-label="Link to section: Week 4: Networking, persistence, testing, performance, and system design" class="heading-anchor" href="#en-week-4-testing-performance-and-system-design">#</a></h3>
+<p>Review Retrofit/OkHttp/interceptors, token refresh, pagination/caching, Room, DataStore, and migrations. Prepare stories about tests you wrote, bugs you fixed, performance problems you diagnosed, and systems you designed. Practice chat/offline/payment/feed designs aloud.</p>
 <h2 id="en-topics-candidates-often-fail">Topics candidates often fail<a aria-label="Link to section: Topics candidates often fail" class="heading-anchor" href="#en-topics-candidates-often-fail">#</a></h2>
 <ul>
 <li>Coroutine cancellation and exception propagation.</li>
