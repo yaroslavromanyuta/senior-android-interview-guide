@@ -55,8 +55,8 @@ def assert_no_horizontal_overflow(driver: webdriver.Chrome) -> dict[str, int]:
 
 def assert_final_stage_contract(driver: webdriver.Chrome) -> None:
     for target_id, next_id in (
-        (UA_ID, "kotlin-for-android"),
-        (EN_ID, "en-kotlin-for-android"),
+        (UA_ID, "senior-interview-answer-patterns"),
+        (EN_ID, "en-senior-edge-cases"),
     ):
         link = driver.find_element(By.CSS_SELECTOR, f'a[data-target="{target_id}"]')
         assert "final guide stage" in (link.get_attribute("textContent") or "").lower()
