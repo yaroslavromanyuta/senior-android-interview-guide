@@ -3157,7 +3157,7 @@ labels.collect { render(it) }                  // terminal, cancellable suspensi
 <tr><td><code>transform</code></td><td>Can emit zero, one, or many values per input.</td><td>Keep emission and error ownership explicit; it is not implicit parallelism.</td></tr>
 <tr><td><code>collect</code></td><td>Processes every delivered value in order.</td><td>Slow action suspends the pipeline unless a buffer boundary exists.</td></tr>
 <tr><td><code>collectLatest</code></td><td>On a new value, cancels the previous action and starts the new one.</td><td>It cancels <em>work</em>; the action must be cancellable and safe to abandon.</td></tr>
-<tr><td><code>debounce</code></td><td>Emits after a quiet window; continuously changing input can postpone output.</td><td>Time-based and currently preview/experimental in some overloads; not a durable event queue.</td></tr>
+<tr><td><code>debounce</code></td><td>Emits after a quiet window; continuously changing input can postpone output.</td><td>Time-based; every overload (Long, Duration, lambda) is currently <code>@FlowPreview</code>; not a durable event queue.</td></tr>
 <tr><td><code>sample</code></td><td>Emits the latest available value at sampling ticks.</td><td>May omit the final value and intermediate values; check current API status/version.</td></tr>
 <tr><td><code>distinctUntilChanged</code></td><td>Suppresses consecutive equal values.</td><td>Equality quality matters; applying it to <code>StateFlow</code> has no effect because state is already distinct.</td></tr>
 </tbody></table>
@@ -3617,7 +3617,7 @@ exception propagation, memory use, and duplicate-side-effect risk.</code></pre>
 
 <h2 id="stage11-uk-version-sensitive">Version-sensitive behavior<a aria-label="Посилання на розділ: Version sensitive behavior" class="heading-anchor" href="#stage11-uk-version-sensitive">#</a></h2>
 <ul>
-<li><code>flatMapLatest</code>, <code>flatMapMerge</code>, <code>transformLatest</code>, <code>mapLatest</code>, dynamic <code>debounce</code> and some sharing APIs may carry experimental/preview annotations in particular resolved releases. Inspect the pinned <code>kotlinx-coroutines</code API, not memory.</li>
+<li><code>flatMapLatest</code>, <code>flatMapMerge</code>, <code>transformLatest</code>, <code>mapLatest</code>, dynamic <code>debounce</code> and some sharing APIs may carry experimental/preview annotations in particular resolved releases. Inspect the pinned <code>kotlinx-coroutines</code> API, not memory.</li>
 <li>Default merge concurrency is library/property-sensitive; pass an explicit value when it is an operational contract. Default buffer capacities are implementation/configuration details.</li>
 <li><code>SharingStarted.WhileSubscribed</code> overloads, Duration support and replay expiration annotations vary by release. Pin one coroutines family and test exact boundaries.</li>
 <li>AndroidX lifecycle APIs and <code>collectAsStateWithLifecycle</code> signatures/default states depend on resolved AndroidX versions; lifecycle semantics do not create delivery durability.</li>
@@ -3649,7 +3649,7 @@ val uiState = combine(query, filters, account) { q, f, a -&gt;
     RequestKey(q.trim(), f, a.id)
 }.debounce(300).distinctUntilChanged().flatMapLatest { key -&gt;
     repository.observeRows(key)
-        .map { rows -&gt; SearchUiState.Content(key, rows) }
+        .map&lt;_, SearchUiState&gt; { rows -&gt; SearchUiState.Content(key, rows) } // widen type so catch can emit Error
         .onStart { repository.refresh(key) } // idempotent/transactional boundary required
         .retryWhen { e, attempt -&gt;
             val retry = e is IOException &amp;&amp; attempt &lt; 3
@@ -7177,12 +7177,15 @@ fun LoginRoute(
     snackbarHostState: SnackbarHostState
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val lifecycleOwner = LocalLifecycleOwner.current
 
-    LaunchedEffect(Unit) {
-        viewModel.events.collect { event -&gt;
-            when (event) {
-                LoginEvent.NavigateToHome -&gt; navController.navigate("home")
-                is LoginEvent.ShowSnackbar -&gt; snackbarHostState.showSnackbar(event.message)
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            viewModel.events.collect { event -&gt;
+                when (event) {
+                    LoginEvent.NavigateToHome -&gt; navController.navigate("home")
+                    is LoginEvent.ShowSnackbar -&gt; snackbarHostState.showSnackbar(event.message)
+                }
             }
         }
     }
@@ -7196,7 +7199,7 @@ fun LoginRoute(
 <h3 id="типові-помилки-25">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-25">#</a></h3>
 <ul>
 <li>Використовувати <code>StateFlow</code> для navigation event і отримувати повторну navigation після rotation.</li>
-<li>Використовувати <code>SharedFlow</code> без buffer і губити events.</li>
+<li>Вважати, що <code>extraBufferCapacity</code> захищає events: без subscribers <code>SharedFlow</code> зберігає лише replay cache, тож emit при <code>replay = 0</code> губиться. Якщо втрата неприпустима — replay (з ризиком повторної доставки) або state з ack.</li>
 <li>Відправляти event з ViewModel до UI, коли це насправді state.</li>
 <li>Експозити <code>MutableStateFlow</code> назовні.</li>
 <li>Колектити events у Composable без stable effect key.</li>
@@ -7207,11 +7210,11 @@ fun LoginRoute(
 </blockquote>
 <h3 id="follow-up-питання-13">Follow-up питання<a aria-label="Посилання на розділ: Follow-up питання" class="heading-anchor" href="#follow-up-питання-13">#</a></h3>
 <p><strong>Як уникнути duplicate navigation після rotation?</strong><br/>
-Не тримати подію в StateFlow (вона повториться для нового підписника). <code>Channel.receiveAsFlow()</code> дає consume-once семантику; альтернатива — подія у state з явним ack від UI після обробки.</p>
+Не тримати подію в StateFlow (вона повториться для нового підписника). <code>Channel.receiveAsFlow()</code> віддає кожен елемент одному з competing collectors, але не гарантує, що UI його обробив; надійніше — подія у state з явним ack від UI після обробки.</p>
 <p><strong>Чи можна використовувати Channel для events?</strong><br/>
-Так, <code>Channel(BUFFERED)</code> + <code>receiveAsFlow()</code> — рекомендований патерн для one-shot подій: буферизує до появи споживача і доставляє рівно одному. Trade-off: один споживач — для навігації це і треба.</p>
+Так, <code>Channel(BUFFERED)</code> + <code>receiveAsFlow()</code> — поширений best-effort патерн: буферизує, поки немає активного collector, і віддає кожен елемент одному з competing collectors. Але отримання ≠ обробка: cancellation collector-а або process death можуть втратити подію. Google рекомендує моделювати ViewModel-події (наприклад, навігацію після login) як UI state, який UI підтверджує (ack).</p>
 <p><strong>Коли event краще перетворити на state?</strong><br/>
-Коли наслідок має тривале представлення: «показати діалог» — це насправді стан «діалог відкритий» до явного закриття. Подіями лишаються миттєві речі без тривалості: навігація, toast, haptic.</p>
+Коли наслідок має тривале представлення: «показати діалог» — це насправді стан «діалог відкритий» до явного закриття. Подіями лишаються миттєві best-effort речі без тривалості: toast, haptic; важливу навігацію з ViewModel краще моделювати як state з ack.</p>
 <p><strong>Що означає <code>replay = 0</code>?</strong><br/>
 Нові підписники не отримують історії, а емісія за відсутності підписника губиться назавжди — класична причина «кнопка не спрацювала» під час recreation. Див. Edge Case №4.</p>
 <hr/>
@@ -7275,7 +7278,7 @@ fun LoginRoute(
     .flatMapLatest { query -&gt;
         searchRepository.search(query)
     }
-    .map { results -&gt; SearchUiState.Content(results.map { it.toUiModel() }) }
+    .map&lt;_, SearchUiState&gt; { results -&gt; SearchUiState.Content(results.map { it.toUiModel() }) }
     .catch { emit(SearchUiState.Error) }
     .flowOn(defaultDispatcher)
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SearchUiState.Empty)
@@ -7322,7 +7325,7 @@ fun LoginRoute(
     ProductFilter(category = category, sort = sort, query = query)
 }.flatMapLatest { filter -&gt;
     productRepository.observeProducts(filter)
-}.map { products -&gt;
+}.map&lt;_, ProductsUiState&gt; { products -&gt;
     ProductsUiState.Content(products.map(Product::toUiModel))
 }.retry(retries = 2) { error -&gt;
     error is IOException
@@ -12466,7 +12469,7 @@ labels.collect { render(it) }                  // terminal, cancellable suspensi
 <tr><td><code>transform</code></td><td>Can emit zero, one, or many values for one input.</td><td>Keep emission and error ownership explicit; it is not implicit parallelism.</td></tr>
 <tr><td><code>collect</code></td><td>Processes every delivered value in order.</td><td>A slow action suspends the pipeline unless a buffer boundary exists.</td></tr>
 <tr><td><code>collectLatest</code></td><td>A new value cancels the previous action and starts the new one.</td><td>It cancels <em>work</em>; the action must be cancellable and safe to abandon.</td></tr>
-<tr><td><code>debounce</code></td><td>Emits after a quiet window; continuously changing input can postpone output.</td><td>Time-based and preview/experimental in some overloads; not a durable event queue.</td></tr>
+<tr><td><code>debounce</code></td><td>Emits after a quiet window; continuously changing input can postpone output.</td><td>Time-based; every overload (Long, Duration, lambda) is currently <code>@FlowPreview</code>; not a durable event queue.</td></tr>
 <tr><td><code>sample</code></td><td>Emits the latest available value at sampling ticks.</td><td>Can omit the final and intermediate values; check current API status and version.</td></tr>
 <tr><td><code>distinctUntilChanged</code></td><td>Suppresses consecutive equal values.</td><td>Equality quality matters; applying it to <code>StateFlow</code> has no effect because state is already distinct.</td></tr>
 </tbody></table>
@@ -15575,7 +15578,7 @@ val events = _events.asSharedFlow()
     .debounce(300)
     .distinctUntilChanged()
     .flatMapLatest { q -&gt; repository.search(q) }
-    .map { SearchUiState.Content(it) }
+    .map&lt;_, SearchUiState&gt; { SearchUiState.Content(it) }
     .catch { emit(SearchUiState.Error) }
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SearchUiState.Idle)
 </code></pre>
