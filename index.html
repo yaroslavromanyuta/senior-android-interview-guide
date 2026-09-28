@@ -1950,9 +1950,9 @@ fun inspectUnknown(values: MutableList&lt;*&gt;) {
 <li>Звичайна inlined lambda може зробити non-local <code>return</code> із enclosing function, якщо виклик structurally дозволений. <code>crossinline</code> забороняє такий return, коли implementation може викликати lambda не прямо — наприклад, у <code>Runnable</code>. Це не thread-safety і не async-гарантія.</li>
 <li><code>reified T</code> дозволений лише для type parameter inline function/property accessor. У call site доступні <code>is T</code>, <code>as T</code>, <code>T::class</code> та інші операції з runtime-available type. Він не відновлює erased nested arguments: <code>value is List&lt;String&gt;</code> не доводить тип кожного елемента.</li>
 </ul>
-<pre><code class="language-kotlin">inline fun &lt;reified T : Any&gt; Bundle.requireParcelableCompat(key: String): T {
-    val value = getParcelable(key) // platform/API-version adapter omitted
-    return value as? T ?: error("$key is not ${T::class.java.name}")
+<pre><code class="language-kotlin">inline fun &lt;reified T : Parcelable&gt; Bundle.requireParcelableCompat(key: String): T {
+    val value = BundleCompat.getParcelable(this, key, T::class.java) // typed API on 34+, deprecated below
+    return value ?: error("$key is missing or not ${T::class.java.name}")
 }
 
 inline fun dispatch(
@@ -2001,7 +2001,7 @@ val boxed = identity(UserId("42"))           // generic representation can box</
 <p><strong>Binary compatibility</strong>: уже compiled consumer працює з новим artifact без relink/recompile errors. <strong>Source compatibility</strong>: consumer source recompiles без змін. <strong>Behavioral compatibility</strong>: observable semantics лишилися прийнятними. Ці множини не збігаються.</p>
 <ul>
 <li>Зміна JVM descriptor, видалення/перейменування public member, class/interface shape, superclass, visibility або default-method scheme може зламати binary ABI.</li>
-<li>Додавання default parameter не створює Java overload; зміна default value binary-compatible для звичайного call через <code>$default</code> може змінити поведінку після recompilation. Public inline body, <code>const val</code> і default аргументи можуть бути embedded у consumer.</li>
+<li>Додавання parameter, навіть із default value, source-compatible для Kotlin callers, але змінює JVM descriptor і ламає всі compiled consumers (<code>NoSuchMethodError</code>); залиште стару signature як <code>@Deprecated(level = HIDDEN)</code> overload, що делегує в нову (або свідомо <code>@JvmOverloads</code>). Зміна default value binary-compatible, але одразу змінює поведінку для всіх consumers, включно зі старими binaries: default обчислюється в library-методі <code>$default</code>. Embedded у consumer лише <code>const val</code> і public inline bodies (разом із їхніми defaults).</li>
 <li>Новий overload може лишити binary compatibility, але зламати source через overload-resolution ambiguity. Новий abstract interface member ламає implementers; навіть default member треба перевіряти проти Java/Kotlin targets і desugaring.</li>
 <li>Зміни variance, nullability annotations, generic bounds, value-class representation/mangling або annotations можуть змінити Kotlin source/metadata чи Java surface без очевидної source diff.</li>
 </ul>
@@ -2054,7 +2054,7 @@ fun enqueue(owner: Activity, id: EventId, raw: Any) {
 <li><strong>Як зробити Kotlin API дружнім до Java?</strong> Перевірити generated surface; застосувати named SAM, explicit overloads/bridges і точкові <code>@Jvm*</code> annotations; уникати випадкового exposure function types, mangled value-class methods та platform ambiguity.</li>
 <li><strong>Чи кожна lambda allocates?</strong> Ні. Non-capturing instance може reused, inline call може прибрати object, backend/R8/ART можуть трансформувати representation. Capturing/stored lambda часто потребує state holder; вимірюйте release build.</li>
 <li><strong>JVM bytecode — це те, що виконує Android?</strong> Не безпосередньо: class files конвертуються в DEX, а ART інтерпретує/AOT/JIT-компілює. Bytecode inspection пояснює ABI/lowering, але не гарантує final machine code/performance.</li>
-<li><strong>Binary vs source compatibility?</strong> Binary стосується старого compiled client, source — recompilation source. Новий overload може бути binary-safe, але source-ambiguous; inline/default/const semantics можуть відрізнятися між старим і recompiled caller.</li>
+<li><strong>Binary vs source compatibility?</strong> Binary стосується старого compiled client, source — recompilation source. Новий overload може бути binary-safe, але source-ambiguous; inline body і <code>const val</code> можуть відрізнятися між старим і recompiled caller, а новий default value бачать навіть старі binaries.</li>
 </ol>
 
 <h2 id="stage3-uk-followups">4 senior follow-ups з відповідями<a aria-label="Посилання на розділ: 4 senior follow ups" class="heading-anchor" href="#stage3-uk-followups">#</a></h2>
@@ -2068,7 +2068,7 @@ fun enqueue(owner: Activity, id: EventId, raw: Any) {
 <h2 id="stage3-uk-self-check">5 self-check без відповідей<a aria-label="Посилання на розділ: 5 self check without answers" class="heading-anchor" href="#stage3-uk-self-check">#</a></h2>
 <ol>
 <li>Які public generic API у вашому SDK справді producer/consumer, а які випадково invariant?</li>
-<li>Які public inline/default/const declarations уже embedded у consumer і як ви їх мігруєте?</li>
+<li>Які public inline/const declarations уже embedded у consumer, які default values змінять поведінку старих binaries, і як ви їх мігруєте?</li>
 <li>Де ваші value classes box-яться або потребують Java/reflection bridges?</li>
 <li>Які stored lambdas capture Activity, Fragment, View або великий graph довше потрібного?</li>
 <li>Чим ваша перевірка доводить binary, source, behavioral та Android runtime compatibility окремо?</li>
@@ -10215,15 +10215,15 @@ fun coldStartup() = benchmarkRule.measureRepeated(
 <p>Класичні Java-питання з банків нікуди не зникли — вони мутували в Kotlin-форму. Нижче — модернізовані версії того, що в старих списках виглядало як «equals/hashCode», «generics», «String immutable».</p>
 
 <h2 id="inline-reified">inline, noinline, crossinline, reified<a aria-label="Посилання на розділ: inline reified" class="heading-anchor" href="#inline-reified">#</a></h2>
-<p><strong>Навіщо існує.</strong> Лямбда на JVM — це об'єкт; у гарячому шляху (колекційні оператори, builder-и) алокації об'єктів-функцій коштують. <code>inline</code> вбудовує і функцію, і тіло лямбди в місце виклику — нуль алокацій, плюс відкриває два унікальні механізми: non-local return з лямбди і <code>reified</code> type parameters (тип доступний у рантаймі без передачі <code>Class</code>, бо код вбудувався з конкретним типом).</p>
+<p><strong>Навіщо існує.</strong> Лямбда на JVM — це об'єкт; у гарячому шляху (колекційні оператори, builder-и) алокації об'єктів-функцій коштують. <code>inline</code> вбудовує і функцію, і тіло лямбди в місце виклику — прибирає function object для inlined lambda-параметрів у цьому call site (<code>noinline</code>/materialized лямбди та власний код тіла все ще можуть алокувати), плюс відкриває два унікальні механізми: non-local return з лямбди і <code>reified</code> type parameters (тип доступний у рантаймі без передачі <code>Class</code>, бо код вбудувався з конкретним типом).</p>
 <p><strong>Модифікатори.</strong> <code>noinline</code> — коли лямбду треба зберегти у змінну/передати далі (об'єкт таки створюється); <code>crossinline</code> — лямбда буде викликана з іншого контексту (інша лямбда, Runnable), тому non-local return заборонений, але інлайн зберігається.</p>
-<pre><code class="language-kotlin">inline fun &lt;reified T&gt; Bundle.parcelableCompat(key: String): T? =
-    if (Build.VERSION.SDK_INT &gt;= 33) getParcelable(key, T::class.java)
-    else @Suppress("DEPRECATION") getParcelable(key) as? T</code></pre>
+<pre><code class="language-kotlin">inline fun &lt;reified T : Parcelable&gt; Bundle.parcelableCompat(key: String): T? =
+    if (Build.VERSION.SDK_INT &gt;= 34) getParcelable(key, T::class.java) // 33 is buggy (b/232589966); or BundleCompat
+    else @Suppress("DEPRECATION") getParcelable&lt;T&gt;(key)</code></pre>
 <p><strong>Trade-offs для Senior-відповіді:</strong> інлайн збільшує розмір байткоду (важливо для великих функцій), public inline у бібліотечному модулі вбудовує своє тіло у код споживачів — зміна тіла вимагає перекомпіляції споживачів, це частина ABI. Тому інлайнити варто маленькі функції з лямбда-параметрами, а не «все для швидкості».</p>
 
 <h2 id="variance">Variance: in, out, star projection<a aria-label="Посилання на розділ: Variance" class="heading-anchor" href="#variance">#</a></h2>
-<p>Формула, яку очікують: <code>out T</code> — тип лише «віддає» T (producer), тому <code>List&lt;Dog&gt;</code> можна використати як <code>List&lt;Animal&gt;</code> (коваріантність); <code>in T</code> — тип лише «приймає» T (consumer), тому <code>Comparator&lt;Animal&gt;</code> підходить там, де чекають <code>Comparator&lt;Dog&gt;</code> (контраваріантність); <code>*</code> — «якийсь невідомий тип»: читати можна як <code>Any?</code>, писати не можна нічого конкретного.</p>
+<p>Формула, яку очікують: <code>out T</code> — тип лише «віддає» T (producer), тому <code>List&lt;Dog&gt;</code> можна використати як <code>List&lt;Animal&gt;</code> (коваріантність); <code>in T</code> — тип лише «приймає» T (consumer), тому <code>Comparable&lt;Animal&gt;</code> підходить там, де чекають <code>Comparable&lt;Dog&gt;</code> (контраваріантність; а <code>Comparator</code> на JVM — інваріантний Java-тип, і <code>Comparator&lt;Animal&gt;</code> проходить у <code>sortedWith</code> лише завдяки use-site <code>Comparator&lt;in T&gt;</code>); <code>*</code> — «якийсь невідомий тип»: читати можна як <code>Any?</code>, писати не можна нічого конкретного.</p>
 <pre><code class="language-kotlin">sealed interface UiEvent
 class EventBus&lt;in T : UiEvent&gt; { fun send(event: T) {} }      // consumer
 interface DataSource&lt;out T&gt; { suspend fun load(): List&lt;T&gt; }   // producer
@@ -10238,7 +10238,7 @@ val clicksBus: EventBus&lt;ClickEvent&gt; = analytics // ok: in-варіантн
 <li><strong>Масиви у data class:</strong> <code>equals</code> для <code>Array</code> — порівняння за посиланням. Два data class з однаковим вмістом масиву нерівні → DiffUtil/StateFlow вважають їх «різними», UI мерехтить. Рішення: <code>List</code> замість <code>Array</code> або ручні equals/hashCode з <code>contentEquals</code>.</li>
 <li><strong>Mutable поля + HashSet/HashMap:</strong> об'єкт поклали в set, поле змінили — hashCode інший, об'єкт «зник» з set, хоча він там. Тому ключі і елементи set — тільки immutable.</li>
 <li><strong>data class з полями поза конструктором:</strong> у equals/hashCode/copy входять лише властивості primary constructor — поле, оголошене в тілі, ігнорується, що дивує при порівняннях.</li>
-<li><strong>copy() ламає інваріанти:</strong> приватний конструктор з валідацією обходиться публічним copy. Якщо інваріанти критичні — звичайний клас з ручним equals або фабрика.</li>
+<li><strong>copy() ламає інваріанти:</strong> до Kotlin 2.0.20 <code>copy()</code> був public навіть при private конструкторі, тож валідацію лише у фабриці можна було обійти. Тепер компілятор попереджає; позначте клас <code>@ConsistentCopyVisibility</code> (у майбутній language version це стане default/error). Валідація в <code>init</code> виконується завжди, бо <code>copy()</code> викликає конструктор.</li>
 <li><strong>Зв'язка з Compose/StateFlow:</strong> уся дедуплікація (StateFlow conflation, skip recomposition) стоїть на equals — некоректний equals означає або зайві оновлення, або пропущені.</li>
 </ul>
 
@@ -11259,9 +11259,9 @@ fun inspectUnknown(values: MutableList&lt;*&gt;) {
 <li>A regular inlined lambda can perform a non-local <code>return</code> from its enclosing function when the invocation structure permits it. <code>crossinline</code> forbids that return when the implementation may invoke the lambda indirectly, for example inside a <code>Runnable</code>. It is not a thread-safety or asynchronous-execution guarantee.</li>
 <li><code>reified T</code> is allowed only for a type parameter of an inline function or property accessor. It enables operations such as <code>is T</code>, <code>as T</code>, and <code>T::class</code> for a runtime-available type at the call site. It does not restore erased nested arguments: <code>value is List&lt;String&gt;</code> cannot prove every element is a string.</li>
 </ul>
-<pre><code class="language-kotlin">inline fun &lt;reified T : Any&gt; Bundle.requireParcelableCompat(key: String): T {
-    val value = getParcelable(key) // platform/API-version adapter omitted
-    return value as? T ?: error("$key is not ${T::class.java.name}")
+<pre><code class="language-kotlin">inline fun &lt;reified T : Parcelable&gt; Bundle.requireParcelableCompat(key: String): T {
+    val value = BundleCompat.getParcelable(this, key, T::class.java) // typed API on 34+, deprecated below
+    return value ?: error("$key is missing or not ${T::class.java.name}")
 }
 
 inline fun dispatch(
@@ -11310,7 +11310,7 @@ val boxed = identity(UserId("42"))           // generic representation can box</
 <p><strong>Binary compatibility</strong> means an already compiled consumer works with the new artifact without relinking or recompilation errors. <strong>Source compatibility</strong> means consumer source recompiles without changes. <strong>Behavioural compatibility</strong> means observable semantics remain acceptable. These sets do not coincide.</p>
 <ul>
 <li>Changing a JVM descriptor, removing or renaming a public member, or changing class/interface shape, superclass, visibility, or default-method scheme can break binary ABI.</li>
-<li>Adding a default parameter does not create a Java overload. Changing a default value may remain binary-compatible through a normal <code>$default</code> call yet change behaviour after recompilation. Public inline bodies, <code>const val</code>s, and defaults can be embedded in consumers.</li>
+<li>Adding a parameter, even one with a default value, is source-compatible for Kotlin callers but changes the JVM descriptor and breaks every compiled consumer (<code>NoSuchMethodError</code>); keep the old signature as a <code>@Deprecated(level = HIDDEN)</code> overload that delegates to the new one (or use <code>@JvmOverloads</code> deliberately). Changing a default value stays binary-compatible, but it changes behaviour for every consumer, old binaries included, because defaults are computed in the library's <code>$default</code> method. Only <code>const val</code> values and public inline bodies (including their defaults) are embedded in consumers.</li>
 <li>A new overload can preserve binary compatibility but break source through overload-resolution ambiguity. A new abstract interface member breaks implementers; even a default member must be checked against Java/Kotlin targets and desugaring.</li>
 <li>Changes to variance, nullability annotations, generic bounds, value-class representation/mangling, or annotations can alter Kotlin source/metadata or the Java surface without an obvious source diff.</li>
 </ul>
@@ -11363,7 +11363,7 @@ fun enqueue(owner: Activity, id: EventId, raw: Any) {
 <li><strong>How do you make a Kotlin API Java-friendly?</strong> Inspect generated surface; use named SAMs, explicit overloads or bridges, and targeted <code>@Jvm*</code> annotations. Avoid accidental exposure of function types, mangled value-class methods, and platform ambiguity.</li>
 <li><strong>Does every lambda allocate?</strong> No. A non-capturing instance may be reused, an inline call may remove the object, and the backend/R8/ART can transform representation. A capturing or stored lambda often needs state; measure a release build.</li>
 <li><strong>Is JVM bytecode what Android executes?</strong> Not directly. Class files become DEX, which ART interprets or AOT/JIT-compiles. Bytecode inspection explains ABI and lowering, not final machine code or guaranteed performance.</li>
-<li><strong>Binary versus source compatibility?</strong> Binary concerns an old compiled client; source concerns recompilation. A new overload can be binary-safe but source-ambiguous, while inline/default/const semantics may differ between old and recompiled callers.</li>
+<li><strong>Binary versus source compatibility?</strong> Binary concerns an old compiled client; source concerns recompilation. A new overload can be binary-safe but source-ambiguous, while inline bodies and <code>const val</code>s may differ between old and recompiled callers; a changed default value reaches even old binaries.</li>
 </ol>
 
 <h2 id="en-stage3-followups">4 senior follow-ups with answers<a aria-label="Link to section: 4 senior follow ups" class="heading-anchor" href="#en-stage3-followups">#</a></h2>
@@ -11377,7 +11377,7 @@ fun enqueue(owner: Activity, id: EventId, raw: Any) {
 <h2 id="en-stage3-self-check">5 self-check questions without answers<a aria-label="Link to section: 5 self check questions without answers" class="heading-anchor" href="#en-stage3-self-check">#</a></h2>
 <ol>
 <li>Which public generic APIs in your SDK are true producers or consumers, and which are accidentally invariant?</li>
-<li>Which public inline, default, or constant declarations are embedded in consumers, and how will you migrate them?</li>
+<li>Which public inline or constant declarations are embedded in consumers, which default values would change behaviour for old binaries, and how will you migrate them?</li>
 <li>Where do your value classes box or require Java/reflection bridges?</li>
 <li>Which stored lambdas capture an Activity, Fragment, View, or large graph longer than necessary?</li>
 <li>How does each test separately prove binary, source, behavioural, and Android runtime compatibility?</li>
@@ -16443,15 +16443,15 @@ The minimization principle: prefer permissionless APIs first (Photo Picker, SAF)
 <p>The classic Java question banks did not disappear — they mutated into Kotlin form. Below are modernized versions of what old lists called "equals/hashCode", "generics", "String immutability".</p>
 
 <h2 id="en-inline-reified">inline, noinline, crossinline, reified<a aria-label="Link to section: inline reified" class="heading-anchor" href="#en-inline-reified">#</a></h2>
-<p><strong>Why it exists.</strong> A lambda on the JVM is an object; in hot paths (collection operators, builders) function-object allocations cost. <code>inline</code> embeds both the function and the lambda body at the call site — zero allocations — and unlocks two unique mechanisms: non-local return from the lambda, and <code>reified</code> type parameters (the type is available at runtime without passing a <code>Class</code>, because the code was inlined with a concrete type).</p>
+<p><strong>Why it exists.</strong> A lambda on the JVM is an object; in hot paths (collection operators, builders) function-object allocations cost. <code>inline</code> embeds both the function and the lambda body at the call site — it removes the function object for inlined lambda parameters at that call site (<code>noinline</code> or materialised lambdas and the body's own code can still allocate) — and unlocks two unique mechanisms: non-local return from the lambda, and <code>reified</code> type parameters (the type is available at runtime without passing a <code>Class</code>, because the code was inlined with a concrete type).</p>
 <p><strong>Modifiers.</strong> <code>noinline</code> — when the lambda must be stored/passed on (an object is created after all); <code>crossinline</code> — the lambda will be invoked from another context (another lambda, a Runnable), so non-local return is banned but inlining is kept.</p>
-<pre><code class="language-kotlin">inline fun &lt;reified T&gt; Bundle.parcelableCompat(key: String): T? =
-    if (Build.VERSION.SDK_INT &gt;= 33) getParcelable(key, T::class.java)
-    else @Suppress("DEPRECATION") getParcelable(key) as? T</code></pre>
+<pre><code class="language-kotlin">inline fun &lt;reified T : Parcelable&gt; Bundle.parcelableCompat(key: String): T? =
+    if (Build.VERSION.SDK_INT &gt;= 34) getParcelable(key, T::class.java) // 33 is buggy (b/232589966); or BundleCompat
+    else @Suppress("DEPRECATION") getParcelable&lt;T&gt;(key)</code></pre>
 <p><strong>Trade-offs for a Senior answer:</strong> inlining grows bytecode (matters for large functions), and a public inline function in a library module embeds its body into consumers — changing the body requires recompiling consumers; it is part of the ABI. Inline small functions with lambda parameters, not "everything for speed".</p>
 
 <h2 id="en-variance">Variance: in, out, star projection<a aria-label="Link to section: Variance" class="heading-anchor" href="#en-variance">#</a></h2>
-<p>The expected formula: <code>out T</code> — the type only "produces" T, so <code>List&lt;Dog&gt;</code> can be used as <code>List&lt;Animal&gt;</code> (covariance); <code>in T</code> — the type only "consumes" T, so <code>Comparator&lt;Animal&gt;</code> fits where <code>Comparator&lt;Dog&gt;</code> is expected (contravariance); <code>*</code> — "some unknown type": read as <code>Any?</code>, write nothing concrete.</p>
+<p>The expected formula: <code>out T</code> — the type only "produces" T, so <code>List&lt;Dog&gt;</code> can be used as <code>List&lt;Animal&gt;</code> (covariance); <code>in T</code> — the type only "consumes" T, so <code>Comparable&lt;Animal&gt;</code> fits where <code>Comparable&lt;Dog&gt;</code> is expected (contravariance; <code>Comparator</code> on the JVM is an invariant Java type, and <code>Comparator&lt;Animal&gt;</code> is accepted by <code>sortedWith</code> only thanks to the use-site <code>Comparator&lt;in T&gt;</code>); <code>*</code> — "some unknown type": read as <code>Any?</code>, write nothing concrete.</p>
 <pre><code class="language-kotlin">sealed interface UiEvent
 class EventBus&lt;in T : UiEvent&gt; { fun send(event: T) {} }      // consumer
 interface DataSource&lt;out T&gt; { suspend fun load(): List&lt;T&gt; }   // producer
@@ -16465,7 +16465,7 @@ val clicksBus: EventBus&lt;ClickEvent&gt; = analytics // ok: in-variance</code><
 <li><strong>Arrays in data classes:</strong> <code>Array.equals</code> is referential. Two data classes with identical array content are unequal → DiffUtil/StateFlow treat them as "different", the UI flickers. Fix: <code>List</code> instead of <code>Array</code>, or manual equals/hashCode with <code>contentEquals</code>.</li>
 <li><strong>Mutable fields + HashSet/HashMap:</strong> put an object in a set, mutate a field — the hashCode changes and the object "vanishes" from the set while still being in it. Keys and set elements must be immutable.</li>
 <li><strong>Fields outside the constructor:</strong> equals/hashCode/copy include only primary-constructor properties — a property declared in the body is ignored, which surprises in comparisons.</li>
-<li><strong>copy() breaking invariants:</strong> a private constructor with validation is bypassed by the public copy. If invariants are critical — a regular class with manual equals, or a factory.</li>
+<li><strong>copy() breaking invariants:</strong> before Kotlin 2.0.20, <code>copy()</code> was public even with a private constructor, so factory-only validation could be bypassed. The compiler now warns; annotate the class with <code>@ConsistentCopyVisibility</code> (this becomes the default/an error in a future language version). Validation in <code>init</code> always runs, because <code>copy()</code> calls the constructor.</li>
 <li><strong>The Compose/StateFlow link:</strong> all deduplication (StateFlow conflation, recomposition skipping) stands on equals — a broken equals means either redundant updates or missed ones.</li>
 </ul>
 
