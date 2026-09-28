@@ -25,6 +25,16 @@ A bilingual (Ukrainian/English) HTML guide for structured Senior Android intervi
 
 `index.html` started as an exact copy of the baseline and has since been expanded stage by stage (Stages 1–32).
 
+## Guide structure
+
+Each language view (UK, then EN) contains:
+
+1. An introduction.
+2. Stages 1–32, one topic per stage. Topic material lives only in its stage, including a "Практичні нотатки" / "Practice notes" subsection where one exists.
+3. Cross-cutting sections after Stage 32: interview answer patterns (UK), the senior edge-case bank, senior in a team, and preparation (with the final checklist and advice).
+
+The sidebar TOC mirrors the major sections. When a section is added or removed, update its TOC entry too; `scripts/validate.py` fails on dangling links.
+
 ## Viewing locally
 
 Open `index.html` directly in a browser. No build step or external service is required.

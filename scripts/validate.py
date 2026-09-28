@@ -86,6 +86,12 @@ def validate_index_structure() -> list[str]:
     if duplicate_ids:
         errors.append(f"index.html: duplicate ids: {', '.join(duplicate_ids)}")
 
+    for tag in ("details", "div"):
+        opened = len(re.findall(rf"<{tag}[\s>]", content))
+        closed = content.count(f"</{tag}>")
+        if opened != closed:
+            errors.append(f"index.html: unbalanced <{tag}> tags ({opened} opened, {closed} closed)")
+
     id_set = set(ids)
     unresolved = sorted({
         target
