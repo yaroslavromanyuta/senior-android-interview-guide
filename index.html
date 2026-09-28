@@ -1241,7 +1241,7 @@ class AppDatabaseProvider @Inject constructor(
 <p>Типові помилки: передавати Activity context у singleton; показувати Dialog через Application context.</p>
 <p><strong>Коли Application context не підходить?</strong><br/>
 Для всього UI-bound: показ діалогів, inflate з темою Activity, startActivity без NEW_TASK, доступ до window. Application context — для довгоживучих залежностей (DB, network), які не повинні тримати Activity.</p>
-<p><strong>Intent / PendingIntent / exported — нюанси поза етапом 4:</strong> implicit Intent може бути перехоплений іншим застосунком, тому для внутрішньої навігації — завжди explicit. PendingIntent дозволяє системі, launcher чи AlarmManager виконати Intent пізніше: notification actions, alarms, widgets; mutability — див. <a href="#edge-case-pendingintent">Edge Case №13</a>. Exported component може викликати будь-який застосунок (ін'єкція сміттєвих даних, обхід флоу, дії від вашого імені): <code>android:exported="false"</code> за замовчуванням, permissions для IPC, валідація всього input (deep links — <a href="#edge-case-deeplinks">Edge Case №14</a>).</p>
+<p><strong>Intent / PendingIntent / exported — нюанси поза етапом 4:</strong> implicit Intent може бути перехоплений іншим застосунком, тому для внутрішньої навігації — завжди explicit. PendingIntent дозволяє системі, launcher чи AlarmManager виконати Intent пізніше: notification actions, alarms, widgets; mutability — див. <a href="#edge-case-pendingintent">edge case «PendingIntent: mutability як вектор атаки»</a>. Exported component може викликати будь-який застосунок (ін'єкція сміттєвих даних, обхід флоу, дії від вашого імені): <code>android:exported="false"</code> за замовчуванням, permissions для IPC, валідація всього input (deep links — <a href="#edge-case-deeplinks">edge case «Deep links»</a>).</p>
 <hr/>
 <h2 id="configuration-changes-savedinstancestate-process-death">Configuration changes, SavedInstanceState, process death<a aria-label="Посилання на розділ: Configuration changes, SavedInstanceState, process death" class="heading-anchor" href="#configuration-changes-savedinstancestate-process-death">#</a></h2>
 <p>Рівні state за критичністю: ephemeral UI state (scroll, tab, text input) → screen UI state (content, loading/error) → domain/business data (orders, profile, cart) → critical persisted state (payment flow state, draft, auth tokens) у DB/DataStore/server. Приклад: ViewModel відновлює екран з малого ключа в <code>SavedStateHandle</code> і repository.</p>
@@ -1291,7 +1291,7 @@ class SyncOrdersWorker @AssistedInject constructor(
 }
 </code></pre>
 <p><strong>Що таке Doze mode?</strong><br/>
-Мережа, jobs і alarms відкладаються до maintenance windows. Пробивають його high-priority FCM і <code>setExactAndAllowWhileIdle</code>. Тому periodic work ≠ точний розклад — див. <a href="#edge-case-workmanager-periodic">Edge Case №7</a>.</p>
+Мережа, jobs і alarms відкладаються до maintenance windows. Пробивають його high-priority FCM і <code>setExactAndAllowWhileIdle</code>. Тому periodic work ≠ точний розклад — див. <a href="#edge-case-workmanager-periodic">edge case «WorkManager: periodic work»</a>.</p>
 <hr/>
 <h2 id="permissions">Permissions<a aria-label="Посилання на розділ: Permissions" class="heading-anchor" href="#permissions">#</a></h2>
 <p>Категорії: install-time permissions, runtime permissions, special permissions і permissions з one-time/approximate behavior. Permission — це UX/security contract: запит just-in-time у контексті конкретної user action, fallback при deny/permanent deny, перевірка перед кожною sensitive operation.</p>
@@ -6231,7 +6231,7 @@ suspend fun loadDashboard(): DashboardUiModel = supervisorScope {
     }
 }
 </code></pre>
-<p><strong>Чому cancellation cooperative?</strong> Скасування — це прапорець стану Job, який перевіряється у suspension points. Примусово вбити потік безпечно неможливо, тож обчислювальний цикл без suspension/перевірок не зупиниться — додавайте <code>ensureActive()</code>/<code>yield()</code>. CancellationException — службовий сигнал, не помилка (див. також Edge Case №15).</p>
+<p><strong>Чому cancellation cooperative?</strong> Скасування — це прапорець стану Job, який перевіряється у suspension points. Примусово вбити потік безпечно неможливо, тож обчислювальний цикл без suspension/перевірок не зупиниться — додавайте <code>ensureActive()</code>/<code>yield()</code>. CancellationException — службовий сигнал, не помилка (див. також <a href="#kotlin-coroutines-failures-supervision-testing">Kotlin Coroutines: failures, supervision, cleanup</a>).</p>
 <hr/>
 <h2 id="exception-handling-in-coroutines">Exception handling in coroutines<a aria-label="Посилання на розділ: Exception handling in coroutines" class="heading-anchor" href="#exception-handling-in-coroutines">#</a></h2>
 <p>Рівні error handling, які має пояснити senior:</p>
@@ -6354,7 +6354,7 @@ fun LoginRoute(
     )
 }
 </code></pre>
-<p><strong>Симптом <code>replay = 0</code>:</strong> емісія за відсутності підписника губиться назавжди — класична причина «кнопка не спрацювала» під час recreation. Див. <a href="#edge-case-sharedflow-overflow">Edge Case №4</a>.</p>
+<p><strong>Симптом <code>replay = 0</code>:</strong> емісія за відсутності підписника губиться назавжди — класична причина «кнопка не спрацювала» під час recreation. Див. <a href="#edge-case-sharedflow-overflow">edge case «SharedFlow: replay, buffer і втрачені події»</a>.</p>
 <hr/>
 <h2 id="callbackflow-channelflow">callbackFlow / channelFlow<a aria-label="Посилання на розділ: callbackFlow / channelFlow" class="heading-anchor" href="#callbackflow-channelflow">#</a></h2>
 <p>Типові callback-джерела для <code>callbackFlow</code>: location updates, Firebase listeners, Bluetooth callbacks, connectivity callbacks. Android-приклад connectivity:</p>
@@ -6401,7 +6401,7 @@ fun LoginRoute(
 <ul>
 <li>Анти-патерн: <code>repository.loadProductBlocking(productId)</code> прямо в body composable — виконується на кожній recomposition і блокує UI; краще route collect-ить <code>viewModel.uiState</code> через <code>collectAsStateWithLifecycle()</code> і передає state + callbacks (<code>onRetry = viewModel::onRetryClicked</code>) у screen.</li>
 <li>Типові помилки: створювати expensive objects без <code>remember</code>; вважати, що recomposition — це завжди full redraw.</li>
-<li>Джерела зайвих recompositions: новий unstable instance на кожну композицію (зі strong skipping, default з Kotlin 2.0.20, unstable params порівнюються за <code>===</code>, а lambdas memoized автоматично), хибний stability contract, читання state на зависокому рівні дерева, відсутні keys у <code>LazyColumn</code>, похідні обчислення без <code>derivedStateOf</code>. Stable/unstable і ліки — Edge Case №5.</li>
+<li>Джерела зайвих recompositions: новий unstable instance на кожну композицію (зі strong skipping, default з Kotlin 2.0.20, unstable params порівнюються за <code>===</code>, а lambdas memoized автоматично), хибний stability contract, читання state на зависокому рівні дерева, відсутні keys у <code>LazyColumn</code>, похідні обчислення без <code>derivedStateOf</code>. Stable/unstable і ліки — <a href="#jetpack-compose-performance">Jetpack Compose performance</a>.</li>
 <li>Debug: Layout Inspector (recomposition counts), compose compiler metrics/reports (звіт стабільності класів), recomposition highlighter у debug-збірці, system tracing для зв'язку з jank.</li>
 </ul>
 <hr/>
@@ -6583,7 +6583,7 @@ DTO повторює форму API: nullable-поля, snake_case, версію
 <p><strong>Як Hilt працює у multi-module project?</strong><br/>
 Модулі декларують свої @Module/@InstallIn у себе; Hilt Gradle plugin (aggregating task, default з 2.40) агрегує всі Hilt modules та entry points з транзитивних залежностей app, включно з <code>implementation</code>, і генерує компоненти на рівні app — <code>api</code> для цього не потрібен. Фічам не треба знати одна про одну — лише app бачить усе.</p>
 <p><strong>Як уникнути core dumping ground?</strong><br/>
-Правила: core:common без бізнес-логіки, тематичні core:* замість одного «common», бюджет на розмір/залежності, регулярний розпил, гейт на code review «чому це не у фічі?». Деталі — System Design сценарій №9.</p>
+Правила: core:common без бізнес-логіки, тематичні core:* замість одного «common», бюджет на розмір/залежності, регулярний розпил, гейт на code review «чому це не у фічі?». Деталі — System Design сценарій <a href="#sd-multimodule-app">«Великий мультимодульний застосунок»</a>.</p>
 <hr/>
 <h2 id="error-handling-strategy">Error handling strategy<a aria-label="Посилання на розділ: Error handling strategy" class="heading-anchor" href="#error-handling-strategy">#</a></h2>
 <p>Errors класифікують за рівнями: network/transport, API/protocol, domain/business, validation, unexpected (мережева taxonomy — у Stage 18). Data layer на boundary мапить raw exceptions/HTTP codes у typed domain errors, ViewModel — domain errors у UI state/message/action: full-screen error, inline validation, snackbar або silent retry. Raw <code>Throwable</code> до UI не передається — так error behavior consistent і тестований.</p>
@@ -7508,7 +7508,7 @@ HTTP-кеш — транспортний рівень (Cache-Control/ETag), Room
 <p><strong>Детальніше:</strong> <a href="#build-release-delivery-engineering">Build, release and delivery engineering</a> (Gradle, caches, KSP/KAPT, R8, AAB, signing, CI/CD, staged rollout), <a href="#clean-architecture-android-modularization">Clean Architecture та Android modularization</a> (граф app/feature/core, api/impl, navigation contracts), <a href="#senior-android-reliability-observability">Senior Android reliability and observability</a> (flags, observability, incidents), <a href="#system-design-auth-analytics-feature-flags">System design: auth, analytics and feature flags</a>. Нижче — лише деталі, яких немає в етапах.</p>
 
 <h2 id="r8-minification">R8: shrinking, obfuscation, optimization, mapping<a aria-label="Посилання на розділ: R8" class="heading-anchor" href="#r8-minification">#</a></h2>
-<p>Optimization у R8 — це, зокрема, інлайнінг, видалення null-checks, class merging. Ефективні правила збираються з вашого <code>proguard-rules.pro</code>, consumer rules бібліотек і дефолтів AGP — «звідки це keep-правило» дебажать через <code>-printconfiguration</code>. <code>mapping.txt</code> кожного релізу завантажуйте в Play Console + Crashlytics; замість <code>-dontobfuscate</code>/<code>-dontoptimize</code> «бо щось падало» — точкові keep-правила. Деталі типових поломок — в edge case №12.</p>
+<p>Optimization у R8 — це, зокрема, інлайнінг, видалення null-checks, class merging. Ефективні правила збираються з вашого <code>proguard-rules.pro</code>, consumer rules бібліотек і дефолтів AGP — «звідки це keep-правило» дебажать через <code>-printconfiguration</code>. <code>mapping.txt</code> кожного релізу завантажуйте в Play Console + Crashlytics; замість <code>-dontobfuscate</code>/<code>-dontoptimize</code> «бо щось падало» — точкові keep-правила. Деталі типових поломок — в edge case <a href="#edge-case-r8-keep-rules">«R8: рефлексія, серіалізація»</a>.</p>
 
 <h2 id="signing-release">Signing, versioning, staged rollout<a aria-label="Посилання на розділ: Signing release" class="heading-anchor" href="#signing-release">#</a></h2>
 <ul>
@@ -7563,7 +7563,7 @@ Halt rollout (безкоштовно і зворотно) → Crashlytics: то�
 
 <h2 id="sd-news-feed">4. Стрічка новин з Paging 3 і кешем<a aria-label="Посилання на розділ: News feed" class="heading-anchor" href="#sd-news-feed">#</a></h2>
 <p><strong>Продуктові рішення поверх Room + RemoteMediator:</strong> на REFRESH видаляємо лише рядки й remote keys цього feed/query key (і акаунта) — чистити всю таблицю можна, тільки якщо вона тримає лише цей один feed; «нові пости вище» — банер «N нових», а не раптовий зсув скролу; ключі елементів стабільні (id), щоб DiffUtil/LazyColumn не мерехтіли. Персоналізована стрічка не кешується довго — узгодити з продуктом «вік» допустимого контенту.</p>
-<p><strong>Пастки:</strong> одна error-поведінка на всі LoadState (edge case №9); втрата позиції скролу після process death (зберігати ключ якоря); зображення без розмірів з бекенду → layout стрибає (placeholder aspect ratio в контракті API).</p>
+<p><strong>Пастки:</strong> одна error-поведінка на всі LoadState (див. <a href="#offline-first-architecture-paging-3">Offline-first architecture і Paging 3</a>); втрата позиції скролу після process death (зберігати ключ якоря); зображення без розмірів з бекенду → layout стрибає (placeholder aspect ratio в контракті API).</p>
 
 <h2 id="sd-payment-flow">5. Платіжний флоу<a aria-label="Посилання на розділ: Payment flow" class="heading-anchor" href="#sd-payment-flow">#</a></h2>
 <p><strong>Клієнтська state machine:</strong> idle → validating → processing → requires_3ds → success/failed/unknown; джерело правди — сервер. Сирі карткові дані не потрапляють у застосунок: токенізація через SDK провайдера (Adyen/Stripe).</p>
