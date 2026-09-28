@@ -4169,8 +4169,8 @@ fun Filters(initial: Set&lt;String&gt;) {
 // Hidden mutation: State's value reference never changes.
 val rows = remember { mutableStateOf(mutableListOf&lt;Row&gt;()) }
 rows.value.add(newRow) // MutableList mutation is not observed by mutableStateOf.
-// Prefer SnapshotStateList, or replace an immutable value:
-// rows.value = rows.value + newRow</code></pre>
+// Prefer mutableStateListOf&lt;Row&gt;() + add, or hold an immutable List and replace it:
+// val rows = remember { mutableStateOf(listOf&lt;Row&gt;()) }; rows.value = rows.value + newRow</code></pre>
 <p><code>remember { mutableStateOf(x) }</code> both retains the state holder while the call identity remains and makes assignments observable. A plain local <code>var</code> resets on execution; a remembered ordinary mutable object survives but does not notify Compose. <code>mutableStateListOf</code>/<code>mutableStateMapOf</code> observe their collection operations, not hidden mutation inside arbitrary element objects. Prefer immutable element replacement or observable fields with explicit ownership.</p>
 <p><code>remember(key1, key2) { build(...) }</code> recreates cached value when a key changes. Missing a dependency produces a stale cache; using a volatile key destroys retention. The calculation should not perform external effects.</p>
 
@@ -7404,7 +7404,7 @@ fun ProductRoute(viewModel: ProductViewModel) {
 <ul>
 <li>Робити side effects у composable body.</li>
 <li>Створювати expensive objects без <code>remember</code>.</li>
-<li>Передавати unstable lambdas/models і викликати зайві recompositions.</li>
+<li>Створювати новий unstable instance на кожній recomposition (зі strong skipping unstable params порівнюються за <code>===</code>) або давати хибний stability contract.</li>
 <li>Mutate mutable object замість immutable state update.</li>
 <li>Думати, що recomposition — це завжди full redraw.</li>
 </ul>
@@ -7416,9 +7416,9 @@ fun ProductRoute(viewModel: ProductViewModel) {
 <p><strong>Чому composable має бути side-effect free?</strong><br/>
 Композиція може виконуватись довільну кількість разів, у будь-якому порядку і скасовуватись. Side effect у body спрацює непередбачувано часто. Для ефектів — LaunchedEffect/DisposableEffect/SideEffect з явними keys.</p>
 <p><strong>Що може спричинити зайві recompositions?</strong><br/>
-Нестабільні параметри (List, var, чужі модулі), нові лямбди на кожну композицію, читання state на зависокому рівні дерева, відсутні keys у LazyColumn, похідні обчислення без derivedStateOf.</p>
+Новий unstable instance на кожну композицію (зі strong skipping, default з Kotlin 2.0.20, unstable params порівнюються за <code>===</code>, а lambdas memoized автоматично), хибний stability contract, читання state на зависокому рівні дерева, відсутні keys у LazyColumn, похідні обчислення без derivedStateOf.</p>
 <p><strong>Що означає stable/unstable type?</strong><br/>
-Stable — компілятор довіряє equals і незмінності публічних властивостей, тож skip можливий. Unstable — Compose перестраховується і рекомпозить завжди. Деталі і ліки — Edge Case №5.</p>
+Stable — equals консистентний і кожна зміна public property observable для Compose (напр. через <code>MutableState</code>); Immutable — public state не змінюється взагалі. Stable params порівнюються за equals. Unstable — зі strong skipping (default з Kotlin 2.0.20) composable все одно skippable, але unstable args порівнюються за instance identity (<code>===</code>); до 2.0.20 такий composable рекомпозився завжди. Деталі і ліки — Edge Case №5.</p>
 <p><strong>Як debug-ити recomposition?</strong><br/>
 Layout Inspector з recomposition counts, compose compiler metrics/reports (звіт стабільності класів), recomposition highlighter у debug-збірці, system tracing для зв'язку з jank.</p>
 <hr/>
@@ -7537,11 +7537,15 @@ fun CheckoutRoute(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    LaunchedEffect(viewModel) {
-        viewModel.events.collect { event -&gt;
-            when (event) {
-                CheckoutEvent.NavigateToSuccess -&gt; navController.navigate("success")
-                is CheckoutEvent.ShowError -&gt; snackbarHostState.showSnackbar(event.message)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    // SharedFlow/Channel не гарантує exactly-once delivery; критичне (успіх checkout) краще моделювати як UI state з явним consume.
+    LaunchedEffect(viewModel, lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            viewModel.events.collect { event -&gt;
+                when (event) {
+                    CheckoutEvent.NavigateToSuccess -&gt; navController.navigate(Success) // @Serializable object Success
+                    is CheckoutEvent.ShowError -&gt; snackbarHostState.showSnackbar(event.message)
+                }
             }
         }
     }
@@ -7603,7 +7607,7 @@ rememberCoroutineScope — scope для запуску корутин з кол�
 <h3 id="коротка-відповідь-24">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-24">#</a></h3>
 <p><code>derivedStateOf</code> створює state, похідний від іншого state, і може зменшити зайві recompositions, якщо derived value змінюється рідше, ніж source state.</p>
 <h3 id="senior-level-пояснення-34">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-34">#</a></h3>
-<p><code>derivedStateOf</code> не потрібен для кожного computed value. Він має overhead і корисний тоді, коли source змінюється часто, а derived result — рідко або expensive для recalculation. Типовий приклад — показати кнопку “scroll to top”, коли list index &gt; 0.</p>
+<p><code>derivedStateOf</code> не потрібен для кожного computed value. Він має overhead і корисний тоді, коли inputs змінюються частіше, ніж derived result (обмежує invalidation). Це не memoization: для expensive calculation — <code>remember(keys)</code> або обчислення поза composition. Типовий приклад — показати кнопку “scroll to top”, коли list index &gt; 0.</p>
 <h3 id="production-приклад-22">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-22">#</a></h3>
 <pre><code class="language-kotlin">@Composable
 fun ProductList(products: List&lt;ProductUiModel&gt;) {
@@ -13234,7 +13238,7 @@ fun Filters(initial: Set&lt;String&gt;) {
 
 val rows = remember { mutableStateOf(mutableListOf&lt;Row&gt;()) }
 rows.value.add(newRow) // Hidden mutation: State's value reference did not change.
-// Prefer SnapshotStateList, or rows.value = rows.value + newRow.</code></pre>
+// Prefer mutableStateListOf&lt;Row&gt;() + add, or mutableStateOf(listOf&lt;Row&gt;()) with rows.value = rows.value + newRow.</code></pre>
 <p><code>remember { mutableStateOf(x) }</code> retains the state holder while call identity remains and makes assignments observable. A plain local <code>var</code> resets on execution; a remembered ordinary mutable object survives but sends no notification. <code>mutableStateListOf</code>/<code>mutableStateMapOf</code> observe collection operations, not hidden mutation inside arbitrary element objects. Prefer immutable element replacement or explicitly owned observable fields.</p>
 <p><code>remember(key1, key2) { build(...) }</code> recreates the cached value when a key changes. A missing dependency creates a stale cache; a volatile key destroys retention. Its calculation should not perform external effects.</p>
 
