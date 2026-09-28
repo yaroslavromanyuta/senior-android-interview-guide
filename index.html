@@ -958,16 +958,12 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <li><a data-target="en-mvvm-and-mvi" href="#en-mvvm-and-mvi">MVVM and MVI</a></li>
 <li><a data-target="en-clean-architecture" href="#en-clean-architecture">Clean Architecture</a></li>
 <li><a data-target="en-repository-pattern-and-source-of-truth" href="#en-repository-pattern-and-source-of-truth">Repository pattern and source of truth</a></li>
-<li><a data-target="en-ui-state-modeling" href="#en-ui-state-modeling">UI state modeling</a></li>
-<li><a data-target="en-modularization" href="#en-modularization">Modularization</a></li>
 </ol>
 </li>
 <li class="toc-major">
 <a data-target="en-dependency-injection" href="#en-dependency-injection">Dependency Injection</a>
 <ol class="toc-children">
-<li><a data-target="en-manual-di-service-locator-dagger-and-hilt" href="#en-manual-di-service-locator-dagger-and-hilt">Manual DI, Service Locator, Dagger, and Hilt</a></li>
 <li><a data-target="en-scopes" href="#en-scopes">Scopes</a></li>
-<li><a data-target="en-testing-with-di" href="#en-testing-with-di">Testing with DI</a></li>
 </ol>
 </li>
 <li class="toc-major">
@@ -6480,21 +6476,9 @@ fun LifecycleAnalytics(
 <h2 id="jetpack-compose-підсумок">Jetpack Compose — підсумок<a aria-label="Посилання на розділ: Jetpack Compose — підсумок" class="heading-anchor" href="#jetpack-compose-підсумок">#</a></h2>
 <p>На Senior interview Compose перевіряють не як набір API, а як mental model: declarative UI, state ownership, recomposition, side effects, stability і performance. Сильна відповідь показує, що ти не переносиш imperative View-підхід у Compose, а проектуєш UI через state, events і predictable rendering.</p>
 </div></details><details class="major-section" data-key="architecture" data-title="Architecture" id="architecture" open=""><summary class="major-summary"><span class="major-title">Architecture</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<p><strong>Детальніше:</strong> <a href="#android-ui-architecture-state-modeling">Android UI architecture та state modeling: MVVM, MVI, UDF</a>, <a href="#clean-architecture-android-modularization">Clean Architecture та Android modularization</a>, <a href="#offline-first-architecture-paging-3">Offline-first architecture і Paging 3</a>, <a href="#android-networking-fundamentals">Android networking fundamentals</a> (error taxonomy). Нижче — лише доповнення, яких немає в цих етапах.</p>
 <h2 id="mvvm">MVVM<a aria-label="Посилання на розділ: MVVM" class="heading-anchor" href="#mvvm">#</a></h2>
-<h3 id="питання-37">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-37">#</a></h3>
-<p>Що таке MVVM в Android?</p>
-<h3 id="коротка-відповідь-27">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-27">#</a></h3>
-<p>MVVM розділяє UI, presentation state і business/data logic. View/Compose screen рендерить state і відправляє user events. ViewModel готує UI state, координує use cases/repositories і переживає configuration changes. Model/data layer відповідає за domain/data.</p>
-<h3 id="senior-level-пояснення-36">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-36">#</a></h3>
-<p>MVVM сам по собі не гарантує хорошу архітектуру. Поганий MVVM — це “Massive ViewModel”, де є networking, mapping, validation, analytics, navigation, retry, formatting і бізнес-правила. Хороший MVVM має чіткі boundaries:</p>
-<ul>
-<li>UI layer: rendering + user events;</li>
-<li>ViewModel: state holder + orchestration;</li>
-<li>Domain/use cases: business rules;</li>
-<li>Data/repository: data access, caching, remote/local coordination.</li>
-</ul>
-<p>ViewModel не має знати DTO, Retrofit response, Room entity details. Вона має працювати з domain models або UI models.</p>
-<h3 id="production-приклад-24">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-24">#</a></h3>
+<p>Анти-патерн «Massive ViewModel»: networking, mapping, validation, analytics, navigation, retry, formatting і бізнес-правила в одному класі. ViewModel не має знати DTO, Retrofit response чи деталі Room entity — лише domain або UI models; вона не викликає Retrofit API напряму і не повертає mutable state, а UI не вирішує business rules.</p>
 <pre><code class="language-kotlin">@HiltViewModel
 class MealsViewModel @Inject constructor(
     private val observeMeals: ObserveMealsUseCase,
@@ -6513,35 +6497,9 @@ class MealsViewModel @Inject constructor(
     }
 }
 </code></pre>
-<h3 id="типові-помилки-37">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-37">#</a></h3>
-<ul>
-<li>ViewModel напряму викликає Retrofit API.</li>
-<li>ViewModel повертає mutable state.</li>
-<li>UI сам вирішує business rules.</li>
-<li>Repository повертає DTO прямо в UI.</li>
-<li>Немає єдиного UI state, state розкиданий по багатьох LiveData/Flow без semantics.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-37">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-37">#</a></h3>
-<blockquote>
-<p>MVVM для мене — це не просто ViewModel у проекті. Це separation of concerns: UI рендерить immutable state, ViewModel координує use cases і expose-ить state/events, domain містить business logic, data layer приховує джерела даних. Я слідкую, щоб ViewModel не стала god object.</p>
-</blockquote>
 <hr/>
 <h2 id="mvi-and-unidirectional-data-flow">MVI and unidirectional data flow<a aria-label="Посилання на розділ: MVI and unidirectional data flow" class="heading-anchor" href="#mvi-and-unidirectional-data-flow">#</a></h2>
-<h3 id="питання-38">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-38">#</a></h3>
-<p>Чим MVI відрізняється від MVVM?</p>
-<h3 id="коротка-відповідь-28">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-28">#</a></h3>
-<p>MVI сильніше формалізує unidirectional data flow: user intents/events -&gt; reducer/processor -&gt; new immutable state -&gt; UI render. MVVM може бути більш гнучким і менш строгим.</p>
-<h3 id="senior-level-пояснення-37">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-37">#</a></h3>
-<p>MVI корисний для складних екранів із багатьма states/events, коли треба predictable state transitions і easy debugging. Але він може створити boilerplate і зайву абстракцію для простих екранів.</p>
-<p>Senior має не бути dogmatic. Важливо пояснити, коли MVI доречний:</p>
-<ul>
-<li>складні форми;</li>
-<li>checkout/payment;</li>
-<li>realtime screens;</li>
-<li>багато async sources;</li>
-<li>потреба replay/debug state transitions.</li>
-</ul>
-<h3 id="production-приклад-25">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-25">#</a></h3>
+<p>Строгий MVI доречний для складних форм, checkout/payment, realtime screens, екранів із багатьма async sources або коли потрібен replay/debug state transitions; вибір pattern також залежить від team maturity і maintainability. Типова помилка — називати «MVI» будь-який ViewModel зі StateFlow. Мінімальний intent → reducer приклад:</p>
 <pre><code class="language-kotlin">sealed interface CartIntent {
     data class QuantityChanged(val itemId: String, val quantity: Int) : CartIntent
     data object CheckoutClicked : CartIntent
@@ -6566,42 +6524,9 @@ fun reduce(state: CartState, intent: CartIntent): CartState {
     }
 }
 </code></pre>
-<h3 id="типові-помилки-38">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-38">#</a></h3>
-<ul>
-<li>Назвати будь-який ViewModel з StateFlow “MVI”.</li>
-<li>Створити boilerplate без benefit.</li>
-<li>Пхати side effects у reducer.</li>
-<li>Змішувати persistent state і one-shot events.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-38">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-38">#</a></h3>
-<blockquote>
-<p>Я бачу MVI як більш строгий UDF pattern. Він корисний, коли складність state transitions висока. Але для простих CRUD екранів я не став би нав’язувати важкий MVI boilerplate. Senior-level рішення — вибрати pattern під complexity, team maturity і maintainability.</p>
-</blockquote>
 <hr/>
 <h2 id="clean-architecture-trade-offs">Clean Architecture trade-offs<a aria-label="Посилання на розділ: Clean Architecture trade-offs" class="heading-anchor" href="#clean-architecture-trade-offs">#</a></h2>
-<h3 id="питання-39">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-39">#</a></h3>
-<p>Що таке Clean Architecture і які її trade-offs в Android?</p>
-<h3 id="просте-пояснення-11">Просте пояснення<a aria-label="Посилання на розділ: Просте пояснення" class="heading-anchor" href="#просте-пояснення-11">#</a></h3>
-<p>Clean Architecture розділяє код на layers із dependency direction всередину: UI залежить від domain, domain не залежить від Android/framework/data details, data реалізує interfaces і працює з remote/local джерелами.</p>
-<h3 id="senior-level-пояснення-38">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-38">#</a></h3>
-<p>Clean Architecture дає:</p>
-<ul>
-<li>testability;</li>
-<li>separation of concerns;</li>
-<li>незалежність domain від Android framework;</li>
-<li>можливість міняти data sources;</li>
-<li>кращу масштабованість команди.</li>
-</ul>
-<p>Але має cost:</p>
-<ul>
-<li>більше файлів/classes;</li>
-<li>mapping між DTO/entity/domain/UI;</li>
-<li>boilerplate;</li>
-<li>overengineering для малих фіч;</li>
-<li>ризик “anemic use cases”, які просто викликають repository без logic.</li>
-</ul>
-<p>Senior має сказати: Clean Architecture — не релігія. Її треба адаптувати.</p>
-<h3 id="production-структура">Production структура<a aria-label="Посилання на розділ: Production структура" class="heading-anchor" href="#production-структура">#</a></h3>
+<p>Package-by-feature з локальними шарами всередині feature:</p>
 <pre><code class="language-text">feature-checkout/
   presentation/
     CheckoutViewModel.kt
@@ -6618,7 +6543,7 @@ fun reduce(state: CartState, intent: CartIntent): CartState {
     CheckoutDao.kt
     mapper/
 </code></pre>
-<h3 id="production-приклад-26">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-26">#</a></h3>
+<p>Use case виправданий, бо містить business rule (валідація payment method перед submit):</p>
 <pre><code class="language-kotlin">class SubmitOrderUseCase @Inject constructor(
     private val checkoutRepository: CheckoutRepository,
     private val paymentValidator: PaymentValidator
@@ -6633,22 +6558,7 @@ fun reduce(state: CartState, intent: CartIntent): CartState {
     }
 }
 </code></pre>
-<p>Use case виправданий, бо містить business rule. Якщо use case просто викликає repository без logic, треба подумати, чи потрібен він зараз.</p>
-<h3 id="типові-помилки-39">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-39">#</a></h3>
-<ul>
-<li>Domain layer залежить від Android <code>Context</code>, <code>Resources</code>, <code>LiveData</code>.</li>
-<li>DTO проходить у UI.</li>
-<li>UseCase без logic створюється механічно для кожного repository method.</li>
-<li>Clean Architecture використовується як excuse для надмірної складності.</li>
-<li>Немає dependency direction enforcement у multi-module project.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-39">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-39">#</a></h3>
-<blockquote>
-<p>Clean Architecture я використовую як інструмент для control coupling. Domain має бути незалежним від Android і data implementation. Але я не створюю use case на кожен getter автоматично. Якщо проект малий, можна почати простіше. Якщо app росте, boundaries, domain models і module dependencies стають критично важливими для масштабування і тестування.</p>
-</blockquote>
-<h3 id="follow-up-питання-16">Follow-up питання<a aria-label="Посилання на розділ: Follow-up питання" class="heading-anchor" href="#follow-up-питання-16">#</a></h3>
-<p><strong>Чи завжди потрібен domain layer?</strong><br/>
-Ні. Для CRUD-екранів ViewModel→Repository достатньо. Шар з use case-ами додається, коли з'являється реальна бізнес-логіка, перевикористання між екранами або оркестрація кількох репозиторіїв — а не «за канон».</p>
+<p>Domain layer не має залежати від Android <code>Context</code>, <code>Resources</code>, <code>LiveData</code>.</p>
 <p><strong>Чим domain model відрізняється від DTO?</strong><br/>
 DTO повторює форму API: nullable-поля, snake_case, версіюється бекендом. Domain model виражає інваріанти продукту і не знає про транспорт. Розділення ізолює UI від змін контракту API.</p>
 <p><strong>Де має бути mapper?</strong><br/>
@@ -6657,23 +6567,7 @@ DTO повторює форму API: nullable-поля, snake_case, версію
 Фізично — модульним графом: чого немає в dependencies, те неможливо імпортнути. Плюс convention plugins з правилами, konsist/ArchUnit-тести на архітектурні інваріанти, дисципліна api vs implementation.</p>
 <hr/>
 <h2 id="repository-pattern">Repository pattern<a aria-label="Посилання на розділ: Repository pattern" class="heading-anchor" href="#repository-pattern">#</a></h2>
-<h3 id="питання-40">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-40">#</a></h3>
-<p>Що таке Repository pattern?</p>
-<h3 id="коротка-відповідь-29">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-29">#</a></h3>
-<p>Repository приховує джерела даних і надає clean API для domain/use cases/ViewModel. Він координує remote API, local DB/cache, mapping, sync і error handling на data boundary.</p>
-<h3 id="senior-level-пояснення-39">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-39">#</a></h3>
-<p>Repository не має бути просто wrapper над Retrofit. Його роль — data orchestration:</p>
-<ul>
-<li>cache strategy;</li>
-<li>source of truth;</li>
-<li>remote/local sync;</li>
-<li>stale data policy;</li>
-<li>conflict resolution;</li>
-<li>mapping DTO/entity/domain;</li>
-<li>pagination;</li>
-<li>retry/error classification.</li>
-</ul>
-<h3 id="production-приклад-offline-first">Production приклад: offline-first<a aria-label="Посилання на розділ: Production приклад: offline-first" class="heading-anchor" href="#production-приклад-offline-first">#</a></h3>
+<p>Спрощений offline-first repository: UI observe-ить local DB як source of truth, refresh пише remote-дані в DB однією транзакцією (ризики повного clear-and-replace — у Stage 21):</p>
 <pre><code class="language-kotlin">class OfflineFirstProductRepository @Inject constructor(
     private val api: ProductApi,
     private val db: AppDatabase,
@@ -6695,112 +6589,12 @@ DTO повторює форму API: nullable-поля, snake_case, версію
     }
 }
 </code></pre>
-<h3 id="типові-помилки-40">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-40">#</a></h3>
-<ul>
-<li>Repository повертає Retrofit <code>Response&lt;T&gt;</code> у ViewModel.</li>
-<li>Repository не має cache/source-of-truth strategy.</li>
-<li>Business validation живе в repository, хоча має бути domain.</li>
-<li>Mapping розкиданий по UI.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-40">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-40">#</a></h3>
-<blockquote>
-<p>Repository для мене — це boundary між domain і data sources. Він приховує, чи дані прийшли з network, DB або cache. У offline-first підході repository зазвичай expose-ить Flow з local DB як source of truth і окремо робить refresh/sync з remote.</p>
-</blockquote>
+<p>Типові помилки: repository повертає Retrofit <code>Response&lt;T&gt;</code> у ViewModel; business validation живе в repository, хоча має бути в domain; mapping розкиданий по UI.</p>
 <hr/>
 <h2 id="ui-state-modeling-and-one-shot-events">UI state modeling and one-shot events<a aria-label="Посилання на розділ: UI state modeling and one-shot events" class="heading-anchor" href="#ui-state-modeling-and-one-shot-events">#</a></h2>
-<h3 id="питання-41">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-41">#</a></h3>
-<p>Як моделювати UI state у ViewModel?</p>
-<h3 id="коротка-відповідь-30">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-30">#</a></h3>
-<p>UI state має бути immutable і представляти все, що потрібно екрану для rendering. One-shot events, такі як navigation/snackbar, треба відокремлювати від persistent state або свідомо моделювати як state, якщо вони мають переживати recreation.</p>
-<h3 id="senior-level-пояснення-40">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-40">#</a></h3>
-<p>Хороший UI state:</p>
-<ul>
-<li>має single source of truth;</li>
-<li>не містить DTO/entity;</li>
-<li>не містить raw exceptions;</li>
-<li>не має invalid combinations;</li>
-<li>легко тестується;</li>
-<li>відновлюється після configuration changes.</li>
-</ul>
-<h3 id="production-приклад-27">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-27">#</a></h3>
-<pre><code class="language-kotlin">sealed interface PaymentUiState {
-    data object Loading : PaymentUiState
-    data class Ready(
-        val methods: List&lt;PaymentMethodUiModel&gt;,
-        val selectedMethodId: String?,
-        val isSubmitting: Boolean
-    ) : PaymentUiState
-    data class Error(val message: String) : PaymentUiState
-}
-</code></pre>
-<h3 id="типові-помилки-41">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-41">#</a></h3>
-<ul>
-<li><code>isLoading</code>, <code>data</code>, <code>error</code> одночасно допускають invalid states.</li>
-<li>State містить Android <code>Context</code> або string resources resolved неправильно.</li>
-<li>One-shot event replay-иться після rotation.</li>
-<li>UI сам вирішує, який error показати.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-41">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-41">#</a></h3>
-<blockquote>
-<p>Я моделюю UI state так, щоб екран можна було відрендерити тільки з цього state. Для mutually exclusive states часто використовую sealed interface. Events відділяю від state, але якщо “event” має бути відновлюваним, наприклад error banner, я роблю його частиною state.</p>
-</blockquote>
+<p>Доповнення до Stage 12: UI state не містить DTO/entity, raw exceptions чи Android <code>Context</code> (і неправильно resolved string resources); який error показати, вирішує ViewModel, а не UI.</p>
 <hr/>
 <h2 id="modularization">Modularization<a aria-label="Посилання на розділ: Modularization" class="heading-anchor" href="#modularization">#</a></h2>
-<h3 id="питання-42">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-42">#</a></h3>
-<p>Навіщо потрібна modularization в Android project?</p>
-<h3 id="коротка-відповідь-31">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-31">#</a></h3>
-<p>Modularization розділяє codebase на Gradle modules за features/layers/platform concerns. Це покращує build times, ownership, dependency boundaries, testability і scalability, але додає complexity в build setup, navigation, DI і dependency management.</p>
-<h3 id="senior-level-пояснення-41">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-41">#</a></h3>
-<p>Модулі мають вирішувати реальні проблеми:</p>
-<ul>
-<li>великі build times;</li>
-<li>багато команд;</li>
-<li>нечіткі boundaries;</li>
-<li>reusable platform components;</li>
-<li>dynamic delivery;</li>
-<li>independent testing.</li>
-</ul>
-<p>Типова структура:</p>
-<pre><code class="language-text">:app
-:core:network
-:core:database
-:core:design-system
-:core:common
-:feature:auth
-:feature:checkout
-:feature:orders
-:domain:orders або feature-local domain
-</code></pre>
-<p>Trade-offs:</p>
-<ul>
-<li>більше Gradle complexity;</li>
-<li>DI setup складніший;</li>
-<li>navigation між modules потребує contracts;</li>
-<li>shared models можуть перетворитися на dumping ground;</li>
-<li>circular dependencies треба жорстко забороняти.</li>
-</ul>
-<h3 id="production-notes">Production notes<a aria-label="Посилання на розділ: Production notes" class="heading-anchor" href="#production-notes">#</a></h3>
-<p>Dependency direction:</p>
-<pre><code class="language-text">app -&gt; feature -&gt; core/domain
-feature A -X-&gt; feature B implementation
-feature A -&gt; feature B api/contract, якщо потрібно
-core не залежить від feature
-</code></pre>
-<h3 id="типові-помилки-42">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-42">#</a></h3>
-<ul>
-<li>Створити модулі без чітких boundaries.</li>
-<li>Всі feature modules залежать один від одного.</li>
-<li><code>core</code> стає “god module”.</li>
-<li>Немає convention plugins для Gradle повторів.</li>
-<li>Navigation contracts не продумані.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-42">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-42">#</a></h3>
-<blockquote>
-<p>Я не модулюю проект заради модулів. Я дивлюся на build time, ownership, dependency boundaries і team scaling. Для великого app я виділяю core/platform modules і feature modules, enforce-ю dependency direction і уникаю circular dependencies. Але для малого app надмірна modularization може бути дорожчою, ніж користь.</p>
-</blockquote>
-<h3 id="follow-up-питання-17">Follow-up питання<a aria-label="Посилання на розділ: Follow-up питання" class="heading-anchor" href="#follow-up-питання-17">#</a></h3>
-<p><strong>Як організувати navigation між feature modules?</strong><br/>
-Через абстракцію: Navigator-інтерфейс або типізовані роути в core, реалізація — в app, який бачить усі фічі. Альтернатива — патерн feature:x:api з контрактами навігації. Прямі залежності feature→feature заборонені.</p>
 <p><strong>Де тримати domain models?</strong><br/>
 У core:model / core:domain — нижче за всі фічі, без Android-залежностей. Тоді фічі діляться типами без залежностей одна від одної.</p>
 <p><strong>Як Hilt працює у multi-module project?</strong><br/>
@@ -6809,12 +6603,7 @@ core не залежить від feature
 Правила: core:common без бізнес-логіки, тематичні core:* замість одного «common», бюджет на розмір/залежності, регулярний розпил, гейт на code review «чому це не у фічі?». Деталі — System Design сценарій №9.</p>
 <hr/>
 <h2 id="error-handling-strategy">Error handling strategy<a aria-label="Посилання на розділ: Error handling strategy" class="heading-anchor" href="#error-handling-strategy">#</a></h2>
-<h3 id="питання-43">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-43">#</a></h3>
-<p>Як будувати error handling strategy в Android app?</p>
-<h3 id="коротка-відповідь-32">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-32">#</a></h3>
-<p>Errors треба класифікувати за рівнями: network/transport, API/protocol, domain/business, validation, unexpected. Data layer мапить raw exceptions/HTTP codes у domain-level errors, ViewModel мапить domain errors у UI state/message/action.</p>
-<h3 id="senior-level-пояснення-42">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-42">#</a></h3>
-<p>Поганий підхід — передавати <code>Throwable</code> до UI. Хороший підхід — typed errors:</p>
+<p>Errors класифікують за рівнями: network/transport, API/protocol, domain/business, validation, unexpected (мережева taxonomy — у Stage 18). Data layer на boundary мапить raw exceptions/HTTP codes у typed domain errors, ViewModel — domain errors у UI state/message/action: full-screen error, inline validation, snackbar або silent retry. Raw <code>Throwable</code> до UI не передається — так error behavior consistent і тестований.</p>
 <pre><code class="language-kotlin">sealed interface AppError {
     data object NetworkUnavailable : AppError
     data object Unauthorized : AppError
@@ -6822,86 +6611,18 @@ core не залежить від feature
     data object Unknown : AppError
 }
 </code></pre>
-<p>Потрібно визначити:</p>
-<ul>
-<li>які errors retryable;</li>
-<li>які потребують logout/token refresh;</li>
-<li>які показувати inline;</li>
-<li>які snackbar/dialog/full-screen;</li>
-<li>які логувати як non-fatal;</li>
-<li>які метрики збирати.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-43">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-43">#</a></h3>
-<blockquote>
-<p>Я не передаю raw exceptions у UI. На boundary data/domain маплю їх у typed errors. Потім ViewModel вирішує, як це відобразити: full-screen error, inline validation, snackbar або silent retry. Це робить error behavior consistent і тестованим.</p>
-</blockquote>
+<p>Потрібно визначити: які errors retryable; які потребують logout/token refresh; які показувати inline, а які snackbar/dialog/full-screen; які логувати як non-fatal; які метрики збирати.</p>
 <hr/>
 <h2 id="architecture-підсумок">Architecture — підсумок<a aria-label="Посилання на розділ: Architecture — підсумок" class="heading-anchor" href="#architecture-підсумок">#</a></h2>
 <p>Senior architecture answer має бути прагматичною. Не треба продавати MVVM/Clean/MVI як silver bullet. Треба показати, що ти вмієш вибирати boundaries, контролювати coupling, моделювати state/errors, будувати offline-first flows, масштабувати codebase і пояснювати trade-offs команді.</p>
 <hr/>
 </div></details><details class="major-section" data-key="dependency-injection" data-title="Dependency Injection" id="dependency-injection" open=""><summary class="major-summary"><span class="major-title">Dependency Injection</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<p><strong>Детальніше:</strong> <a href="#dependency-injection-android">Dependency injection на Android</a>, <a href="#senior-android-testing-strategy">Senior Android testing strategy</a> (Hilt testing, fakes vs mocks). Нижче — лише доповнення, яких немає в цих етапах.</p>
 <h2 id="manual-di-service-locator-dagger-hilt">Manual DI, Service Locator, Dagger, Hilt<a aria-label="Посилання на розділ: Manual DI, Service Locator, Dagger, Hilt" class="heading-anchor" href="#manual-di-service-locator-dagger-hilt">#</a></h2>
-<h3 id="питання-44">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-44">#</a></h3>
-<p>Навіщо потрібен Dependency Injection?</p>
-<h3 id="коротка-відповідь-33">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-33">#</a></h3>
-<p>DI передає dependencies ззовні, замість того щоб клас створював їх сам. Це зменшує coupling, покращує testability і централізує object graph. В Android часто використовують Hilt/Dagger.</p>
-<h3 id="senior-level-пояснення-43">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-43">#</a></h3>
-<p>DI вирішує:</p>
-<ul>
-<li>dependency ownership;</li>
-<li>object lifetime/scopes;</li>
-<li>test replacement;</li>
-<li>configuration per build variant;</li>
-<li>separation між creation і usage.</li>
-</ul>
-<p>Manual DI може бути достатнім для малого проекту. Service Locator простіший, але приховує dependencies і гірше тестується. Dagger/Hilt дають compile-time graph validation, scopes і integration з Android components, але додають learning/build complexity.</p>
-<h3 id="production-приклад-28">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-28">#</a></h3>
-<pre><code class="language-kotlin">@Module
-@InstallIn(SingletonComponent::class)
-object NetworkModule {
-
-    @Provides
-    @Singleton
-    fun provideOkHttpClient(
-        authInterceptor: AuthInterceptor
-    ): OkHttpClient {
-        return OkHttpClient.Builder()
-            .addInterceptor(authInterceptor)
-            .build()
-    }
-
-    @Provides
-    @Singleton
-    fun provideRetrofit(client: OkHttpClient): Retrofit {
-        return Retrofit.Builder()
-            .baseUrl("https://api.example.com/")
-            .client(client)
-            .addConverterFactory(MoshiConverterFactory.create())
-            .build()
-    }
-}
-</code></pre>
-<h3 id="типові-помилки-43">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-43">#</a></h3>
-<ul>
-<li>Inject-ити Activity/Fragment context у singleton.</li>
-<li>Неправильно вибирати Hilt scope.</li>
-<li>Робити dependency graph занадто глобальним.</li>
-<li>Ховати dependencies у object/service locator.</li>
-<li>Створювати ViewModel вручну, обходячи Hilt.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-44">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-44">#</a></h3>
-<blockquote>
-<p>DI потрібен не тільки для зручності, а для контролю dependency graph і lifecycle. Я використовую constructor injection за замовчуванням, Hilt modules тільки там, де не можу constructor-inject third-party/framework classes. Scopes вибираю за lifetime dependency, а не просто ставлю Singleton всюди.</p>
-</blockquote>
+<p>Додаткові типові помилки: робити dependency graph занадто глобальним; створювати ViewModel вручну, обходячи Hilt.</p>
 <hr/>
 <h2 id="hilt-scopes-and-component-lifecycle">Hilt scopes and component lifecycle<a aria-label="Посилання на розділ: Hilt scopes and component lifecycle" class="heading-anchor" href="#hilt-scopes-and-component-lifecycle">#</a></h2>
-<h3 id="питання-45">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-45">#</a></h3>
-<p>Як працюють Hilt scopes?</p>
-<h3 id="коротка-відповідь-34">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-34">#</a></h3>
-<p>Hilt components прив’язані до Android lifecycles: SingletonComponent — app process, ActivityRetainedComponent — переживає configuration changes, ViewModelComponent — ViewModel, ActivityComponent, FragmentComponent тощо. Scope визначає, скільки живе instance.</p>
-<h3 id="senior-level-пояснення-44">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-44">#</a></h3>
-<p>Scope mismatch — джерело leaks і багів. Наприклад, Singleton не має залежати від Activity-scoped object. <code>@ApplicationContext</code> для singleton, <code>@ActivityContext</code> тільки для activity-bound dependencies.</p>
-<h3 id="production-rule-of-thumb">Production rule of thumb<a aria-label="Посилання на розділ: Production rule of thumb" class="heading-anchor" href="#production-rule-of-thumb">#</a></h3>
+<p><code>@ApplicationContext</code> — для singleton, <code>@ActivityContext</code> — тільки для activity-bound dependencies. Production rule of thumb:</p>
 <ul>
 <li>Retrofit/OkHttp/Room/DataStore — Singleton.</li>
 <li>Repository — часто Singleton, якщо stateless або cache-aware.</li>
@@ -6909,37 +6630,10 @@ object NetworkModule {
 <li>ViewModel dependencies — constructor injection.</li>
 <li>UI components — не inject-ити в singleton.</li>
 </ul>
-<h3 id="типові-помилки-44">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-44">#</a></h3>
-<ul>
-<li>Singleton тримає Activity context.</li>
-<li>Scope annotation додано без потреби.</li>
-<li>Module installed in wrong component.</li>
-<li>Circular dependencies.</li>
-<li>Inject field замість constructor injection там, де constructor можливий.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-45">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-45">#</a></h3>
-<blockquote>
-<p>У Hilt scope — це lifecycle contract. Я ставлю scope тільки коли потрібен shared instance із конкретним lifetime. Найчастіша помилка — зробити все Singleton і випадково протягнути Activity context у process-long object.</p>
-</blockquote>
+<p>Типова помилка: inject field замість constructor injection там, де constructor можливий.</p>
 <hr/>
 <h2 id="testing-with-di">Testing with DI<a aria-label="Посилання на розділ: Testing with DI" class="heading-anchor" href="#testing-with-di">#</a></h2>
-<h3 id="питання-46">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-46">#</a></h3>
-<p>Як тестувати код із Hilt/DI?</p>
-<h3 id="коротка-відповідь-35">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-35">#</a></h3>
-<p>DI дозволяє заміняти production dependencies на fake/test implementations. Для unit tests часто достатньо manual construction з fake dependencies. Для instrumentation/Hilt tests використовують <code>@HiltAndroidTest</code>, test modules, <code>@UninstallModules</code>, <code>@BindValue</code>.</p>
-<h3 id="senior-level-пояснення-45">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-45">#</a></h3>
-<p>Не треба використовувати Hilt у кожному unit test. Якщо клас має constructor injection, unit test може напряму передати fake. Hilt корисний для integration/instrumentation tests, де треба перевірити Android graph.</p>
-<h3 id="типові-помилки-45">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-45">#</a></h3>
-<ul>
-<li>Піднімати Hilt graph для простого ViewModel unit test.</li>
-<li>Використовувати mocks там, де fake repository простіший.</li>
-<li>Не мати interfaces/abstractions для replaceable dependencies.</li>
-<li>Тестові modules конфліктують із production modules.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-46">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-46">#</a></h3>
-<blockquote>
-<p>Constructor injection робить unit tests простими: я створюю клас напряму і передаю fake dependencies. Hilt testing використовую там, де тестую інтеграцію з Android graph. Це швидше, стабільніше і не робить тести залежними від DI framework без потреби.</p>
-</blockquote>
+<p>Для instrumentation/Hilt tests: <code>@HiltAndroidTest</code>, test modules, <code>@UninstallModules</code>, <code>@BindValue</code>. Типові помилки: немає interfaces/abstractions для replaceable dependencies; тестові modules конфліктують із production modules.</p>
 <hr/>
 <h2 id="dependency-injection-підсумок">Dependency Injection — підсумок<a aria-label="Посилання на розділ: Dependency Injection — підсумок" class="heading-anchor" href="#dependency-injection-підсумок">#</a></h2>
 <p>DI на Senior-рівні — це про dependency ownership, lifecycle і testability. Hilt/Dagger не замінюють архітектуру; вони тільки будують object graph. Важливо пояснити scopes, context leaks, constructor injection, module boundaries і testing strategy.</p>
@@ -13927,13 +13621,11 @@ fun `emits loading then content`() = runTest {
 <h2 id="en-state-hoisting">State hoisting<a aria-label="Link to section: State hoisting" class="heading-anchor" href="#en-state-hoisting">#</a></h2>
 <p>Interview wording: “I hoist state when the parent needs to control it, when it must be shared, or when I want testable stateless UI. I keep local state only when it is purely internal UI behavior.”</p>
 </div></details><details class="major-section" data-key="architecture" data-title="Architecture" id="en-architecture" open=""><summary class="major-summary"><span class="major-title">Architecture</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<p><strong>More detail:</strong> <a href="#en-android-ui-architecture-state-modeling">Android UI architecture and state modeling: MVVM, MVI, UDF</a>, <a href="#en-clean-architecture-android-modularization">Clean Architecture and Android modularization</a>, <a href="#en-offline-first-architecture-paging-3">Offline-first architecture and Paging 3</a>. Only points not covered there remain below.</p>
 <h2 id="en-mvvm-and-mvi">MVVM and MVI<a aria-label="Link to section: MVVM and MVI" class="heading-anchor" href="#en-mvvm-and-mvi">#</a></h2>
-<p>MVVM separates UI from state and behavior. ViewModel exposes observable UI state and handles user actions. MVI emphasizes unidirectional data flow: actions/events go in, state comes out.</p>
-<p>A senior answer should not sell one pattern as universally best. The right choice depends on team size, complexity, testing needs, and consistency.</p>
+<p>Choosing between MVVM and MVI also depends on team size, testing needs, and consistency across the codebase, not only on screen complexity.</p>
 <h2 id="en-clean-architecture">Clean Architecture<a aria-label="Link to section: Clean Architecture" class="heading-anchor" href="#en-clean-architecture">#</a></h2>
-<p>Clean Architecture separates concerns into layers: presentation, domain, and data. Dependencies should point inward. Domain should not depend on Android framework.</p>
-<h3 id="en-senior-level-trade-off">Senior-level trade-off<a aria-label="Link to section: Senior-level trade-off" class="heading-anchor" href="#en-senior-level-trade-off">#</a></h3>
-<p>Clean Architecture improves testability and boundaries, but overusing use cases and abstractions can create boilerplate. For simple features, a pragmatic repository + ViewModel may be enough. For complex business rules, use cases and domain models become valuable.</p>
+<p>A use case that earns its place: it orchestrates two repositories and enforces an invariant.</p>
 <pre><code class="language-kotlin">class PlaceOrderUseCase @Inject constructor(
     private val cartRepository: CartRepository,
     private val paymentRepository: PaymentRepository
@@ -13946,7 +13638,7 @@ fun `emits loading then content`() = runTest {
 }
 </code></pre>
 <h2 id="en-repository-pattern-and-source-of-truth">Repository pattern and source of truth<a aria-label="Link to section: Repository pattern and source of truth" class="heading-anchor" href="#en-repository-pattern-and-source-of-truth">#</a></h2>
-<p>Repository hides data source details and exposes domain-friendly APIs. In offline-first apps, local database is usually the source of truth; network updates the database, and UI observes local data.</p>
+<p>Minimal offline-first repository shape: UI observes local data, refresh writes network results into the database (replace-all risks are covered in Stage 21).</p>
 <pre><code class="language-kotlin">fun observeProducts(): Flow&lt;List&lt;Product&gt;&gt; =
     productDao.observeAll().map { entities -&gt; entities.map { it.toDomain() } }
 
@@ -13955,35 +13647,10 @@ suspend fun refreshProducts() {
     productDao.replaceAll(remote.map { it.toEntity() })
 }
 </code></pre>
-<h2 id="en-ui-state-modeling">UI state modeling<a aria-label="Link to section: UI state modeling" class="heading-anchor" href="#en-ui-state-modeling">#</a></h2>
-<p>Avoid many unrelated mutable flags. Prefer a clear UI state model with loading, content, empty, and error states. For complex screens, combine stable data classes with sealed states.</p>
-<h2 id="en-modularization">Modularization<a aria-label="Link to section: Modularization" class="heading-anchor" href="#en-modularization">#</a></h2>
-<p>Modularization improves build times, ownership, boundaries, and parallel development. It also increases Gradle complexity and requires clear dependency rules.</p>
-<h3 id="en-interview-wording-10">Interview wording<a aria-label="Link to section: Interview wording" class="heading-anchor" href="#en-interview-wording-10">#</a></h3>
-<p>“I modularize when there is a real scaling problem: build time, team ownership, feature isolation, or dependency boundaries. I avoid creating modules only for architectural aesthetics.”</p>
 </div></details><details class="major-section" data-key="dependency-injection" data-title="Dependency Injection" id="en-dependency-injection" open=""><summary class="major-summary"><span class="major-title">Dependency Injection</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
-<h2 id="en-manual-di-service-locator-dagger-and-hilt">Manual DI, Service Locator, Dagger, and Hilt<a aria-label="Link to section: Manual DI, Service Locator, Dagger, and Hilt" class="heading-anchor" href="#en-manual-di-service-locator-dagger-and-hilt">#</a></h2>
-<p>DI means dependencies are provided from outside instead of being created internally. Constructor injection is preferred because it makes dependencies explicit and testable.</p>
-<p>Hilt reduces boilerplate around Dagger and integrates with Android lifecycles.</p>
-<pre><code class="language-kotlin">@Module
-@InstallIn(SingletonComponent::class)
-object NetworkModule {
-    @Provides
-    @Singleton
-    fun provideOkHttpClient(): OkHttpClient = OkHttpClient.Builder().build()
-}
-</code></pre>
+<p><strong>More detail:</strong> <a href="#en-dependency-injection-android">Dependency injection on Android</a>, <a href="#en-senior-android-testing-strategy">Senior Android testing strategy</a> (Hilt testing, fakes vs mocks). Only points not covered there remain below.</p>
 <h2 id="en-scopes">Scopes<a aria-label="Link to section: Scopes" class="heading-anchor" href="#en-scopes">#</a></h2>
-<p>Scopes define dependency lifetime. <code>@Singleton</code> lives for the application. <code>@ActivityScoped</code> lives for Activity component. <code>@ViewModelScoped</code> lives for ViewModel component.</p>
-<h3 id="en-common-mistakes-10">Common mistakes<a aria-label="Link to section: Common mistakes" class="heading-anchor" href="#en-common-mistakes-10">#</a></h3>
-<ul>
-<li>Injecting Activity context into singleton.</li>
-<li>Misunderstanding scope as thread-safety guarantee.</li>
-<li>Adding scopes everywhere without lifetime reasoning.</li>
-<li>Using field injection in places where constructor injection is possible.</li>
-</ul>
-<h2 id="en-testing-with-di">Testing with DI<a aria-label="Link to section: Testing with DI" class="heading-anchor" href="#en-testing-with-di">#</a></h2>
-<p>In tests, replace real dependencies with fakes. Prefer fakes for behavior and mocks for interaction verification when necessary.</p>
+<p>Common mistake not covered in Stage 17: using field injection in places where constructor injection is possible.</p>
 </div></details><details class="major-section" data-key="networking" data-title="Networking" id="en-networking" open=""><summary class="major-summary"><span class="major-title">Networking</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
 <p><strong>More detail:</strong> <a href="#en-android-networking-fundamentals">Android networking fundamentals</a>, <a href="#en-authentication-token-refresh-android-mobile-security">Authentication, token refresh, and Android mobile security</a>, <a href="#en-offline-first-architecture-paging-3">Offline-first architecture and Paging 3</a>, <a href="#en-networking-data-senior">Networking and Data: Senior deep dive</a> (typed <code>NetworkError</code>).</p>
 <p>Retrofit vs OkHttp, interceptors, token refresh, error taxonomy, pagination and retry policy are covered in the stages above. Additions only:</p>
