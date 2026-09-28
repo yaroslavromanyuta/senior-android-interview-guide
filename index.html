@@ -595,7 +595,6 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <li><a data-target="stateflow-vs-sharedflow-vs-channel" href="#stateflow-vs-sharedflow-vs-channel">StateFlow vs SharedFlow vs Channel</a></li>
 <li><a data-target="callbackflow-channelflow" href="#callbackflow-channelflow">callbackFlow / channelFlow</a></li>
 <li><a data-target="flowon-collect-vs-collectlatest" href="#flowon-collect-vs-collectlatest">flowOn, collect vs collectLatest</a></li>
-<li><a data-target="combine-flatmaplatest-flatmapmerge-flatmapconcat-debounce-retry-catch" href="#combine-flatmaplatest-flatmapmerge-flatmapconcat-debounce-retry-catch">combine, flatMapLatest, flatMapMerge, flatMapConcat, debounce, retry, catch</a></li>
 <li><a data-target="sharingstarted" href="#sharingstarted">sharingStarted</a></li>
 <li><a data-target="flow-підсумок" href="#flow-підсумок">Flow — підсумок</a></li>
 </ol>
@@ -952,9 +951,7 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="en-flow" href="#en-flow">Flow</a>
 <ol class="toc-children">
 <li><a data-target="en-cold-flow-vs-hot-flow" href="#en-cold-flow-vs-hot-flow">Cold Flow vs Hot Flow</a></li>
-<li><a data-target="en-stateflow-vs-sharedflow-vs-channel" href="#en-stateflow-vs-sharedflow-vs-channel">StateFlow vs SharedFlow vs Channel</a></li>
 <li><a data-target="en-collect-vs-collectlatest" href="#en-collect-vs-collectlatest">collect vs collectLatest</a></li>
-<li><a data-target="en-combine-flatmaplatest-debounce-catch-retry" href="#en-combine-flatmaplatest-debounce-catch-retry">combine , flatMapLatest , debounce , catch , retry</a></li>
 <li><a data-target="en-testing-flow" href="#en-testing-flow">Testing Flow</a></li>
 </ol>
 </li>
@@ -6732,124 +6729,16 @@ class ProductViewModelTest {
 <h2 id="coroutines-and-concurrency-підсумок">Coroutines and Concurrency — підсумок<a aria-label="Посилання на розділ: Coroutines and Concurrency — підсумок" class="heading-anchor" href="#coroutines-and-concurrency-підсумок">#</a></h2>
 <p>На Senior Android interview Coroutines — одна з найважливіших тем. Недостатньо сказати “launch запускає, async повертає результат”. Треба пояснити structured concurrency, lifecycle ownership, cancellation, exception propagation, partial failure, dispatcher strategy і testing. Найсильніша відповідь завжди прив’язує concurrency design до business semantics.</p>
 </div></details><details class="major-section" data-key="flow" data-title="Flow" id="flow" open=""><summary class="major-summary"><span class="major-title">Flow</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<p><strong>Детальніше:</strong> <a href="#kotlin-flow-foundations">Kotlin Flow: foundations, operators та Android lifecycle</a>, <a href="#kotlin-hot-flows-ui-state-events">StateFlow, SharedFlow, Channel та Android UI state/events</a>, <a href="#advanced-kotlin-flow-production">Advanced Kotlin Flow у production</a>; збір events у Compose — <a href="#stage15-uk-review-trap">Compose effects: code-review trap</a>. Нижче — лише доповнення, яких немає в цих етапах.</p>
 <h2 id="cold-flow-vs-hot-flow">Cold Flow vs Hot Flow<a aria-label="Посилання на розділ: Cold Flow vs Hot Flow" class="heading-anchor" href="#cold-flow-vs-hot-flow">#</a></h2>
-<h3 id="питання-24">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-24">#</a></h3>
-<p>Чим cold Flow відрізняється від hot Flow?</p>
-<h3 id="просте-пояснення-7">Просте пояснення<a aria-label="Посилання на розділ: Просте пояснення" class="heading-anchor" href="#просте-пояснення-7">#</a></h3>
-<p>Cold Flow починає виконуватися тільки тоді, коли його collect-ять. Кожен collector запускає flow заново. Hot Flow існує незалежно від collectors і може emit-ити значення навіть тоді, коли collector ще не підписаний.</p>
-<h3 id="senior-level-пояснення-24">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-24">#</a></h3>
-<p>Cold Flow добре підходить для declarative data pipelines: database query, network request, transformations. Hot Flow підходить для state або shared events: UI state, app-wide connection state, location updates, shared stream.</p>
-<p>Ключовий production trade-off:</p>
-<ul>
-<li>Cold Flow простіше reason-about, бо він lazy і controlled by collector.</li>
-<li>Hot Flow потребує думати про replay, buffer, lifecycle, sharing policy, missed events.</li>
-<li>Перетворення cold у hot через <code>stateIn</code>/<code>shareIn</code> має бути усвідомленим: scope, <code>SharingStarted</code>, replay, initial value.</li>
-</ul>
-<h3 id="production-приклад-14">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-14">#</a></h3>
-<pre><code class="language-kotlin">class ProductRepository @Inject constructor(
-    private val dao: ProductDao,
-    private val api: ProductApi
-) {
-    fun observeProduct(id: String): Flow&lt;Product&gt; {
-        return dao.observeProduct(id)
-            .map { entity -&gt; entity.toDomain() }
-    }
-}
-
-@HiltViewModel
-class ProductViewModel @Inject constructor(
-    repository: ProductRepository,
-    savedStateHandle: SavedStateHandle
-) : ViewModel() {
-    private val productId = checkNotNull(savedStateHandle.get&lt;String&gt;("productId"))
-
-    val uiState: StateFlow&lt;ProductUiState&gt; = repository.observeProduct(productId)
-        .map&lt;Product, ProductUiState&gt; { ProductUiState.Content(it.toUiModel()) }
-        .catch { emit(ProductUiState.Error) }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
-            initialValue = ProductUiState.Loading
-        )
-}
-</code></pre>
-<h3 id="типові-помилки-24">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-24">#</a></h3>
-<ul>
-<li>Думати, що Flow завжди hot.</li>
-<li>Робити network call у cold flow і collect-ити його з кількох місць, випадково дублюючи requests.</li>
-<li>Використовувати <code>StateFlow</code> для one-shot events без event strategy.</li>
-<li>Використовувати <code>shareIn</code> без розуміння replay/buffer.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-24">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-24">#</a></h3>
-<blockquote>
-<p>Cold Flow — це lazy stream, який запускається на collection. Hot Flow — це stream/state, який має lifecycle незалежно від конкретного collector. У ViewModel я часто перетворюю cold repository flow у <code>StateFlow</code> через <code>stateIn</code>, бо UI потребує поточного state. При цьому свідомо вибираю scope, initial value і <code>SharingStarted</code>, щоб не тримати upstream активним без потреби.</p>
-</blockquote>
-<h3 id="follow-up-питання-12">Follow-up питання<a aria-label="Посилання на розділ: Follow-up питання" class="heading-anchor" href="#follow-up-питання-12">#</a></h3>
+<p>Типові застосування: cold Flow — declarative data pipelines (database query, network request, transformations); hot Flow — UI state, app-wide connection state, location updates, shared stream.</p>
 <p><strong>Чому Room Flow вважається cold?</strong><br/>
 Кожен колектор запускає власний запит, і потік не працює без підписника. Емісії тригеряться інвалідацією таблиці — тому переемісія можлива навіть без зміни саме ваших рядків (звідси <code>distinctUntilChanged</code> після мапінгу).</p>
-<p><strong>Що робить <code>stateIn</code>?</strong><br/>
-Перетворює cold Flow на StateFlow у заданому scope: завжди є поточне значення (initialValue до першої емісії), конфляція, стратегія старту (Eagerly/Lazily/WhileSubscribed).</p>
-<p><strong>Чим <code>shareIn</code> відрізняється від <code>stateIn</code>?</strong><br/>
-shareIn дає SharedFlow: настроюваний replay, без поняття «поточного значення» і без дедуплікації через equals. stateIn — саме стан: завжди одне актуальне значення. Події — shareIn/Channel, стан — stateIn.</p>
-<p><strong>Які ризики має hot stream?</strong><br/>
-Робота без жодного споживача (ресурси, батарея), втрата емісій при replay=0, прив'язка до scope, який може жити задовго. <code>WhileSubscribed(5000)</code> — стандартний компроміс: пережити rotation, заснути у фоні.</p>
 <hr/>
 <h2 id="stateflow-vs-sharedflow-vs-channel">StateFlow vs SharedFlow vs Channel<a aria-label="Посилання на розділ: StateFlow vs SharedFlow vs Channel" class="heading-anchor" href="#stateflow-vs-sharedflow-vs-channel">#</a></h2>
-<h3 id="питання-25">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-25">#</a></h3>
-<p>Чим <code>StateFlow</code>, <code>SharedFlow</code> і <code>Channel</code> відрізняються?</p>
-<h3 id="просте-пояснення-8">Просте пояснення<a aria-label="Посилання на розділ: Просте пояснення" class="heading-anchor" href="#просте-пояснення-8">#</a></h3>
-<p><code>StateFlow</code> представляє поточний state і завжди має latest value. <code>SharedFlow</code> — hot stream для shared emissions, може мати replay/buffer. <code>Channel</code> — coroutine primitive для передачі values між producer і consumer, часто one-to-one.</p>
-<h3 id="senior-level-пояснення-25">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-25">#</a></h3>
-<p>У UI architecture:</p>
-<ul>
-<li><code>StateFlow</code> — для screen state: loading/content/error, form state, selected filters.</li>
-<li><code>SharedFlow</code> — для events, якщо потрібен broadcast або custom replay/buffer behavior.</li>
-<li><code>Channel</code> — для single-consumer events, але потрібно бути обережним із lifecycle і missed events.</li>
-</ul>
-<p>One-shot events — складна тема. Snackbar, navigation, toast, permission request — це не persistent state, але вони прив’язані до UI lifecycle. Немає одного perfect solution. Важливо пояснити trade-offs:</p>
-<ul>
-<li><code>StateFlow&lt;Event?&gt;</code> може replay-ити event після rotation, якщо не consumed.</li>
-<li><code>SharedFlow(replay = 0)</code> може пропустити event, якщо collector не активний.</li>
-<li><code>Channel</code> може бути зручним для one-off events, але має single-consumer semantics і потребує lifecycle-aware collection.</li>
-<li>Частину events краще моделювати як state: наприклад error banner із dismiss action — це state, не event.</li>
-</ul>
-<h3 id="production-приклад-15">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-15">#</a></h3>
-<pre><code class="language-kotlin">sealed interface LoginEvent {
-    data object NavigateToHome : LoginEvent
-    data class ShowSnackbar(val message: String) : LoginEvent
-}
-
-@HiltViewModel
-class LoginViewModel @Inject constructor(
-    private val loginUseCase: LoginUseCase
-) : ViewModel() {
-    private val _uiState = MutableStateFlow(LoginUiState())
-    val uiState: StateFlow&lt;LoginUiState&gt; = _uiState.asStateFlow()
-
-    private val _events = MutableSharedFlow&lt;LoginEvent&gt;(
-        replay = 0,
-        extraBufferCapacity = 1
-    )
-    val events: SharedFlow&lt;LoginEvent&gt; = _events.asSharedFlow()
-
-    fun onLoginClicked() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-
-            loginUseCase(_uiState.value.email, _uiState.value.password)
-                .onSuccess {
-                    _uiState.update { it.copy(isLoading = false) }
-                    _events.emit(LoginEvent.NavigateToHome)
-                }
-                .onFailure {
-                    _uiState.update { it.copy(isLoading = false) }
-                    _events.emit(LoginEvent.ShowSnackbar("Login failed"))
-                }
-        }
-    }
-}
-</code></pre>
-<p>Compose collection:</p>
+<p><strong>Коли event краще перетворити на state?</strong><br/>
+Коли наслідок має тривале представлення: «показати діалог» — це насправді стан «діалог відкритий» до явного закриття. Подіями лишаються миттєві best-effort речі без тривалості: toast, haptic; важливу навігацію з ViewModel краще моделювати як state з ack.</p>
+<p>Lifecycle-aware збір best-effort events (<code>SharedFlow&lt;LoginEvent&gt;</code> з ViewModel) у Compose:</p>
 <pre><code class="language-kotlin">@Composable
 fun LoginRoute(
     viewModel: LoginViewModel,
@@ -6876,36 +6765,10 @@ fun LoginRoute(
     )
 }
 </code></pre>
-<h3 id="типові-помилки-25">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-25">#</a></h3>
-<ul>
-<li>Використовувати <code>StateFlow</code> для navigation event і отримувати повторну navigation після rotation.</li>
-<li>Вважати, що <code>extraBufferCapacity</code> захищає events: без subscribers <code>SharedFlow</code> зберігає лише replay cache, тож emit при <code>replay = 0</code> губиться. Якщо втрата неприпустима — replay (з ризиком повторної доставки) або state з ack.</li>
-<li>Відправляти event з ViewModel до UI, коли це насправді state.</li>
-<li>Експозити <code>MutableStateFlow</code> назовні.</li>
-<li>Колектити events у Composable без stable effect key.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-25">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-25">#</a></h3>
-<blockquote>
-<p>Я використовую <code>StateFlow</code> для state, бо state має current value і може бути повторно відрендерений. Для one-shot events використовую <code>SharedFlow</code> або Channel залежно від semantics, але завжди пояснюю replay/buffer і lifecycle trade-offs. Часто те, що називають event, краще зробити state, наприклад error banner, бо він має бути відновлюваним після configuration change.</p>
-</blockquote>
-<h3 id="follow-up-питання-13">Follow-up питання<a aria-label="Посилання на розділ: Follow-up питання" class="heading-anchor" href="#follow-up-питання-13">#</a></h3>
-<p><strong>Як уникнути duplicate navigation після rotation?</strong><br/>
-Не тримати подію в StateFlow (вона повториться для нового підписника). <code>Channel.receiveAsFlow()</code> віддає кожен елемент одному з competing collectors, але не гарантує, що UI його обробив; надійніше — подія у state з явним ack від UI після обробки.</p>
-<p><strong>Чи можна використовувати Channel для events?</strong><br/>
-Так, <code>Channel(BUFFERED)</code> + <code>receiveAsFlow()</code> — поширений best-effort патерн: буферизує, поки немає активного collector, і віддає кожен елемент одному з competing collectors. Але отримання ≠ обробка: cancellation collector-а або process death можуть втратити подію. Google рекомендує моделювати ViewModel-події (наприклад, навігацію після login) як UI state, який UI підтверджує (ack).</p>
-<p><strong>Коли event краще перетворити на state?</strong><br/>
-Коли наслідок має тривале представлення: «показати діалог» — це насправді стан «діалог відкритий» до явного закриття. Подіями лишаються миттєві best-effort речі без тривалості: toast, haptic; важливу навігацію з ViewModel краще моделювати як state з ack.</p>
-<p><strong>Що означає <code>replay = 0</code>?</strong><br/>
-Нові підписники не отримують історії, а емісія за відсутності підписника губиться назавжди — класична причина «кнопка не спрацювала» під час recreation. Див. Edge Case №4.</p>
+<p><strong>Симптом <code>replay = 0</code>:</strong> емісія за відсутності підписника губиться назавжди — класична причина «кнопка не спрацювала» під час recreation. Див. <a href="#edge-case-sharedflow-overflow">Edge Case №4</a>.</p>
 <hr/>
 <h2 id="callbackflow-channelflow">callbackFlow / channelFlow<a aria-label="Посилання на розділ: callbackFlow / channelFlow" class="heading-anchor" href="#callbackflow-channelflow">#</a></h2>
-<h3 id="питання-26">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-26">#</a></h3>
-<p>Для чого потрібен <code>callbackFlow</code>?</p>
-<h3 id="коротка-відповідь-18">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-18">#</a></h3>
-<p><code>callbackFlow</code> перетворює callback-based API у Flow. Він корисний для location updates, Firebase listeners, Bluetooth callbacks, connectivity callbacks. <code>awaitClose</code> потрібен для cleanup listener-а.</p>
-<h3 id="senior-level-пояснення-26">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-26">#</a></h3>
-<p><code>callbackFlow</code> — bridge між callback світом і structured coroutines/Flow. Основне правило: якщо ти register listener, ти маєш unregister його в <code>awaitClose</code>. Також треба думати про buffer, backpressure і thread-safety <code>trySend</code>.</p>
-<h3 id="production-приклад-16">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-16">#</a></h3>
+<p>Типові callback-джерела для <code>callbackFlow</code>: location updates, Firebase listeners, Bluetooth callbacks, connectivity callbacks. Android-приклад connectivity:</p>
 <pre><code class="language-kotlin">class NetworkMonitor @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
@@ -6931,122 +6794,12 @@ fun LoginRoute(
     }.distinctUntilChanged()
 }
 </code></pre>
-<h3 id="типові-помилки-26">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-26">#</a></h3>
-<ul>
-<li>Не викликати <code>awaitClose</code>.</li>
-<li>Не unregister listener.</li>
-<li>Використовувати blocking send у callback thread.</li>
-<li>Не думати про conflation/buffer для high-frequency updates.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-26">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-26">#</a></h3>
-<blockquote>
-<p><code>callbackFlow</code> використовую, коли потрібно загорнути listener API у Flow. Найважливіше — cleanup через <code>awaitClose</code>, інакше буде leak. Також я думаю про buffer/backpressure, бо callback може emit-ити частіше, ніж collector обробляє.</p>
-</blockquote>
 <hr/>
 <h2 id="flowon-collect-vs-collectlatest">flowOn, collect vs collectLatest<a aria-label="Посилання на розділ: flowOn, collect vs collectLatest" class="heading-anchor" href="#flowon-collect-vs-collectlatest">#</a></h2>
-<h3 id="питання-27">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-27">#</a></h3>
-<p>Що робить <code>flowOn</code> і чим <code>collect</code> відрізняється від <code>collectLatest</code>?</p>
-<h3 id="коротка-відповідь-19">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-19">#</a></h3>
-<p><code>flowOn</code> змінює context upstream операторів Flow. <code>collect</code> обробляє кожне значення повністю. <code>collectLatest</code> скасовує обробку попереднього значення, якщо приходить нове.</p>
-<h3 id="senior-level-пояснення-27">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-27">#</a></h3>
-<p><code>flowOn</code> впливає тільки на upstream, не на downstream після себе. Це важливо для performance: heavy mapping перед <code>flowOn(Dispatchers.Default)</code> буде на Default, але UI update після — на collector context.</p>
-<p><code>collectLatest</code> корисний для search, rendering latest state, image loading, operations where stale result не потрібен. Але він небезпечний, якщо кожен emission має бути оброблений, наприклад analytics або payment steps.</p>
-<h3 id="production-приклад-17">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-17">#</a></h3>
-<pre><code class="language-kotlin">val searchResults: StateFlow&lt;SearchUiState&gt; = queryFlow
-    .debounce(300)
-    .distinctUntilChanged()
-    .flatMapLatest { query -&gt;
-        searchRepository.search(query)
-    }
-    .map&lt;_, SearchUiState&gt; { results -&gt; SearchUiState.Content(results.map { it.toUiModel() }) }
-    .catch { emit(SearchUiState.Error) }
-    .flowOn(defaultDispatcher)
-    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SearchUiState.Empty)
-</code></pre>
-<h3 id="типові-помилки-27">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-27">#</a></h3>
-<ul>
-<li>Думати, що <code>flowOn</code> змінює весь flow після себе.</li>
-<li>Використовувати <code>collectLatest</code> для non-cancellable critical operations.</li>
-<li>Виконувати heavy mapping на Main.</li>
-<li>Ставити <code>catch</code> не в тому місці.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-27">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-27">#</a></h3>
-<blockquote>
-<p><code>flowOn</code> змінює dispatcher для upstream частини flow. Я використовую його для heavy transformations або IO upstream. <code>collectLatest</code> використовую, коли старий результат більше не потрібен, наприклад instant search. Але для critical side effects використовую <code>collect</code>, щоб не скасувати потрібну обробку.</p>
-</blockquote>
-<hr/>
-<h2 id="combine-flatmaplatest-flatmapmerge-flatmapconcat-debounce-retry-catch">combine, flatMapLatest, flatMapMerge, flatMapConcat, debounce, retry, catch<a aria-label="Посилання на розділ: combine, flatMapLatest, flatMapMerge, flatMapConcat, debounce, retry, catch" class="heading-anchor" href="#combine-flatmaplatest-flatmapmerge-flatmapconcat-debounce-retry-catch">#</a></h2>
-<h3 id="питання-28">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-28">#</a></h3>
-<p>Як вибирати Flow operators?</p>
-<h3 id="коротка-відповідь-20">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-20">#</a></h3>
-<p>Operators вибирають за semantics:</p>
-<ul>
-<li><code>combine</code> — об’єднати latest values з кількох flows.</li>
-<li><code>flatMapLatest</code> — switch to latest request, cancel previous.</li>
-<li><code>flatMapConcat</code> — виконувати послідовно.</li>
-<li><code>flatMapMerge</code> — виконувати concurrently.</li>
-<li><code>debounce</code> — чекати паузу в emissions.</li>
-<li><code>retry</code> — повторити upstream при failure.</li>
-<li><code>catch</code> — обробити upstream exception.</li>
-</ul>
-<h3 id="senior-level-пояснення-28">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-28">#</a></h3>
-<p>Senior має пояснювати не оператори ізольовано, а behavior при concurrency, cancellation і errors.</p>
-<p><code>flatMapLatest</code> добре підходить для search query: новий query скасовує старий request.<br/>
-<code>flatMapConcat</code> підходить для ordered operations.<br/>
-<code>flatMapMerge</code> — для parallel independent operations, але треба control concurrency.<br/>
-<code>retry</code> має бути обмеженим і не повинен retry-ити business errors без потреби.<br/>
-<code>catch</code> ловить exceptions upstream від себе; downstream exceptions не ловить.</p>
-<h3 id="production-приклад-18">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-18">#</a></h3>
-<pre><code class="language-kotlin">val productsUiState: StateFlow&lt;ProductsUiState&gt; = combine(
-    observeSelectedCategory(),
-    observeSortOrder(),
-    observeSearchQuery().debounce(300).distinctUntilChanged()
-) { category, sort, query -&gt;
-    ProductFilter(category = category, sort = sort, query = query)
-}.flatMapLatest { filter -&gt;
-    productRepository.observeProducts(filter)
-}.map&lt;_, ProductsUiState&gt; { products -&gt;
-    ProductsUiState.Content(products.map(Product::toUiModel))
-}.retry(retries = 2) { error -&gt;
-    error is IOException
-}.catch { error -&gt;
-    emit(ProductsUiState.Error(error.toUserMessage()))
-}.stateIn(
-    scope = viewModelScope,
-    started = SharingStarted.WhileSubscribed(5_000),
-    initialValue = ProductsUiState.Loading
-)
-</code></pre>
-<h3 id="типові-помилки-28">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-28">#</a></h3>
-<ul>
-<li>Retry-ити всі exceptions без ліміту.</li>
-<li>Використовувати <code>flatMapMerge</code> і створити забагато concurrent requests.</li>
-<li>Ставити <code>catch</code> в кінець і думати, що він ловить collector exceptions.</li>
-<li>Не використовувати <code>distinctUntilChanged</code> для search/filter.</li>
-<li>Змішувати UI events і state в одному flow без semantics.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-28">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-28">#</a></h3>
-<blockquote>
-<p>Я вибираю Flow operator за business semantics. Якщо нове значення робить попередню роботу застарілою — <code>flatMapLatest</code>. Якщо порядок важливий — <code>flatMapConcat</code>. Якщо можна паралельно — <code>flatMapMerge</code>, але з контролем concurrency. Для retry обмежую умови, наприклад тільки <code>IOException</code>, і не retry-ю validation/business errors.</p>
-</blockquote>
+<p><code>collectLatest</code> доречний для search, rendering latest state, image loading — там, де stale result не потрібен; небезпечний, якщо кожен emission має бути оброблений (analytics, payment steps).</p>
 <hr/>
 <h2 id="sharingstarted">sharingStarted<a aria-label="Посилання на розділ: sharingStarted" class="heading-anchor" href="#sharingstarted">#</a></h2>
-<h3 id="питання-29">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-29">#</a></h3>
-<p>Що таке <code>SharingStarted.WhileSubscribed</code> і навіщо він потрібен?</p>
-<h3 id="коротка-відповідь-21">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-21">#</a></h3>
-<p><code>SharingStarted</code> визначає, коли shared flow/state починає і зупиняє collecting upstream. <code>WhileSubscribed</code> тримає upstream активним тільки коли є subscribers, часто з timeout, щоб пережити короткі lifecycle gaps.</p>
-<h3 id="senior-level-пояснення-29">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-29">#</a></h3>
-<p>У ViewModel <code>stateIn(..., WhileSubscribed(5_000), ...)</code> — популярний pattern. Він не тримає database/network observation активним назавжди, але й не перезапускає upstream при кожній короткій паузі, наприклад rotation або navigation transition.</p>
-<h3 id="типові-помилки-29">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-29">#</a></h3>
-<ul>
-<li>Використовувати <code>Eagerly</code> і тримати upstream завжди активним.</li>
-<li>Використовувати <code>Lazily</code> і не розуміти, коли start/stop відбудеться.</li>
-<li>Ставити timeout 0 і отримувати зайві restarts.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-29">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-29">#</a></h3>
-<blockquote>
-<p><code>SharingStarted</code> — це policy lifetime для shared flow. У UI state я часто використовую <code>WhileSubscribed(5_000)</code>, щоб upstream працював, коли UI реально підписаний, але не перезапускався від коротких lifecycle gaps. Це компроміс між resource usage і UX.</p>
-</blockquote>
+<p>Чому <code>stateIn(..., WhileSubscribed(5_000), ...)</code> — стандартний компроміс у ViewModel: database/network observation не тримається активним назавжди (hot stream без споживача витрачає ресурси й батарею), але upstream не перезапускається при кожній короткій паузі — rotation або navigation transition; у фоні upstream засинає. Timeout 0 дає зайві restarts.</p>
 <hr/>
 <h2 id="flow-підсумок">Flow — підсумок<a aria-label="Посилання на розділ: Flow — підсумок" class="heading-anchor" href="#flow-підсумок">#</a></h2>
 <p>Flow на Senior-рівні — це про stream semantics: cold/hot, state/events, cancellation, backpressure, lifecycle, sharing, error handling. Найчастіші провали: неправильні one-shot events, duplicate network calls через cold flows, broad retry, misuse <code>collectLatest</code>, hardcoded dispatchers і відсутність deterministic tests.</p>
@@ -14869,49 +14622,11 @@ val uiState: StateFlow&lt;CheckoutUiState&gt; = _uiState.asStateFlow()
 <h3 id="en-interview-wording-5">Interview wording<a aria-label="Link to section: Interview wording" class="heading-anchor" href="#en-interview-wording-5">#</a></h3>
 <p>“I design coroutine ownership explicitly. UI work belongs to <code>viewModelScope</code> or lifecycle scopes; domain suspend functions do not launch unowned background work. If a parent operation is cancelled, its children should normally be cancelled too.”</p>
 </div></details><details class="major-section" data-key="flow" data-title="Flow" id="en-flow" open=""><summary class="major-summary"><span class="major-title">Flow</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<p><strong>More detail:</strong> <a href="#en-kotlin-flow-foundations">Kotlin Flow: foundations, operators, and Android lifecycle</a>, <a href="#en-kotlin-hot-flows-ui-state-events">StateFlow, SharedFlow, Channel, and Android UI state/events</a>, <a href="#en-advanced-kotlin-flow-production">Advanced Kotlin Flow in production</a>, <a href="#en-senior-android-testing-strategy">Senior Android testing strategy</a>. Only notes not covered there remain below.</p>
 <h2 id="en-cold-flow-vs-hot-flow">Cold Flow vs Hot Flow<a aria-label="Link to section: Cold Flow vs Hot Flow" class="heading-anchor" href="#en-cold-flow-vs-hot-flow">#</a></h2>
-<p>Cold Flow starts executing when collected. Each collector triggers the upstream again. Hot Flow exists independently of collectors and can emit even when nobody is collecting.</p>
-<p>Room queries are often cold flows. <code>StateFlow</code> and <code>SharedFlow</code> are hot.</p>
-<h3 id="en-interview-wording-8">Interview wording<a aria-label="Link to section: Interview wording" class="heading-anchor" href="#en-interview-wording-8">#</a></h3>
-<p>“Cold Flow describes a stream pipeline; hot Flow represents shared state or events. I choose based on ownership: who produces the data and whether the stream should exist without collectors.”</p>
-<h2 id="en-stateflow-vs-sharedflow-vs-channel">StateFlow vs SharedFlow vs Channel<a aria-label="Link to section: StateFlow vs SharedFlow vs Channel" class="heading-anchor" href="#en-stateflow-vs-sharedflow-vs-channel">#</a></h2>
-<p><code>StateFlow</code> represents state. It always has a current value and replays the latest value to new collectors. It is ideal for UI state.</p>
-<p><code>SharedFlow</code> represents shared events or broadcasts. It is configurable with replay and buffer.</p>
-<p><code>Channel</code> is a communication primitive for point-to-point events. For UI one-shot events, many teams use <code>SharedFlow</code> with <code>replay = 0</code>, or model events as part of state if delivery guarantees are important.</p>
-<pre><code class="language-kotlin">data class LoginUiState(
-    val email: String = "",
-    val isLoading: Boolean = false,
-    val error: String? = null
-)
-
-sealed interface LoginEvent {
-    data object NavigateHome : LoginEvent
-}
-
-private val _uiState = MutableStateFlow(LoginUiState())
-val uiState = _uiState.asStateFlow()
-
-private val _events = MutableSharedFlow&lt;LoginEvent&gt;()
-val events = _events.asSharedFlow()
-</code></pre>
-<h3 id="en-common-mistakes-8">Common mistakes<a aria-label="Link to section: Common mistakes" class="heading-anchor" href="#en-common-mistakes-8">#</a></h3>
-<ul>
-<li>Using <code>StateFlow</code> for one-time navigation without clearing consumed state.</li>
-<li>Using <code>SharedFlow</code> for screen state and losing current value.</li>
-<li>Not collecting with lifecycle awareness.</li>
-</ul>
+<p>Room queries are often cold flows.</p>
 <h2 id="en-collect-vs-collectlatest"><code>collect</code> vs <code>collectLatest</code><a aria-label="Link to section: collect vs collectLatest" class="heading-anchor" href="#en-collect-vs-collectlatest">#</a></h2>
-<p><code>collect</code> processes every value. <code>collectLatest</code> cancels the previous block when a new value arrives. Use <code>collectLatest</code> for search results, image loading, or UI rendering where only the latest value matters.</p>
-<h2 id="en-combine-flatmaplatest-debounce-catch-retry"><code>combine</code>, <code>flatMapLatest</code>, <code>debounce</code>, <code>catch</code>, <code>retry</code><a aria-label="Link to section: combine , flatMapLatest , debounce , catch , retry" class="heading-anchor" href="#en-combine-flatmaplatest-debounce-catch-retry">#</a></h2>
-<p><code>combine</code> merges latest values from multiple flows. <code>flatMapLatest</code> switches to a new inner flow and cancels the old one. <code>debounce</code> delays emissions until input stabilizes. <code>catch</code> handles upstream errors. <code>retry</code> retries upstream on failure.</p>
-<pre><code class="language-kotlin">val results: StateFlow&lt;SearchUiState&gt; = query
-    .debounce(300)
-    .distinctUntilChanged()
-    .flatMapLatest { q -&gt; repository.search(q) }
-    .map&lt;_, SearchUiState&gt; { SearchUiState.Content(it) }
-    .catch { emit(SearchUiState.Error) }
-    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SearchUiState.Idle)
-</code></pre>
+<p>Typical <code>collectLatest</code> uses: search results, image loading, or UI rendering where only the latest value matters.</p>
 <h2 id="en-testing-flow">Testing Flow<a aria-label="Link to section: Testing Flow" class="heading-anchor" href="#en-testing-flow">#</a></h2>
 <p>Use Turbine for deterministic Flow assertions and <code>runTest</code> for virtual time.</p>
 <pre><code class="language-kotlin">@Test
