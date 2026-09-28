@@ -2996,7 +2996,7 @@ suspend fun consume(session: Session) {
     val dispatcher = StandardTestDispatcher(testScheduler)
     val repo = OrdersRepository(api, dispatcher, clock = TestClock(testScheduler))
 
-    val result = backgroundScope.async { repo.refresh() }
+    val result = async { repo.refresh() } // finite work: foreground child, not backgroundScope
     advanceTimeBy(1_000)
     runCurrent()                 // run tasks scheduled exactly at the new time
     advanceUntilIdle()           // drain finite foreground work
@@ -3068,7 +3068,7 @@ suspend fun consume(session: Session) {
 <h2 id="stage8-uk-followups">4 senior follow-ups з відповідями<a aria-label="Посилання на розділ: 4 senior follow ups" class="heading-anchor" href="#stage8-uk-followups">#</a></h2>
 <ol>
 <li><strong>Перший async failed до того, як код awaits другий.</strong> In ordinary scope its failure cancels parent/sibling immediately; await order changes observation, not structural propagation. In supervisor, explicitly await both and define partial-result semantics.</li>
-<li><strong>Supervised launch crashes despite handler on supervisorScope?</strong> A supervisor does not install reporting automatically. Put an applicable handler in the launching context/child or catch in child, and test the policy.</li>
+<li><strong>Supervised launch crashes — where must the handler live?</strong> Direct children of <code>supervisorScope</code>/<code>SupervisorJob</code> handle failures like roots: they use a <code>CoroutineExceptionHandler</code> from their context (inherited from the enclosing scope or passed to <code>launch</code>). With no handler in that context the failure goes to the thread uncaught handler and crashes on Android. Install one there or catch in the child, and test the policy.</li>
 <li><strong>Timeout happened after payment endpoint received request.</strong> Treat status as unknown, persist operation ID, query/reconcile and retry only with the same idempotency key; coroutine timeout is not rollback.</li>
 <li><strong><code>advanceUntilIdle</code> hangs or misses collector work.</strong> Move intentional infinite work to <code>backgroundScope</code>, share scheduler, use <code>runCurrent</code> at exact time boundaries, and assert finite observable events.</li>
 </ol>
@@ -6587,7 +6587,7 @@ class CheckoutViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
 
-            val result = runCatching {
+            val result = runCatchingNonCancellation { // rethrows CancellationException
                 coroutineScope {
                     val cart = async { loadCart() }
                     val paymentMethods = async { loadPaymentMethods() }
@@ -6695,7 +6695,7 @@ Child скасовується теж — це основа structured concurren
 <p><strong>Що станеться, якщо exception виникне в <code>async</code> до <code>await</code>?</strong><br/>
 Виняток зберігається в Deferred і перекидається при <code>await</code>. Але parent усе одно дізнається про failure структуровано — <code>async</code> не ізолює помилки сам по собі.</p>
 <p><strong>Коли використовувати <code>awaitAll()</code>?</strong><br/>
-Коли є колекція Deferred і всі результати потрібні разом як одна операція; семантика fail-fast — перший failure скасовує решту. Для часткових результатів — supervisorScope і обробка кожного окремо.</p>
+Коли є колекція Deferred і всі результати потрібні разом як одна операція; <code>awaitAll</code> падає одразу при першому failure будь-якого Deferred (не в порядку списку), але сам нічого не скасовує: решту скасовує enclosing <code>coroutineScope</code>/звичайний Job; у <code>supervisorScope</code> інші Deferred продовжують працювати. Для часткових результатів — supervisorScope і обробка кожного окремо.</p>
 <p><strong>Як обробити partial failures?</strong><br/>
 <code>supervisorScope</code> + try/catch (або runCatching) навколо кожного незалежного блоку; результат кожного мапиться у свою частину state. Чесно визначити, які частини екрана можуть жити без інших.</p>
 <hr/>
@@ -6919,10 +6919,10 @@ IO — еластичний пул для blocking IO (диск, блокуюч�
 </ol>
 <p>У ViewModel краще явно оновлювати UI state, а не покладатися на global <code>CoroutineExceptionHandler</code>.</p>
 <h3 id="production-приклад-13">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-13">#</a></h3>
-<pre><code class="language-kotlin">sealed interface CheckoutError {
-    data object Network : CheckoutError
-    data object PaymentDeclined : CheckoutError
-    data object Unknown : CheckoutError
+<pre><code class="language-kotlin">sealed class CheckoutError : Exception() {
+    class Network : CheckoutError()
+    class PaymentDeclined : CheckoutError()
+    class Unknown : CheckoutError()
 }
 
 class SubmitCheckoutUseCase @Inject constructor(
@@ -6930,8 +6930,8 @@ class SubmitCheckoutUseCase @Inject constructor(
 ) {
     suspend operator fun invoke(): Result&lt;Unit&gt; = runCatchingNonCancellation {
         repository.submitOrder()
-    }.mapError { throwable -&gt;
-        throwable.toCheckoutError()
+    }.recoverCatching { throwable -&gt; // Result failure must be a Throwable
+        throw throwable.toCheckoutError()
     }
 }
 </code></pre>
@@ -12305,7 +12305,7 @@ suspend fun consume(session: Session) {
     val dispatcher = StandardTestDispatcher(testScheduler)
     val repo = OrdersRepository(api, dispatcher, clock = TestClock(testScheduler))
 
-    val result = backgroundScope.async { repo.refresh() }
+    val result = async { repo.refresh() } // finite work: foreground child, not backgroundScope
     advanceTimeBy(1_000)
     runCurrent()                 // run tasks scheduled exactly at the new time
     advanceUntilIdle()           // drain finite foreground work
@@ -12377,7 +12377,7 @@ suspend fun consume(session: Session) {
 <h2 id="en-stage8-followups">4 senior follow-ups with answers<a aria-label="Link to section: 4 senior follow ups" class="heading-anchor" href="#en-stage8-followups">#</a></h2>
 <ol>
 <li><strong>The first async fails before code awaits the second.</strong> In an ordinary scope, failure cancels the parent and sibling immediately; await order changes observation, not structural propagation. In a supervisor, await both explicitly and define partial-result semantics.</li>
-<li><strong>A supervised launch crashes despite a handler near supervisorScope.</strong> A supervisor installs no reporting automatically. Put an applicable handler in the launching context or child, or catch in the child, and test that policy.</li>
+<li><strong>A supervised launch crashes: where must the handler live?</strong> Direct children of <code>supervisorScope</code>/<code>SupervisorJob</code> handle failures like roots: they use a <code>CoroutineExceptionHandler</code> from their context (inherited from the enclosing scope or passed to <code>launch</code>). With no handler in that context the failure goes to the thread uncaught handler and crashes on Android. Install one there or catch in the child, and test that policy.</li>
 <li><strong>Timeout occurs after the payment endpoint receives the request.</strong> Treat status as unknown, persist the operation ID, query and reconcile, and retry only with the same idempotency key. Coroutine timeout is not rollback.</li>
 <li><strong><code>advanceUntilIdle</code> hangs or misses collector work.</strong> Move intentionally infinite work to <code>backgroundScope</code>, share the scheduler, use <code>runCurrent</code> at exact time boundaries, and assert finite observable events.</li>
 </ol>
@@ -15502,7 +15502,7 @@ val uiState: StateFlow&lt;CheckoutUiState&gt; = _uiState.asStateFlow()
 <h3 id="en-interview-wording-6">Interview wording<a aria-label="Link to section: Interview wording" class="heading-anchor" href="#en-interview-wording-6">#</a></h3>
 <p>“I choose <code>coroutineScope</code> when the operation is all-or-nothing. I choose <code>supervisorScope</code> when independent children can fail without invalidating the whole screen.”</p>
 <h2 id="en-cancellation">Cancellation<a aria-label="Link to section: Cancellation" class="heading-anchor" href="#en-cancellation">#</a></h2>
-<p>Cancellation is cooperative. Suspending functions check cancellation automatically, but CPU loops must check it manually using <code>ensureActive()</code> or <code>isActive</code>.</p>
+<p>Cancellation is cooperative. All suspending functions in kotlinx.coroutines (<code>delay</code>, <code>withContext</code>, <code>await</code>, <code>yield</code>) are cancellable; your own suspend function or CPU loop is cancellable only if it calls them or checks <code>ensureActive()</code>/<code>isActive</code>.</p>
 <pre><code class="language-kotlin">suspend fun parseLargeFile(lines: Sequence&lt;String&gt;): List&lt;Item&gt; = withContext(Dispatchers.Default) {
     lines.mapIndexed { index, line -&gt;
         ensureActive()
@@ -15525,7 +15525,7 @@ val uiState: StateFlow&lt;CheckoutUiState&gt; = _uiState.asStateFlow()
 }
 </code></pre>
 <h2 id="en-exception-handling">Exception handling<a aria-label="Link to section: Exception handling" class="heading-anchor" href="#en-exception-handling">#</a></h2>
-<p>Exceptions in coroutines depend on builder and parent scope. <code>launch</code> propagates failure to parent immediately. <code>async</code> stores failure and rethrows on <code>await</code>. <code>CoroutineExceptionHandler</code> is not a local try/catch replacement; it catches uncaught exceptions at the boundary.</p>
+<p>Exceptions in coroutines depend on builder and parent scope. A root <code>launch</code> delivers an uncaught failure to the <code>CoroutineExceptionHandler</code>; a root <code>async</code> stores it in <code>Deferred</code> and rethrows on <code>await</code>. As children of a regular Job, both <code>launch</code> and <code>async</code> propagate failure to the parent immediately, cancelling siblings, regardless of <code>await</code>. <code>CoroutineExceptionHandler</code> is not a local try/catch replacement; it catches uncaught exceptions at the boundary.</p>
 <h3 id="en-interview-wording-7">Interview wording<a aria-label="Link to section: Interview wording" class="heading-anchor" href="#en-interview-wording-7">#</a></h3>
 <p>“I prefer local error modeling in suspend functions and ViewModels. I do not rely on <code>CoroutineExceptionHandler</code> for normal business errors. I use it only as a last-resort boundary for uncaught failures.”</p>
 <h2 id="en-dispatchers-and-withcontext">Dispatchers and <code>withContext</code><a aria-label="Link to section: Dispatchers and withContext" class="heading-anchor" href="#en-dispatchers-and-withcontext">#</a></h2>
