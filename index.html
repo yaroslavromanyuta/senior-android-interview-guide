@@ -452,18 +452,6 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </ol>
 </li>
 <li class="toc-major">
-<a data-target="android-fundamentals" href="#android-fundamentals">Android Fundamentals</a>
-<ol class="toc-children">
-<li><a data-target="activity-lifecycle" href="#activity-lifecycle">Activity lifecycle</a></li>
-<li><a data-target="fragment-lifecycle" href="#fragment-lifecycle">Fragment lifecycle</a></li>
-<li><a data-target="context-application-intent-pendingintent" href="#context-application-intent-pendingintent">Context, Application, Intent, PendingIntent</a></li>
-<li><a data-target="configuration-changes-savedinstancestate-process-death" href="#configuration-changes-savedinstancestate-process-death">Configuration changes, SavedInstanceState, process death</a></li>
-<li><a data-target="services-broadcastreceiver-contentprovider-background-execution-limits" href="#services-broadcastreceiver-contentprovider-background-execution-limits">Services, BroadcastReceiver, ContentProvider, background execution limits</a></li>
-<li><a data-target="permissions" href="#permissions">Permissions</a></li>
-<li><a data-target="android-fundamentals-підсумок" href="#android-fundamentals-підсумок">Android Fundamentals — підсумок</a></li>
-</ol>
-</li>
-<li class="toc-major">
 <a data-target="android-process-lifecycle-state-restoration" href="#android-process-lifecycle-state-restoration">Життєвий цикл процесу Android і відновлення стану</a>
 </li>
 <li class="toc-major">
@@ -641,16 +629,6 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <ol class="toc-children">
 <li><a data-target="en-how-to-use-this-document" href="#en-how-to-use-this-document">How to use this document</a></li>
 <li><a data-target="en-what-interviewers-expect-from-a-senior-android-engineer" href="#en-what-interviewers-expect-from-a-senior-android-engineer">What interviewers expect from a Senior Android Engineer</a></li>
-</ol>
-</li>
-<li class="toc-major">
-<a data-target="en-android-fundamentals" href="#en-android-fundamentals">Android Fundamentals</a>
-<ol class="toc-children">
-<li><a data-target="en-activity-lifecycle" href="#en-activity-lifecycle">Activity lifecycle</a></li>
-<li><a data-target="en-fragment-lifecycle" href="#en-fragment-lifecycle">Fragment lifecycle</a></li>
-<li><a data-target="en-context-intent-application-and-pendingintent" href="#en-context-intent-application-and-pendingintent">Context, Intent, Application, and PendingIntent</a></li>
-<li><a data-target="en-configuration-changes-savedinstancestate-and-process-death" href="#en-configuration-changes-savedinstancestate-and-process-death">Configuration changes, SavedInstanceState, and process death</a></li>
-<li><a data-target="en-services-broadcastreceiver-contentprovider-and-background-limits" href="#en-services-broadcastreceiver-contentprovider-and-background-limits">Services, BroadcastReceiver, ContentProvider, and background limits</a></li>
 </ol>
 </li>
 <li class="toc-major">
@@ -874,151 +852,11 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <li><strong>Testing/debugging</strong> — як перевірити й підтримувати.</li>
 </ol>
 <hr/>
-</div></details><details class="major-section" data-key="android-fundamentals" data-title="Android Fundamentals" id="android-fundamentals" open=""><summary class="major-summary"><span class="major-title">Android Fundamentals</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
-<p><strong>Детальніше:</strong> <a href="#android-process-lifecycle-state-restoration">Життєвий цикл процесу Android і відновлення стану</a>, <a href="#android-tasks-back-stack-deep-links-intents-pending-intent">Android tasks, back stack, deep links, intents та PendingIntent</a>, <a href="#android-background-execution">Android background execution</a>, <a href="#android-permissions-storage-notifications">Android permissions, storage і notifications</a>. Нижче — лише короткі API-приклади й нюанси, яких немає в цих етапах.</p>
-<h2 id="activity-lifecycle">Activity lifecycle<a aria-label="Посилання на розділ: Activity lifecycle" class="heading-anchor" href="#activity-lifecycle">#</a></h2>
-<p>При поверненні з back stack: <code>onRestart -&gt; onStart -&gt; onResume</code>. <code>onCreate</code> — one-time setup: inflate layout / <code>setContent</code>, ViewModel bindings, navigation. Activity/Fragment/Compose UI — тонкий шар rendering + event forwarding: без network/DB-роботи напряму в Activity і без coroutine у <code>GlobalScope</code>; state і async work живуть у ViewModel/repository/use case.</p>
-<pre><code class="language-kotlin">class ProductActivity : AppCompatActivity() {
-    private val viewModel: ProductViewModel by viewModels()
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        setContent {
-            ProductRoute(viewModel = viewModel)
-        }
-    }
-
-    override fun onStart() {
-        super.onStart()
-        viewModel.onScreenVisible()
-    }
-
-    override fun onStop() {
-        viewModel.onScreenHidden()
-        super.onStop()
-    }
-}
-</code></pre>
-<p>Тут Activity не робить network call напряму. Вона тільки повідомляє ViewModel про lifecycle-level events.</p>
-<p><strong>Що робити в <code>onPause</code> vs <code>onStop</code>?</strong> <code>onPause</code> — зупинити легкі foreground-речі: camera preview, сенсори, анімації. <code>onStop</code> — звільнити важчі ресурси, відписати receivers/listeners.</p>
-<hr/>
-<h2 id="fragment-lifecycle">Fragment lifecycle<a aria-label="Посилання на розділ: Fragment lifecycle" class="heading-anchor" href="#fragment-lifecycle">#</a></h2>
-<pre><code class="language-text">onAttach -&gt; onCreate -&gt; onCreateView -&gt; onViewCreated -&gt; onStart -&gt; onResume
-onPause -&gt; onStop -&gt; onDestroyView -&gt; onDestroy -&gt; onDetach
-</code></pre>
-<pre><code class="language-kotlin">class OrdersFragment : Fragment(R.layout.fragment_orders) {
-    private var _binding: FragmentOrdersBinding? = null
-    private val binding get() = requireNotNull(_binding)
-
-    private val viewModel: OrdersViewModel by viewModels()
-
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        _binding = FragmentOrdersBinding.bind(view)
-
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.uiState.collect { state -&gt;
-                    render(state)
-                }
-            }
-        }
-    }
-
-    override fun onDestroyView() {
-        _binding = null
-        super.onDestroyView()
-    }
-}
-</code></pre>
-<p><strong>Чому не можна використовувати non-default constructor для Fragment?</strong><br/>
-За замовчуванням <code>FragmentFactory</code> перестворює Fragment рефлексією через no-arg constructor (recreation, process death), тож без кастомної factory інший конструктор дасть краш при відновленні. Дані передаються через <code>arguments</code> Bundle, Safe Args або typed Navigation routes; залежності з конструктора можливі лише через власну <code>FragmentFactory</code> (або Hilt field injection через <code>@AndroidEntryPoint</code>).</p>
-<p><strong>Як share ViewModel між Fragment-ами?</strong><br/>
-ViewModel scope може бути fragment-scoped (<code>viewModels()</code>), <code>activityViewModels()</code> для scope всієї Activity або <code>navGraphViewModels()</code> для конкретного navigation flow. Scope обирається за ownership стейту: кому він логічно належить — стільки він і живе.</p>
-<p>Типова помилка: використовувати <code>requireActivity()</code> там, де достатньо Fragment context.</p>
-<hr/>
-<h2 id="context-application-intent-pendingintent">Context, Application, Intent, PendingIntent<a aria-label="Посилання на розділ: Context, Application, Intent, PendingIntent" class="heading-anchor" href="#context-application-intent-pendingintent">#</a></h2>
-<p><code>Context</code> — handle до Android runtime: resources, services, files, permissions, launching components. Основні типи: Activity context, Application context, Service context. Вибір context важливий для lifecycle і memory leaks.</p>
-<p>Activity context прив’язаний до lifecycle Activity і потрібен, коли операція має UI theme/window: dialog, layout inflation з theme, start Activity for result. Application context живе весь process і підходить для singleton dependencies, database, DataStore, application-wide services. Але Application context не має Activity theme і не може безпечно показувати UI.</p>
-<pre><code class="language-kotlin">@Singleton
-class AppDatabaseProvider @Inject constructor(
-    @ApplicationContext private val context: Context
-) {
-    val database: AppDatabase by lazy {
-        Room.databaseBuilder(
-            context,
-            AppDatabase::class.java,
-            "app.db"
-        ).build()
-    }
-}
-</code></pre>
-<p>Типові помилки: передавати Activity context у singleton; показувати Dialog через Application context.</p>
-<p><strong>Коли Application context не підходить?</strong><br/>
-Для всього UI-bound: показ діалогів, inflate з темою Activity, startActivity без NEW_TASK, доступ до window. Application context — для довгоживучих залежностей (DB, network), які не повинні тримати Activity.</p>
-<p><strong>Intent / PendingIntent / exported — нюанси поза етапом 4:</strong> implicit Intent може бути перехоплений іншим застосунком, тому для внутрішньої навігації — завжди explicit. PendingIntent дозволяє системі, launcher чи AlarmManager виконати Intent пізніше: notification actions, alarms, widgets; mutability — див. <a href="#edge-case-pendingintent">edge case «PendingIntent: mutability як вектор атаки»</a>. Exported component може викликати будь-який застосунок (ін'єкція сміттєвих даних, обхід флоу, дії від вашого імені): <code>android:exported="false"</code> за замовчуванням, permissions для IPC, валідація всього input (deep links — <a href="#edge-case-deeplinks">edge case «Deep links»</a>).</p>
-<hr/>
-<h2 id="configuration-changes-savedinstancestate-process-death">Configuration changes, SavedInstanceState, process death<a aria-label="Посилання на розділ: Configuration changes, SavedInstanceState, process death" class="heading-anchor" href="#configuration-changes-savedinstancestate-process-death">#</a></h2>
-<p>Рівні state за критичністю: ephemeral UI state (scroll, tab, text input) → screen UI state (content, loading/error) → domain/business data (orders, profile, cart) → critical persisted state (payment flow state, draft, auth tokens) у DB/DataStore/server. Приклад: ViewModel відновлює екран з малого ключа в <code>SavedStateHandle</code> і repository.</p>
-<pre><code class="language-kotlin">@HiltViewModel
-class ProductViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
-    private val repository: ProductRepository
-) : ViewModel() {
-
-    private val productId: String = checkNotNull(savedStateHandle["productId"])
-
-    val uiState: StateFlow&lt;ProductUiState&gt; = repository.observeProduct(productId)
-        .map { ProductUiState.Content(it) }
-        .catch { emit(ProductUiState.Error) }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = ProductUiState.Loading
-        )
-}
-</code></pre>
-<p><strong>Коли можна використовувати <code>android:configChanges</code>?</strong><br/>
-Рідко і свідомо: коли ви справді самі коректно обробляєте конкретну зміну (відеоплеєр, карта). Зазвичай це workaround, що маскує проблеми state management і ламає ресурсну систему (локалізовані layout-и тощо).</p>
-<hr/>
-<h2 id="services-broadcastreceiver-contentprovider-background-execution-limits">Services, BroadcastReceiver, ContentProvider, background execution limits<a aria-label="Посилання на розділ: Services, BroadcastReceiver, ContentProvider, background execution limits" class="heading-anchor" href="#services-broadcastreceiver-contentprovider-background-execution-limits">#</a></h2>
-<p><strong>ContentProvider</strong> надає structured data між apps/processes (expose/query shared data). Приклад Worker із Hilt assisted injection і класифікацією transient vs permanent помилок (default <code>WorkerFactory</code> створює worker рефлексією лише з <code>(Context, WorkerParameters)</code>, тож додаткова залежність потребує HiltWorkerFactory або власної <code>WorkerFactory</code>; <code>CancellationException</code> перекидається (rethrow) до generic <code>catch (e: Exception)</code>, щоб не ковтати cancellation):</p>
-<pre><code class="language-kotlin">// Потребує HiltWorkerFactory через Configuration.Provider в Application
-@HiltWorker
-class SyncOrdersWorker @AssistedInject constructor(
-    @Assisted appContext: Context,
-    @Assisted params: WorkerParameters,
-    private val syncOrdersUseCase: SyncOrdersUseCase
-) : CoroutineWorker(appContext, params) {
-
-    override suspend fun doWork(): Result {
-        return try {
-            syncOrdersUseCase()
-            Result.success()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: IOException) {
-            Result.retry()
-        } catch (e: Exception) {
-            Result.failure()
-        }
-    }
-}
-</code></pre>
-<p><strong>Що таке Doze mode?</strong><br/>
-Мережа, jobs і alarms відкладаються до maintenance windows. Пробивають його high-priority FCM і <code>setExactAndAllowWhileIdle</code>. Тому periodic work ≠ точний розклад — див. <a href="#edge-case-workmanager-periodic">edge case «WorkManager: periodic work»</a>.</p>
-<hr/>
-<h2 id="permissions">Permissions<a aria-label="Посилання на розділ: Permissions" class="heading-anchor" href="#permissions">#</a></h2>
-<p>Категорії: install-time permissions, runtime permissions, special permissions і permissions з one-time/approximate behavior. Permission — це UX/security contract: запит just-in-time у контексті конкретної user action, fallback при deny/permanent deny, перевірка перед кожною sensitive operation.</p>
-<hr/>
-<h2 id="android-fundamentals-підсумок">Android Fundamentals — підсумок<a aria-label="Посилання на розділ: Android Fundamentals — підсумок" class="heading-anchor" href="#android-fundamentals-підсумок">#</a></h2>
-<p>Для Senior Android Developer Android fundamentals — це не memorization callbacks. Це розуміння lifecycle, process death, state ownership, background limitations, navigation semantics, security і system constraints. На співбесіді важливо постійно пов’язувати framework behavior з production наслідками: leaks, lost state, battery drain, broken navigation, ANR, bad UX.</p>
-<hr/>
 </div></details><details class="major-section" data-key="android-process-lifecycle-state-restoration" data-title="Життєвий цикл процесу Android і відновлення стану" id="android-process-lifecycle-state-restoration" open=""><summary class="major-summary"><span class="major-title">Життєвий цикл процесу Android і відновлення стану</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
 <h2 id="stage1-uk-learning-objective">Навчальна мета й mental model<a aria-label="Посилання на розділ: Навчальна мета й mental model" class="heading-anchor" href="#stage1-uk-learning-objective">#</a></h2>
 <p>Це консолідований Stage 1 mental model, а не ще один список callback-ів. Після розділу кандидат має вміти провести причинний ланцюжок: <strong>важливість процесу → lifecycle компонента → власник стану → механізм відновлення → поведінка після process death → перевірка тестами</strong>.</p>
 <blockquote><p><strong>Senior-теза:</strong> Android не гарантує безперервне існування процесу. Коректний екран відтворюється з мінімального збереженого стану та джерела істини, а не залежить від об’єктів, які випадково лишилися в пам’яті.</p></blockquote>
-<p>Короткі API-приклади вже є в <a href="#activity-lifecycle">Activity lifecycle</a> та <a href="#configuration-changes-savedinstancestate-process-death">configuration/saved-state deep dive</a>. Тут фокус — на процесному контракті, ownership, recovery та доказовій test matrix.</p>
+<p>Короткі API-приклади (Activity/Fragment, Context, <code>SavedStateHandle</code>) зібрано в <a href="#stage1-uk-practice-notes">практичних нотатках</a> наприкінці етапу. Основний фокус — на процесному контракті, ownership, recovery та доказовій test matrix.</p>
 
 <h2 id="stage1-uk-process-importance">Процес: важливість і не-гарантії<a aria-label="Посилання на розділ: Процес: важливість і не-гарантії" class="heading-anchor" href="#stage1-uk-process-importance">#</a></h2>
 <p>Зазвичай застосунок працює у власному Linux-процесі. Процес може бути створений, коли системі треба запустити компонент застосунку, а його lifetime контролює Android. За дефіциту пам’яті система оцінює процес за найважливішим активним компонентом; залежність через bound service або <code>ContentProvider</code> також може підвищити пріоритет.</p>
@@ -1040,6 +878,7 @@ class SyncOrdersWorker @AssistedInject constructor(
 <p><code>onPause()</code> має завершуватися швидко: network calls, транзакції БД й довге збереження можуть не встигнути. <code>onStop()</code> краще підходить для відносно важкого shutdown, але критичні зміни слід зберігати інкрементально, а не чекати lifecycle callback.</p>
 <p>За типової configuration change стара <code>Activity</code> знищується, нова отримує ресурси нової конфігурації, retained ViewModel приєднується до нового owner-а, а supported saved state відновлюється. Поля старої <code>Activity</code> не переносяться. Після process death немає ні старої <code>Activity</code>, ні ViewModel, ні іншого in-memory graph.</p>
 <p><code>android:configChanges</code> лише передає застосунку обов’язок адаптувати ресурси; він не вирішує ownership, не захищає від інших recreation і process death. Крім того, починаючи з Android 17/API 37, окремі зміни конфігурації можуть доставлятися через <code>onConfigurationChanged()</code> без повного restart, тому «кожна configuration change завжди recreate-ить Activity» — вже не універсальна гарантія.</p>
+<p>Тому <code>android:configChanges</code> використовують рідко і свідомо — коли ви справді самі коректно обробляєте конкретну зміну (відеоплеєр, карта). Здебільшого це workaround, що маскує проблеми state management і ламає ресурсну систему (локалізовані/qualifier-залежні layout-и тощо).</p>
 
 <h2 id="stage1-uk-fragment-dual-lifecycle">Fragment: два lifecycle owner-и<a aria-label="Посилання на розділ: Fragment: два lifecycle owner-и" class="heading-anchor" href="#stage1-uk-fragment-dual-lifecycle">#</a></h2>
 <p><code>Fragment</code> і його <code>View</code> — різні <code>LifecycleOwner</code>. View може завершитися в <code>onDestroyView()</code>, поки Fragment лишається у back stack у стані <code>CREATED</code>. Тому binding, adapters, UI observers і collectors належать <code>viewLifecycleOwner</code>; references на View очищаються в <code>onDestroyView()</code>, а стару View не кешують між <code>onCreateView()</code>.</p>
@@ -1105,6 +944,113 @@ viewLifecycleOwner.lifecycleScope.launch {
 <tr><td>Explicit user/system stop semantics</td><td>Force-stop і task removal — окремі negative tests</td><td>Підтверджують cold-start/cleared-task behavior, а не saved-state restoration.</td></tr>
 </tbody></table>
 <p>Developer option <strong>“Don’t keep activities”</strong> та <code>recreate()</code> корисні для recreation, але не створюють новий Linux-процес і не доводять process-death safety. Для kill test task спочатку лишають у background, перевіряють зміну PID і лише тоді повертаються до нього.</p>
+
+<h2 id="stage1-uk-practice-notes">Практичні нотатки<a aria-label="Посилання на розділ: Практичні нотатки" class="heading-anchor" href="#stage1-uk-practice-notes">#</a></h2>
+<p>Для Senior Android Developer lifecycle — це не memorization callbacks, а розуміння lifecycle, process death, state ownership, background limitations, navigation semantics, security і system constraints. На співбесіді постійно пов’язуйте framework behavior з production-наслідками: leaks, lost state, battery drain, broken navigation, ANR, bad UX.</p>
+<h3>Activity як тонкий шар</h3>
+<p>При поверненні з back stack: <code>onRestart -&gt; onStart -&gt; onResume</code>. <code>onCreate</code> — one-time setup: inflate layout / <code>setContent</code>, ViewModel bindings, navigation. Activity/Fragment/Compose UI — тонкий шар rendering + event forwarding: без network/DB-роботи напряму в Activity і без coroutine у <code>GlobalScope</code>; state і async work живуть у ViewModel/repository/use case (або WorkManager/service — залежно від семантики задачі).</p>
+<pre><code class="language-kotlin">class ProductActivity : AppCompatActivity() {
+    private val viewModel: ProductViewModel by viewModels()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        setContent {
+            ProductRoute(viewModel = viewModel)
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        viewModel.onScreenVisible()
+    }
+
+    override fun onStop() {
+        viewModel.onScreenHidden()
+        super.onStop()
+    }
+}
+</code></pre>
+<p>Тут Activity не робить network call напряму — вона лише повідомляє ViewModel про lifecycle-level events.</p>
+<p><strong>Що зупиняти в <code>onPause</code>, а що в <code>onStop</code>?</strong> В <code>onPause</code> — легкі foreground-only дії: camera preview, сенсори, transient animations. В <code>onStop</code> — звільняти важчі UI-ресурси, unregister receivers/listeners, зупиняти видимі updates.</p>
+<h3>Fragment: binding, constructor і shared ViewModel</h3>
+<pre><code class="language-text">onAttach -&gt; onCreate -&gt; onCreateView -&gt; onViewCreated -&gt; onStart -&gt; onResume
+onPause -&gt; onStop -&gt; onDestroyView -&gt; onDestroy -&gt; onDetach
+</code></pre>
+<pre><code class="language-kotlin">class OrdersFragment : Fragment(R.layout.fragment_orders) {
+    private var _binding: FragmentOrdersBinding? = null
+    private val binding get() = requireNotNull(_binding)
+
+    private val viewModel: OrdersViewModel by viewModels()
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        _binding = FragmentOrdersBinding.bind(view)
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.uiState.collect { state -&gt;
+                    render(state)
+                }
+            }
+        }
+    }
+
+    override fun onDestroyView() {
+        _binding = null
+        super.onDestroyView()
+    }
+}
+</code></pre>
+<p><strong>Чому не можна використовувати non-default constructor для Fragment?</strong> Default <code>FragmentFactory</code> перестворює Fragment рефлексією через no-arg constructor (recreation, process death), тож без кастомної factory інший конструктор дасть краш при відновленні. Дані передаються через <code>arguments</code> Bundle, Safe Args / typed Navigation routes або <code>SavedStateHandle</code>; залежності з конструктора можливі лише через власну <code>FragmentFactory</code> (<code>supportFragmentManager.fragmentFactory</code>, Fragment 1.1.0+) або Hilt field injection через <code>@AndroidEntryPoint</code>.</p>
+<p><strong>Як share ViewModel між Fragment-ами?</strong> Scope може бути fragment-scoped (<code>viewModels()</code>), <code>activityViewModels()</code> для всієї Activity або <code>navGraphViewModels()</code> для конкретного navigation flow. Scope обирається за ownership: чи state належить всій Activity, чи конкретному flow — стільки він і живе.</p>
+<p>Типова помилка: використовувати <code>requireActivity()</code> там, де достатньо Fragment context.</p>
+<h3>Context: Activity vs Application</h3>
+<p><code>Context</code> — handle до Android runtime: resources, system services, files, permissions, launching components. Основні типи: Activity context, Application context, Service context; вибір важливий для lifecycle і memory leaks. Activity context прив’язаний до lifecycle Activity і потрібен, коли операція має UI theme/window. Application context живе весь process і підходить для singleton dependencies (database, DataStore, network, application-wide services), але не має Activity theme і не може безпечно показувати UI.</p>
+<pre><code class="language-kotlin">@Singleton
+class AppDatabaseProvider @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
+    val database: AppDatabase by lazy {
+        Room.databaseBuilder(
+            context,
+            AppDatabase::class.java,
+            "app.db"
+        ).build()
+    }
+}
+</code></pre>
+<p><strong>Коли Application context не підходить?</strong> Для всього UI-bound: показ діалогів, inflate з темою Activity, start Activity for result, <code>startActivity</code> без <code>NEW_TASK</code>, доступ до window/token. Типові помилки: передавати Activity context у singleton; показувати Dialog через Application context.</p>
+<h3>SavedStateHandle: ID замість моделі</h3>
+<p>Рівні state за критичністю: ephemeral UI state (scroll, tab, text input) → screen UI state (content, loading/error) → domain/business data (orders, profile, cart) → critical persisted state (payment flow state, draft, auth tokens) у DB/DataStore/server. ViewModel відновлює екран із малого ключа в <code>SavedStateHandle</code> і repository:</p>
+<pre><code class="language-kotlin">@HiltViewModel
+class ProductDetailsViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
+    private val repository: ProductsRepository
+) : ViewModel() {
+
+    // Фіксований nav-аргумент: достатньо checkNotNull(savedStateHandle["productId"]).
+    // Якщо ID може змінюватися всередині екрана — getStateFlow.
+    private val productId: StateFlow&lt;String&gt; =
+        savedStateHandle.getStateFlow("productId", "")
+
+    val uiState: StateFlow&lt;ProductDetailsUiState&gt; = productId
+        .filter { it.isNotBlank() }
+        .flatMapLatest(repository::observeProduct)
+        .map&lt;Product, ProductDetailsUiState&gt; { product -&gt;
+            ProductDetailsUiState.Content(product)
+        }
+        .catch { emit(ProductDetailsUiState.Error(it.toUserMessage())) }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = ProductDetailsUiState.Loading
+        )
+}
+</code></pre>
+<p><code>SavedStateHandle</code> не зберігає весь <code>Product</code> — лише <code>productId</code>; повний екран відновлюється через repository. Це краще для process death, тестованості, кешування і single source of truth.</p>
+<h3>Follow-up: ViewModel overkill і scroll після process death</h3>
+<p><strong>Коли <code>ViewModel</code> — це overkill?</strong> Для локального, короткоживучого UI-стану без business semantics: expanded state одного accordion item, локальна анімація, тимчасове значення drag gesture, local focus. Overuse ViewModel робить UI менш автономним, ускладнює preview/test setup і створює зайвий coupling.</p>
+<p><strong>Як відновити scroll position після process death?</strong> Для простого Compose-списку — <code>rememberSaveable</code> з <code>LazyListState.Saver</code> (або <code>rememberLazyListState()</code>, який уже saveable). Але для production feed краще зберігати не лише pixel/index, а стабільний item key або paging anchor: після reload дані можуть змінитися — item може зникнути, порядок змінитися, pagination може не мати потрібної сторінки. Fallback: якщо anchor item не знайдено — найближча позиція або top.</p>
 
 <h2 id="stage1-uk-likely-qa">10 ймовірних практичних Q&amp;A<a aria-label="Посилання на розділ: 10 ймовірних практичних Q and A" class="heading-anchor" href="#stage1-uk-likely-qa">#</a></h2>
 <p><em>Це ймовірні теми для практики, а не підтверджений або гарантований список питань.</em></p>
@@ -1617,7 +1563,7 @@ fun enqueue(owner: Activity, id: EventId, raw: Any) {
 <tr><td><code>CLEAR_TASK | NEW_TASK</code></td><td>Очищає matching task перед стартом target; доречно для logout/reset, але знищує user history.</td></tr>
 <tr><td><code>REORDER_TO_FRONT</code></td><td>Переміщує наявний instance на top без очищення проміжних instances; ігнорується, якщо також задано <code>CLEAR_TOP</code>.</td></tr>
 </tbody></table>
-<p><code>allowTaskReparenting="true"</code> дозволяє Activity, яка тимчасово потрапила в чужий task, перейти до task своєї affinity, коли той виходить на foreground. Це робить історію контекстно залежною, тому потрібне явне UX-рішення й тести Recents.</p>
+<p><code>allowTaskReparenting="true"</code> дозволяє Activity, яка тимчасово потрапила в чужий task, перейти до task своєї affinity, коли той виходить на foreground. Це робить історію контекстно залежною, тому потрібне явне UX-рішення й тести Recents. Типовий production-симптом: комбінації <code>singleInstance</code>/<code>taskAffinity</code> створюють кілька tasks застосунку в Recents — користувач бачить «два застосунки».</p>
 
 <h3 id="stage4-uk-documents-multiwindow">Document-centric tasks, Recents і multi-window<a aria-label="Посилання на розділ: Document centric tasks and multi window" class="heading-anchor" href="#stage4-uk-documents-multiwindow">#</a></h3>
 <p><code>FLAG_ACTIVITY_NEW_DOCUMENT</code> (manifest: <code>documentLaunchMode</code>) моделює незалежний document як окремий task у Recents; зазвичай URI в Intent розрізняє documents. <code>intoExisting</code> шукає task за base intent Component + data URI, очищає його й доставляє root; <code>always</code> створює новий document task; <code>never</code>/<code>none</code> забороняють або залишають default reuse. <code>MULTIPLE_TASK</code> разом із <code>NEW_TASK</code>/<code>NEW_DOCUMENT</code> вимикає звичайний пошук existing task і майже завжди потребує сильної причини.</p>
@@ -1640,11 +1586,11 @@ fun enqueue(owner: Activity, id: EventId, raw: Any) {
         saveState = true
     }
 }</code></pre>
-<p>Передавайте stable ID, а не великий object. Після process death graph/back-stack restoration може відтворити route та малий saved state, але мережеві дані треба перечитати. Route serializer/schema — compatibility contract; зміни argument names/types потребують migration/defaults.</p>
+<p>Передавайте stable ID, а не великий object. Після process death graph/back-stack restoration може відтворити route та малий saved state, але мережеві дані треба перечитати. Так само system відтворює Activity back stack, але кожна Activity отримує лише свій <code>savedInstanceState</code> — singleton-и і статичні «шини даних» між екранами будуть порожні. Route serializer/schema — compatibility contract; зміни argument names/types потребують migration/defaults.</p>
 
 <h3 id="stage4-uk-intents">Explicit/implicit intents, resolution та exported boundary<a aria-label="Посилання на розділ: Intents resolution and exported boundary" class="heading-anchor" href="#stage4-uk-intents">#</a></h3>
-<p>Explicit Intent задає component і є default для intra-app переходу. Implicit Intent описує action/data/category; Package Manager порівнює intent filters за action, data (scheme/host/port/path/MIME) і category. Для activity implicit start система враховує <code>CATEGORY_DEFAULT</code>; відсутність match дає <code>ActivityNotFoundException</code>, а кілька match можуть показати chooser/default handler.</p>
-<p><code>android:exported</code> визначає, чи інші apps можуть напряму запускати component; для компонентів з intent filter значення треба задавати явно на modern targets. Exported — це доступність, не authorization. Для sensitive operation потрібні permission, caller/auth/session checks і validation усіх extras/URI. Intent filter не є schema validator.</p>
+<p>Explicit Intent задає component і є default для intra-app переходу: implicit Intent може бути перехоплений іншим застосунком, тому внутрішня навігація — завжди explicit. Implicit Intent описує action/data/category; Package Manager порівнює intent filters за action, data (scheme/host/port/path/MIME) і category. Для activity implicit start система враховує <code>CATEGORY_DEFAULT</code>; відсутність match дає <code>ActivityNotFoundException</code>, а кілька match можуть показати chooser/default handler.</p>
+<p><code>android:exported</code> визначає, чи інші apps можуть напряму запускати component; для компонентів з intent filter значення треба задавати явно на modern targets. Exported — це доступність, не authorization: exported component може викликати будь-який застосунок (ін’єкція сміттєвих даних, обхід флоу, дії від вашого імені), тому default — <code>android:exported="false"</code>, а exported лише свідомо. Для IPC і sensitive operation потрібні permission, caller/auth/session checks і validation усіх extras/URI. Intent filter не є schema validator.</p>
 <pre><code class="language-kotlin">fun parseProduct(uri: Uri): ProductId? {
     if (uri.scheme != "https" || uri.host != "shop.example.com") return null
     if (uri.pathSegments.size != 2 || uri.pathSegments[0] != "p") return null
@@ -1659,7 +1605,7 @@ fun enqueue(owner: Activity, id: EventId, raw: Any) {
 <p>Використовуйте один ingress/router: parse untrusted URI → canonical typed command → auth/entitlement gate → idempotent navigation. На <strong>cold start</strong> intent приходить через creation path і routing чекає, поки готові graph/session; на <strong>warm start</strong> reused Activity отримує новий Intent у <code>onNewIntent()</code>, його треба явно передати router-у. Не обробляйте ту саму delivery і в Activity, і в composable effect: event ID або saved handled-token + <code>launchSingleTop</code>/<code>popUpTo</code> запобігають duplicate destination.</p>
 
 <h3 id="stage4-uk-pendingintent">PendingIntent: identity, mutability, replay і security<a aria-label="Посилання на розділ: PendingIntent identity mutability security" class="heading-anchor" href="#stage4-uk-pendingintent">#</a></h3>
-<p><code>PendingIntent</code> — transferable capability: інший process/system може пізніше виконати операцію з identity/permissions creator-а, навіть якщо creator process помер. Token, а не ваш Intent object, живе в system service.</p>
+<p><code>PendingIntent</code> — transferable capability: інший process/system може пізніше виконати операцію з identity/permissions creator-а, навіть якщо creator process помер. Token, а не ваш Intent object, живе в system service. Типові споживачі: notification actions, alarms (<code>AlarmManager</code>), widgets, launcher.</p>
 <ul>
 <li><strong>Identity:</strong> operation type (<code>getActivity/getBroadcast/getService</code>), creator package/user, requestCode і Intent fields, які порівнює <code>Intent.filterEquals()</code> (action, data, type, identifier, component, categories). <strong>Extras не визначають identity.</strong></li>
 <li><code>FLAG_UPDATE_CURRENT</code> зберігає той самий token і замінює extras current Intent; creator може оновлювати навіть immutable PendingIntent. Це може ненавмисно змінити старі notifications, якщо identity collision.</li>
@@ -1679,7 +1625,7 @@ val contentIntent = PendingIntent.getActivity(
 )</code></pre>
 
 <h3 id="stage4-uk-notifications">Notification/deep-link patterns<a aria-label="Посилання на розділ: Notification deep link patterns" class="heading-anchor" href="#stage4-uk-notifications">#</a></h3>
-<p>Для regular destination notification має відкрити очікуваний hierarchy: manifest parent stack + <code>TaskStackBuilder</code>, або Navigation deep-link PendingIntent. Для special transient Activity створюйте окремий task свідомо (<code>NEW_TASK | CLEAR_TASK</code>, excluded from Recents за потреби). Не змішуйте ці патерни випадково. Кожна action повинна мати distinct PendingIntent identity; mutable inline-reply PendingIntent вузько target-те на receiver/service.</p>
+<p>Для regular destination notification має відкрити очікуваний hierarchy: manifest parent stack + <code>TaskStackBuilder</code>, або Navigation deep-link PendingIntent (<code>NavDeepLinkBuilder</code>). Мета synthetic back stack: Back із глибокого екрана веде на логічного батька, а не закриває застосунок; у Compose Navigation deep link сам будує стек за графом. Для special transient Activity створюйте окремий task свідомо (<code>NEW_TASK | CLEAR_TASK</code>, excluded from Recents за потреби). Не змішуйте ці патерни випадково. Кожна action повинна мати distinct PendingIntent identity; mutable inline-reply PendingIntent вузько target-те на receiver/service.</p>
 
 <h2 id="stage4-uk-guarantees">Гарантії проти не-гарантій<a aria-label="Посилання на розділ: Guarantees versus non guarantees" class="heading-anchor" href="#stage4-uk-guarantees">#</a></h2>
 <table><thead><tr><th>Можна стверджувати</th><th>Не можна обіцяти</th></tr></thead><tbody>
@@ -1841,7 +1787,7 @@ adb shell am start -W -n com.example.app/.MainActivity \
 <h3 id="stage5-uk-fgs">Foreground services: видимий ongoing task, не escape hatch<a aria-label="Посилання на розділ: Foreground services" class="heading-anchor" href="#stage5-uk-fgs">#</a></h3>
 <ul>
 <li>FGS призначений для роботи, яку користувач <strong>помічає</strong>. Виклик <code>startForegroundService()</code> створює service, але service має швидко викликати <code>ServiceCompat.startForeground()</code> (platform deadline — кілька секунд, традиційно описується як 5 s) з ongoing notification; інакше system зупиняє app/service.</li>
-<li>Apps targeting Android 12 / API 31+ зазвичай не можуть стартувати FGS з background, крім documented exemptions; порушення дає <code>ForegroundServiceStartNotAllowedException</code>. While-in-use camera/microphone/location/body-sensor prerequisites мають додаткові background-start обмеження.</li>
+<li>Apps targeting Android 12 / API 31+ зазвичай не можуть стартувати FGS з background, крім documented exemptions; порушення дає <code>ForegroundServiceStartNotAllowedException</code>. Серед exemptions — зокрема high-priority FCM, exact alarm і user interaction. Senior-висновок: «довгий фоновий процес» проєктується від обмежень — спершу питаємо, чи це взагалі має бути FGS, чи WorkManager + expedited work, чи push-driven модель. While-in-use camera/microphone/location/body-sensor prerequisites мають додаткові background-start обмеження.</li>
 <li>Declare <code>android:foregroundServiceType</code>, базовий <code>FOREGROUND_SERVICE</code> і type-specific permissions/prerequisites. Для target API 34+ type/permission enforcement суворіше. Тип має відповідати реальній роботі; notification channel/permission UX не скасовує обов’язок notification.</li>
 <li>Android 14 (API 34) додав <strong>user-initiated data transfer jobs</strong> для довгих upload/download, які user явно почав; це JobScheduler API, потрібен ongoing notification і fallback на старих API. Для короткої transfer — expedited WorkManager; для system download розгляньте purpose-built DownloadManager.</li>
 </ul>
@@ -1850,7 +1796,7 @@ adb shell am start -W -n com.example.app/.MainActivity \
 <ul>
 <li>Вибирайте <strong>inexact</strong> alarm за замовчуванням: <code>set()</code>, <code>setWindow()</code>, <code>setInexactRepeating()</code> дають batching і економлять battery. Alarm відкриває коротке execution window; receiver має enqueue durable work, а не робити network loop.</li>
 <li><code>setExact*</code>/<code>setAlarmClock()</code> лише для справді user-facing precise time. Android 12 / target 31+ вимагає exact-alarm special access для <code>SCHEDULE_EXACT_ALARM</code>; Android 13+ дозволяє альтернативний restricted <code>USE_EXACT_ALARM</code> лише для qualifying core use cases. Завжди перевіряйте <code>canScheduleExactAlarms()</code>; revocation cancels future exact alarms.</li>
-<li>Doze відкладає звичайні alarms/jobs/network. <code>setAndAllowWhileIdle()</code>/<code>setExactAndAllowWhileIdle()</code> мають throttling і не дають довгу network execution; <code>setAlarmClock()</code> — найбільш disruptive user alarm. App Standby/battery restriction/OEM policy можуть ще сильніше обмежити фонову роботу.</li>
+<li>Doze відкладає звичайні alarms/jobs/network до maintenance windows; пробивають його high-priority FCM та <code>*AllowWhileIdle</code> alarms. Тому periodic work ≠ точний розклад. <code>setAndAllowWhileIdle()</code>/<code>setExactAndAllowWhileIdle()</code> мають throttling і не дають довгу network execution; <code>setAlarmClock()</code> — найбільш disruptive user alarm. App Standby/battery restriction/OEM policy можуть ще сильніше обмежити фонову роботу.</li>
 <li><code>ELAPSED_REALTIME</code> стійкий до зміни wall clock/timezone, але reset-иться на reboot; <code>RTC</code> прив’язаний до wall clock. Усі alarms видаляються при shutdown: після <code>BOOT_COMPLETED</code> відновіть їх із durable domain schedule. Для «09:00 local» зберігайте timezone/civil rule, реагуйте на time/timezone change і перераховуйте next occurrence; не додавайте 24h milliseconds.</li>
 </ul>
 
@@ -1877,6 +1823,7 @@ adb shell am start -W -n com.example.app/.MainActivity \
 <h2 id="stage5-uk-decision-framework">Decision framework<a aria-label="Посилання на розділ: Decision framework" class="heading-anchor" href="#stage5-uk-decision-framework">#</a></h2>
 <table><thead><tr><th>Потреба</th><th>Default</th><th>Чому / caveat</th></tr></thead><tbody>
 <tr><td>Лише поки екран видимий</td><td>Lifecycle scope / bound service лише за shared IPC/resource</td><td>Не робіть durable scheduler з UI work.</td></tr>
+<tr><td>Real-time stream (WebSocket) поки відкритий екран</td><td>Lifecycle-aware coroutine/WebSocket owner</td><td>Підписка живе, поки є видимий subscriber; це не WorkManager і не FGS.</td></tr>
 <tr><td>Deferrable, має пережити process/reboot</td><td>WorkManager</td><td>Constraints, unique policy, retry, idempotent Worker; timing inexact.</td></tr>
 <tr><td>Коротка важлива user-triggered робота</td><td>Expedited WorkManager</td><td>Quota + explicit out-of-quota policy.</td></tr>
 <tr><td>Ongoing, user-visible session (media/location/device)</td><td>Typed FGS або purpose-built API</td><td>Visible notification, start eligibility, permissions, stop action.</td></tr>
@@ -1925,6 +1872,36 @@ adb shell am set-standby-bucket com.example.app rare
 # Android 15 device: exercise FGS timeout path
 adb shell am compat enable FGS_INTRODUCE_TIME_LIMITS com.example.app</code></pre>
 <p>Для WorkManager використовуйте <code>work-testing</code>: <code>TestWorkerBuilder</code> для Worker logic і <code>WorkManagerTestInitHelper</code>/<code>TestDriver</code> для delays, periods та constraints. На device assert-те не лише «callback стався», а DB transition, idempotency key, retry classification, duplicate enqueue, constraint loss mid-run, cancel cleanup, process kill, reboot/reschedule, denied exact-alarm access, Doze/standby і notification/stop action. Після manual power tests поверніть device state.</p>
+<p><strong>Як зробити WorkManager debuggable?</strong> Логувати work id, name, constraints, run attempt, result. Локально — WorkManager inspector (Background Task Inspector), logs, test driver. У production — analytics/observability навколо failure reason, retry count, network state, payload size. Senior думає не лише «як запустити», а й «як зрозуміти, чому sync не відпрацював».</p>
+
+<h2 id="stage5-uk-practice-notes">Практичні нотатки<a aria-label="Посилання на розділ: Практичні нотатки" class="heading-anchor" href="#stage5-uk-practice-notes">#</a></h2>
+<h3>Hilt Worker і класифікація помилок</h3>
+<p>Default <code>WorkerFactory</code> створює Worker рефлексією лише через constructor <code>(Context, WorkerParameters)</code>, тож Worker з додатковими dependencies без Hilt або custom <code>WorkerFactory</code> впаде з “Could not instantiate”. Hilt integration: <code>@HiltWorker</code>, <code>@AssistedInject</code>, <code>@Assisted</code> для <code>Context</code> і <code>WorkerParameters</code>, плюс <code>HiltWorkerFactory</code>, переданий через <code>Configuration.Provider</code> в Application (з вимкненим default <code>WorkManagerInitializer</code>). Не діставайте dependencies вручну із singleton/service locator всередині Worker.</p>
+<pre><code class="language-kotlin">// Потребує HiltWorkerFactory через Configuration.Provider в Application
+@HiltWorker
+class SyncOrdersWorker @AssistedInject constructor(
+    @Assisted appContext: Context,
+    @Assisted params: WorkerParameters,
+    private val repository: OrdersRepository
+) : CoroutineWorker(appContext, params) {
+
+    override suspend fun doWork(): Result {
+        return try {
+            repository.syncPendingOrders()
+            Result.success()
+        } catch (e: CancellationException) {
+            throw e // не ковтати cancellation у generic catch нижче
+        } catch (e: IOException) {
+            // transient: bounded retry
+            if (runAttemptCount &lt; 3) Result.retry() else Result.failure()
+        } catch (e: Exception) {
+            Result.failure() // permanent
+        }
+    }
+}
+</code></pre>
+<h3>ContentProvider</h3>
+<p><code>ContentProvider</code> надає structured data між apps/processes (expose/query shared data). Більшість сучасних застосунків використовують його опосередковано (system providers, <code>FileProvider</code>, library initialization) або для integration-сценаріїв; активне використання provider-а іншим процесом також підвищує пріоритет вашого процесу (див. <a href="#stage1-uk-process-importance">етап 1</a>).</p>
 
 <h2 id="stage5-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice Q and A" class="heading-anchor" href="#stage5-uk-likely-qa">#</a></h2>
 <p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
@@ -2037,7 +2014,7 @@ adb shell am compat enable FGS_INTRODUCE_TIME_LIMITS com.example.app</code></pre
 
 <h2 id="stage6-uk-notifications">Notifications: permission, channels і interruption<a aria-label="Посилання на розділ: Notifications" class="heading-anchor" href="#stage6-uk-notifications">#</a></h2>
 <ul>
-<li><strong>Android 13 / API 33:</strong> non-exempt notifications потребують runtime <code>POST_NOTIFICATIONS</code>. Для target 33+ app контролює contextual request; для target ≤32 system timing і повторний prompt обмежені. Fresh installs починають blocked; eligible upgrades можуть отримати pre-grant, але попередня user block зберігається.</li>
+<li><strong>Android 13 / API 33:</strong> non-exempt notifications потребують runtime <code>POST_NOTIFICATIONS</code> (media-session notifications взагалі не підпадають під цей permission). Для target 33+ app контролює contextual request; для target ≤32 system timing і повторний prompt обмежені. Fresh installs починають blocked; eligible upgrades можуть отримати pre-grant, але попередня user block зберігається.</li>
 <li>FGS можна стартувати без grant <code>POST_NOTIFICATIONS</code>, але notification все одно обов’язкова; за denial FGS notice може бути лише в Task Manager, не drawer. Перевіряйте <code>areNotificationsEnabled()</code> і channel state для UX, не для обходу service rules.</li>
 <li><strong>Channels (API 26+)</strong> треба створити до post. ID — довгоживучий product contract: <strong>channels persist, і app не може підняти importance, яку user знизив</strong>. Після створення app не може змінити importance/sound semantics; може змінити name/description. Не delete/recreate channel, щоб «скинути» user choice; version/new ID лише для справді нової semantics.</li>
 <li>App-level permission, channel importance, channel/user settings, DND, runtime delivery/ranking — незалежні gates. Importance — не гарантія heads-up; user/system має фінальне слово.</li>
@@ -2049,13 +2026,14 @@ adb shell am compat enable FGS_INTRODUCE_TIME_LIMITS com.example.app</code></pre
 <table><thead><tr><th>Потреба</th><th>Default API</th><th>Lifetime / ризик</th></tr></thead><tbody>
 <tr><td>Private app data</td><td>Internal <code>filesDir</code>/<code>cacheDir</code></td><td>No permission; sandbox; видаляється при uninstall. Cache може бути evicted.</td></tr>
 <tr><td>App-specific large files</td><td><code>getExternalFilesDir()</code></td><td>No storage permission; volume може бути unavailable; видаляється при uninstall.</td></tr>
-<tr><td>App-created shared media</td><td><code>MediaStore</code>, <code>RELATIVE_PATH</code>, <code>IS_PENDING</code></td><td>Ваші inserts зазвичай без broad read permission; shared media лишається після uninstall. Для edit/delete чужого content потрібен scoped consent.</td></tr>
+<tr><td>App-created shared media</td><td><code>MediaStore</code>, <code>RELATIVE_PATH</code>, <code>IS_PENDING</code></td><td>Ваші inserts зазвичай без broad read permission; shared media лишається після uninstall. Для edit/delete чужого content потрібен scoped consent — system dialogs через <code>MediaStore.createWriteRequest</code> (і відповідні delete/trash requests).</td></tr>
 <tr><td>User-selected photos/videos</td><td>Photo Picker / <code>PickVisualMedia</code></td><td>Без broad library permission; URI grant scoped. Persist access when contract supports it and still handle loss.</td></tr>
 <tr><td>Arbitrary document/create/export</td><td>SAF: <code>OPEN_DOCUMENT</code>, <code>CREATE_DOCUMENT</code>, <code>OPEN_DOCUMENT_TREE</code></td><td><code>content://</code> document URI; request/take persistable grant when needed; provider/reinstall/user action can invalidate it.</td></tr>
 </tbody></table>
 <p>Scoped storage is default on Android 10 and enforced for apps targeting Android 11+; <code>requestLegacyExternalStorage</code> ігнорується при target 30+. Legacy app має <strong>до target upgrade</strong> мігрувати файли у app-specific storage, MediaStore або user-chosen SAF location, робити migration resumable/idempotent і не видаляти source до verified copy.</p>
 <p><strong>File paths і document URIs не взаємозамінні.</strong> Не перетворюйте <code>content://</code> на guessed <code>/storage/...</code> path. Працюйте через <code>ContentResolver</code>, streams/file descriptor, MIME/display-name metadata. Навіть коли MediaStore дозволяє direct path для окремих media cases, це не універсальна властивість SAF/cloud/provider URI.</p>
-<p><code>MANAGE_EXTERNAL_STORAGE</code> — broad special access для вузьких core use cases, не shortcut; platform access і Google Play approval — окремі вимоги.</p>
+<p>Production-пастка: кількість persistable URI permissions обмежена, і вони зникають при переустановці. Document URI, збережені в Room, треба валідувати перед використанням — інакше <code>SecurityException</code> через місяці після того, як користувач вибрав файл.</p>
+<p><code>MANAGE_EXTERNAL_STORAGE</code> — broad special access для вузьких core use cases, не shortcut; platform access і Google Play approval — окремі вимоги. Play дозволяє його лише застосункам, чия core-функція потребує широкого доступу до файлів (файлові менеджери, backup/restore, антивіруси, document management, on-device file search, міграція між девайсами), з декларацією в Play Console і review.</p>
 
 <h2 id="stage6-uk-visibility-sharing">Package visibility, URI grants і FileProvider<a aria-label="Посилання на розділ: Package visibility URI grants and FileProvider" class="heading-anchor" href="#stage6-uk-visibility-sharing">#</a></h2>
 <ul>
@@ -2142,6 +2120,15 @@ adb shell dumpsys notification --noredact
 adb shell am kill com.example.app
 adb shell am force-stop com.example.app</code></pre>
 <p>Команди й flags можуть відрізнятися за API/build, тому фіксуйте emulator image/device. Для auto-reset/hibernation та compatibility changes використовуйте documented page-specific commands на відповідній версії, після test відновлюйте state. UI/instrumentation tests не можуть підмінити system permission dialogs стабільним app selector; керуйте preconditions через shell/test APIs і assert-те app state після system result.</p>
+
+<h2 id="stage6-uk-practice-notes">Практичні нотатки<a aria-label="Посилання на розділ: Практичні нотатки" class="heading-anchor" href="#stage6-uk-practice-notes">#</a></h2>
+<h3>Категорії permissions</h3>
+<p>Install-time permissions, runtime permissions, special permissions (special app access через Settings) і permissions з one-time/approximate behavior. Permission — це UX/security contract: запит just-in-time у контексті конкретної user action, fallback при deny/permanent deny, перевірка перед кожною sensitive operation.</p>
+<h3>Follow-up питання за рівнями</h3>
+<p><strong>Middle+: користувач відхилив дозвіл двічі. Що відбувається і що робити?</strong><br/>
+Система перестає показувати діалог (запит миттєво повертає denied), <code>shouldShowRequestPermissionRationale</code> повертає false (але false — не повний oracle, див. <a href="#stage6-uk-permissions-state">permission state machine</a>). Єдиний шлях — пояснити цінність і за явною дією користувача повести в налаштування застосунку через intent на <code>Settings.ACTION_APPLICATION_DETAILS_SETTINGS</code>. UI має деградувати достойно: фіча вимкнена, але застосунок працює.</p>
+<p><strong>Staff/Lead: як ви проєктуєте політику дозволів на рівні продукту?</strong><br/>
+Понад принцип мінімізації — метрика grant-rate по кожному дозволу в аналітиці. Це знижує і відтік на onboarding, і ризики при Play-ревью.</p>
 
 <h2 id="stage6-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice Q and A" class="heading-anchor" href="#stage6-uk-likely-qa">#</a></h2>
 <p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
@@ -7539,68 +7526,11 @@ Trade-offs
 <li>ability to explain decisions to a team.</li>
 </ul>
 <p>A good interview answer sounds like: “I would choose this approach in this context because it gives us X, but the trade-off is Y. I would test it by Z and monitor it with A.”</p>
-</div></details><details class="major-section" data-key="android-fundamentals" data-title="Android Fundamentals" id="en-android-fundamentals" open=""><summary class="major-summary"><span class="major-title">Android Fundamentals</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
-<p><strong>More detail:</strong> <a href="#en-android-process-lifecycle-state-restoration">Android process lifecycle and state restoration</a>, <a href="#en-android-tasks-back-stack-deep-links-intents-pending-intent">Android tasks, back stack, deep links, intents, and PendingIntent</a>, <a href="#en-android-background-execution">Android background execution</a>, <a href="#en-android-permissions-storage-notifications">Android permissions, storage, and notifications across versions</a>. Below are only the short API examples and nuances those stages do not contain.</p>
-<h2 id="en-activity-lifecycle">Activity lifecycle<a aria-label="Link to section: Activity lifecycle" class="heading-anchor" href="#en-activity-lifecycle">#</a></h2>
-<p>Keep the Activity thin: it sets up UI, navigation, and lifecycle-aware bindings. No business logic directly in the Activity and no work started in <code>GlobalScope</code>; long-running work lives in ViewModel, use cases, repositories, WorkManager, or services depending on the use case.</p>
-<pre><code class="language-kotlin">class ProductActivity : AppCompatActivity() {
-    private val viewModel: ProductViewModel by viewModels()
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_product)
-
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.uiState.collect { state -&gt; render(state) }
-            }
-        }
-    }
-}
-</code></pre>
-<p><strong>What goes into <code>onPause</code> vs <code>onStop</code>?</strong> <code>onPause</code> — stop light foreground work like camera preview and sensors. <code>onStop</code> — release heavier resources, unregister receivers.</p>
-<h2 id="en-fragment-lifecycle">Fragment lifecycle<a aria-label="Link to section: Fragment lifecycle" class="heading-anchor" href="#en-fragment-lifecycle">#</a></h2>
-<pre><code class="language-kotlin">class OrdersFragment : Fragment(R.layout.fragment_orders) {
-    private var _binding: FragmentOrdersBinding? = null
-    private val binding get() = requireNotNull(_binding)
-    private val viewModel: OrdersViewModel by viewModels()
-
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        _binding = FragmentOrdersBinding.bind(view)
-
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.uiState.collect { binding.render(it) }
-            }
-        }
-    }
-
-    override fun onDestroyView() {
-        _binding = null
-        super.onDestroyView()
-    }
-}
-</code></pre>
-<h2 id="en-context-intent-application-and-pendingintent">Context, Intent, Application, and PendingIntent<a aria-label="Link to section: Context, Intent, Application, and PendingIntent" class="heading-anchor" href="#en-context-intent-application-and-pendingintent">#</a></h2>
-<p><code>Context</code> gives access to Android environment: resources, files, system services, launching components, permissions, and application-specific APIs. The important distinction is lifecycle ownership: Activity context is short-lived and UI-aware; Application context is long-lived and safe for dependencies that outlive screens.</p>
-<p>Use Application context for singleton dependencies that need resources or system services. Use Activity context for UI operations such as dialogs, launching Activity with transition, or theme-dependent resources. Common mistakes: holding Activity context in singleton classes; using Application context for UI operations.</p>
-<h2 id="en-configuration-changes-savedinstancestate-and-process-death">Configuration changes, SavedInstanceState, and process death<a aria-label="Link to section: Configuration changes, SavedInstanceState, and process death" class="heading-anchor" href="#en-configuration-changes-savedinstancestate-and-process-death">#</a></h2>
-<p>Screen arguments and small recoverable ViewModel state go through <code>SavedStateHandle</code>:</p>
-<pre><code class="language-kotlin">@HiltViewModel
-class CheckoutViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
-    private val repository: CheckoutRepository
-) : ViewModel() {
-    private val checkoutId: String = checkNotNull(savedStateHandle["checkoutId"])
-}
-</code></pre>
-<h2 id="en-services-broadcastreceiver-contentprovider-and-background-limits">Services, BroadcastReceiver, ContentProvider, and background limits<a aria-label="Link to section: Services, BroadcastReceiver, ContentProvider, and background limits" class="heading-anchor" href="#en-services-broadcastreceiver-contentprovider-and-background-limits">#</a></h2>
-<p>ContentProvider exposes structured data across process/app boundaries, but most modern apps use it indirectly or for integration scenarios.</p>
 </div></details><details class="major-section" data-key="android-process-lifecycle-state-restoration" data-title="Android process lifecycle and state restoration" id="en-android-process-lifecycle-state-restoration" open=""><summary class="major-summary"><span class="major-title">Android process lifecycle and state restoration</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
 <h2 id="en-stage1-learning-objective">Learning objective and mental model<a aria-label="Link to section: Learning objective and mental model" class="heading-anchor" href="#en-stage1-learning-objective">#</a></h2>
 <p>This is a consolidated Stage 1 mental model, not another callback list. After this section, a candidate should be able to trace the full chain: <strong>process importance → component lifecycle → state owner → restoration mechanism → behavior after process death → test evidence</strong>.</p>
 <blockquote><p><strong>Senior principle:</strong> Android does not guarantee continuous process lifetime. A correct screen can be rebuilt from minimal saved state and a source of truth instead of depending on objects that happen to remain in memory.</p></blockquote>
-<p>The guide already contains short API examples in <a href="#en-activity-lifecycle">Activity lifecycle</a> and the <a href="#en-configuration-changes-savedinstancestate-and-process-death">configuration/saved-state deep dive</a>. This section focuses on the process contract, ownership, recovery, and a deterministic test matrix.</p>
+<p>Short API examples (Activity/Fragment, Context, <code>SavedStateHandle</code>) are collected in the <a href="#en-stage1-practice-notes">practice notes</a> near the end of this stage. The main focus is the process contract, ownership, recovery, and a deterministic test matrix.</p>
 
 <h2 id="en-stage1-process-importance">Process importance and non-guarantees<a aria-label="Link to section: Process importance and non-guarantees" class="heading-anchor" href="#en-stage1-process-importance">#</a></h2>
 <p>An app normally runs in its own Linux process. Android can create that process when a component must run, and the system—not the app—controls its lifetime. Under memory pressure, Android classifies a process by its most important active component; dependencies through a bound service or <code>ContentProvider</code> can also raise importance.</p>
@@ -7687,6 +7617,68 @@ viewLifecycleOwner.lifecycleScope.launch {
 <tr><td>Explicit user/system stop semantics</td><td>Force-stop and task removal as separate negative tests</td><td>Cold-start/cleared-task behavior, not saved-state restoration.</td></tr>
 </tbody></table>
 <p>The developer option <strong>“Don’t keep activities”</strong> and <code>recreate()</code> are useful recreation tests, but they do not create a new Linux process and do not prove process-death safety. For the kill test, first leave the task in the background, verify that the PID changes, and only then return to it.</p>
+
+<h2 id="en-stage1-practice-notes">Practice notes<a aria-label="Link to section: Practice notes" class="heading-anchor" href="#en-stage1-practice-notes">#</a></h2>
+<h3>Keep the Activity thin</h3>
+<p>The Activity sets up UI, navigation, and lifecycle-aware bindings. No business logic directly in the Activity and no work started in <code>GlobalScope</code>; long-running work lives in ViewModel, use cases, repositories, WorkManager, or services depending on the use case.</p>
+<pre><code class="language-kotlin">class ProductActivity : AppCompatActivity() {
+    private val viewModel: ProductViewModel by viewModels()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_product)
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.uiState.collect { state -&gt; render(state) }
+            }
+        }
+    }
+}
+</code></pre>
+<p><strong>What goes into <code>onPause</code> vs <code>onStop</code>?</strong> <code>onPause</code> — stop light foreground work like camera preview and sensors. <code>onStop</code> — release heavier resources, unregister receivers.</p>
+<h3>Fragment binding lifecycle</h3>
+<pre><code class="language-kotlin">class OrdersFragment : Fragment(R.layout.fragment_orders) {
+    private var _binding: FragmentOrdersBinding? = null
+    private val binding get() = requireNotNull(_binding)
+    private val viewModel: OrdersViewModel by viewModels()
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        _binding = FragmentOrdersBinding.bind(view)
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.uiState.collect { binding.render(it) }
+            }
+        }
+    }
+
+    override fun onDestroyView() {
+        _binding = null
+        super.onDestroyView()
+    }
+}
+</code></pre>
+<h3>Context: Activity vs Application</h3>
+<p><code>Context</code> gives access to the Android environment: resources, files, system services, launching components, permissions, and application-specific APIs. The important distinction is lifecycle ownership: Activity context is short-lived and UI-aware; Application context is long-lived and safe for dependencies that outlive screens.</p>
+<p>Use Application context for singleton dependencies that need resources or system services. Use Activity context for UI operations such as dialogs, launching an Activity with a transition, or theme-dependent resources. <strong>When is Application context not enough?</strong> For UI-bound operations requiring an Activity theme, window token, dialog, or activity result. Common mistakes: holding Activity context in singleton classes; using Application context for UI operations.</p>
+<h3>SavedStateHandle: an ID, not the model</h3>
+<p>Screen arguments and small recoverable ViewModel state go through <code>SavedStateHandle</code>. For a fixed argument <code>checkNotNull(savedStateHandle["checkoutId"])</code> is enough; if the ID can change, observe it:</p>
+<pre><code class="language-kotlin">@HiltViewModel
+class ProductDetailsViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
+    private val repository: ProductsRepository
+) : ViewModel() {
+    private val productId = savedStateHandle.getStateFlow("productId", "")
+
+    val uiState = productId
+        .filter { it.isNotBlank() }
+        .flatMapLatest(repository::observeProduct)
+        .map&lt;Product, ProductDetailsUiState&gt; { ProductDetailsUiState.Content(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ProductDetailsUiState.Loading)
+}
+</code></pre>
+<p><strong>When is ViewModel overkill?</strong> When the state is purely local and short-lived: animation state, a temporary expanded card, drag state, or local focus state.</p>
 
 <h2 id="en-stage1-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice Q and A" class="heading-anchor" href="#en-stage1-likely-qa">#</a></h2>
 <p><em>These are likely practice topics, not a confirmed or guaranteed list of interview questions.</em></p>
@@ -8177,7 +8169,7 @@ fun enqueue(owner: Activity, id: EventId, raw: Any) {
 <tr><td><code>CLEAR_TASK | NEW_TASK</code></td><td>Clears the matching task before starting the target. It suits logout/reset flows but destroys user history.</td></tr>
 <tr><td><code>REORDER_TO_FRONT</code></td><td>Moves an existing instance to the top without clearing intermediate instances; it is ignored when <code>CLEAR_TOP</code> is also supplied.</td></tr>
 </tbody></table>
-<p><code>allowTaskReparenting="true"</code> lets an Activity temporarily launched into another task move to the task matching its affinity when that task comes forward. This makes history context-dependent and requires an explicit UX decision plus Recents tests.</p>
+<p><code>allowTaskReparenting="true"</code> lets an Activity temporarily launched into another task move to the task matching its affinity when that task comes forward. This makes history context-dependent and requires an explicit UX decision plus Recents tests. A typical production symptom: <code>singleInstance</code>/<code>taskAffinity</code> combinations create multiple app tasks in Recents — users see “two apps”.</p>
 
 <h3 id="en-stage4-documents-multiwindow">Document-centric tasks, Recents, and multi-window<a aria-label="Link to section: Document centric tasks and multi window" class="heading-anchor" href="#en-stage4-documents-multiwindow">#</a></h3>
 <p><code>FLAG_ACTIVITY_NEW_DOCUMENT</code> (manifest: <code>documentLaunchMode</code>) models an independent document as a separate task in Recents; the Intent URI normally distinguishes documents. <code>intoExisting</code> matches a task by base-intent Component plus data URI, clears it, and delivers to its root; <code>always</code> creates a new document task; <code>never</code>/<code>none</code> prohibit or retain default reuse. <code>MULTIPLE_TASK</code> with <code>NEW_TASK</code>/<code>NEW_DOCUMENT</code> disables normal existing-task lookup and almost always needs a strong justification.</p>
@@ -8200,11 +8192,11 @@ fun enqueue(owner: Activity, id: EventId, raw: Any) {
         saveState = true
     }
 }</code></pre>
-<p>Pass stable IDs rather than large objects. After process death, graph/back-stack restoration can reconstruct the route and small saved state, but network data must be loaded again. A route serializer/schema is a compatibility contract; changes to argument names or types need defaults or migration.</p>
+<p>Pass stable IDs rather than large objects. After process death, graph/back-stack restoration can reconstruct the route and small saved state, but network data must be loaded again. Likewise, the system recreates the Activity back stack, but each Activity gets only its own <code>savedInstanceState</code> — singletons and static “data buses” between screens are empty. A route serializer/schema is a compatibility contract; changes to argument names or types need defaults or migration.</p>
 
 <h3 id="en-stage4-intents">Explicit/implicit intents, resolution, and the exported boundary<a aria-label="Link to section: Intents resolution and exported boundary" class="heading-anchor" href="#en-stage4-intents">#</a></h3>
-<p>An explicit Intent names a component and is the default for in-app navigation. An implicit Intent describes action, data, and category; Package Manager compares filters by action, data (scheme/host/port/path/MIME), and category. Activity implicit starts require a filter with <code>CATEGORY_DEFAULT</code>; no match throws <code>ActivityNotFoundException</code>, while multiple matches can show a chooser or default handler.</p>
-<p><code>android:exported</code> controls whether other apps can directly start a component; components with an intent filter must set it explicitly on modern targets. Exported means reachable, not authorised. Sensitive operations still require permissions, caller/session checks, and validation of every extra/URI. An intent filter is not a schema validator.</p>
+<p>An explicit Intent names a component and is the default for in-app navigation: an implicit Intent can be intercepted by another app, so internal navigation is always explicit. An implicit Intent describes action, data, and category; Package Manager compares filters by action, data (scheme/host/port/path/MIME), and category. Activity implicit starts require a filter with <code>CATEGORY_DEFAULT</code>; no match throws <code>ActivityNotFoundException</code>, while multiple matches can show a chooser or default handler.</p>
+<p><code>android:exported</code> controls whether other apps can directly start a component; components with an intent filter must set it explicitly on modern targets. Exported means reachable, not authorised: any app can call an exported component (injecting junk data, bypassing flows, acting on your behalf), so the default is <code>android:exported="false"</code> and export is a deliberate choice. IPC and sensitive operations still require permissions, caller/session checks, and validation of every extra/URI. An intent filter is not a schema validator.</p>
 <pre><code class="language-kotlin">fun parseProduct(uri: Uri): ProductId? {
     if (uri.scheme != "https" || uri.host != "shop.example.com") return null
     if (uri.pathSegments.size != 2 || uri.pathSegments[0] != "p") return null
@@ -8219,7 +8211,7 @@ fun enqueue(owner: Activity, id: EventId, raw: Any) {
 <p>Use one ingress/router: parse the untrusted URI → canonical typed command → authentication/entitlement gate → idempotent navigation. On a <strong>cold start</strong>, the intent enters through creation and routing waits for graph/session readiness; on a <strong>warm start</strong>, a reused Activity gets a new Intent in <code>onNewIntent()</code>, which must be forwarded explicitly. Do not handle one delivery in both the Activity and a composable effect: an event ID or saved handled token plus <code>launchSingleTop</code>/<code>popUpTo</code> prevents duplicate destinations.</p>
 
 <h3 id="en-stage4-pendingintent">PendingIntent: identity, mutability, replay, and security<a aria-label="Link to section: PendingIntent identity mutability security" class="heading-anchor" href="#en-stage4-pendingintent">#</a></h3>
-<p>A <code>PendingIntent</code> is a transferable capability: another process or the system can later execute an operation with the creator's identity and permissions, even after the creator process dies. The system-service token, not your Intent object, persists.</p>
+<p>A <code>PendingIntent</code> is a transferable capability: another process or the system can later execute an operation with the creator's identity and permissions, even after the creator process dies. The system-service token, not your Intent object, persists. Typical consumers: notification actions, alarms (<code>AlarmManager</code>), widgets, the launcher.</p>
 <ul>
 <li><strong>Identity:</strong> operation type (<code>getActivity/getBroadcast/getService</code>), creator package/user, requestCode, and Intent fields compared by <code>Intent.filterEquals()</code> (action, data, type, identifier, component, categories). <strong>Extras do not determine identity.</strong></li>
 <li><code>FLAG_UPDATE_CURRENT</code> retains the token and replaces extras in its current Intent; the creator can update even an immutable PendingIntent. An identity collision can therefore change older notifications.</li>
@@ -8239,7 +8231,7 @@ val contentIntent = PendingIntent.getActivity(
 )</code></pre>
 
 <h3 id="en-stage4-notifications">Notification/deep-link patterns<a aria-label="Link to section: Notification deep link patterns" class="heading-anchor" href="#en-stage4-notifications">#</a></h3>
-<p>For a regular destination, a notification should open the expected hierarchy using manifest parent metadata plus <code>TaskStackBuilder</code>, or a Navigation deep-link PendingIntent. For a special transient Activity, deliberately create a separate task (<code>NEW_TASK | CLEAR_TASK</code>, optionally excluded from Recents). Do not mix these patterns accidentally. Every action needs distinct PendingIntent identity; narrowly target a mutable inline-reply PendingIntent to a receiver or service.</p>
+<p>For a regular destination, a notification should open the expected hierarchy using manifest parent metadata plus <code>TaskStackBuilder</code>, or a Navigation deep-link PendingIntent (<code>NavDeepLinkBuilder</code>). The point of the synthetic back stack: Back from a deep screen leads to the logical parent instead of exiting the app; Compose Navigation builds the stack from the graph itself. For a special transient Activity, deliberately create a separate task (<code>NEW_TASK | CLEAR_TASK</code>, optionally excluded from Recents). Do not mix these patterns accidentally. Every action needs distinct PendingIntent identity; narrowly target a mutable inline-reply PendingIntent to a receiver or service.</p>
 
 <h2 id="en-stage4-guarantees">Guarantees versus non-guarantees<a aria-label="Link to section: Guarantees versus non guarantees" class="heading-anchor" href="#en-stage4-guarantees">#</a></h2>
 <table><thead><tr><th>Safe claim</th><th>Do not promise</th></tr></thead><tbody>
@@ -8401,7 +8393,7 @@ adb shell am start -W -n com.example.app/.MainActivity \
 <h3 id="en-stage5-fgs">Foreground services: visible ongoing work, not an escape hatch<a aria-label="Link to section: Foreground services" class="heading-anchor" href="#en-stage5-fgs">#</a></h3>
 <ul>
 <li>An FGS is for work the user can <strong>notice</strong>. <code>startForegroundService()</code> creates the service, but the service must promptly call <code>ServiceCompat.startForeground()</code> (the platform deadline is a few seconds, traditionally described as 5 seconds) with an ongoing notification or the system stops the app/service.</li>
-<li>Apps targeting Android 12 / API 31+ generally cannot start an FGS from the background except documented exemptions; violation throws <code>ForegroundServiceStartNotAllowedException</code>. While-in-use camera, microphone, location, and body-sensor prerequisites add further restrictions.</li>
+<li>Apps targeting Android 12 / API 31+ generally cannot start an FGS from the background except documented exemptions; violation throws <code>ForegroundServiceStartNotAllowedException</code>. Exemptions include high-priority FCM, exact alarms, and user interaction. The Senior conclusion: a “long background process” is designed from the constraints backwards — first ask whether it should be an FGS at all, or WorkManager + expedited work, or a push-driven model. While-in-use camera, microphone, location, and body-sensor prerequisites add further restrictions.</li>
 <li>Declare <code>android:foregroundServiceType</code>, the base <code>FOREGROUND_SERVICE</code> permission, and type-specific permissions/prerequisites. Target API 34+ enforces types and permissions more strictly. The type must match real work; notification-channel or notification-permission UX does not remove the notification obligation.</li>
 <li>Android 14 (API 34) introduced <strong>user-initiated data transfer jobs</strong> for long uploads/downloads explicitly started by the user. This is a JobScheduler API, requires an ongoing notification, and needs a fallback on older APIs. Use expedited WorkManager for short transfers and consider DownloadManager where its purpose-built model fits.</li>
 </ul>
@@ -8410,7 +8402,7 @@ adb shell am start -W -n com.example.app/.MainActivity \
 <ul>
 <li>Prefer an <strong>inexact</strong> alarm: <code>set()</code>, <code>setWindow()</code>, and <code>setInexactRepeating()</code> permit batching and save battery. An alarm opens only a short execution window; its receiver should enqueue durable work instead of running a network loop.</li>
 <li>Use <code>setExact*</code>/<code>setAlarmClock()</code> only for genuinely user-facing precise time. Android 12 / target 31+ requires exact-alarm special access for <code>SCHEDULE_EXACT_ALARM</code>. Android 13+ offers the restricted <code>USE_EXACT_ALARM</code> alternative only for qualifying core use cases. Check <code>canScheduleExactAlarms()</code>; revocation cancels future exact alarms.</li>
-<li>Doze defers ordinary alarms, jobs, and network. <code>setAndAllowWhileIdle()</code>/<code>setExactAndAllowWhileIdle()</code> are throttled and do not grant long network execution; <code>setAlarmClock()</code> is the most disruptive user-alarm option. App Standby, battery restriction, and OEM policy can constrain work further.</li>
+<li>Doze defers ordinary alarms, jobs, and network to maintenance windows; high-priority FCM and <code>*AllowWhileIdle</code> alarms get through. That is why periodic work is not an exact schedule. <code>setAndAllowWhileIdle()</code>/<code>setExactAndAllowWhileIdle()</code> are throttled and do not grant long network execution; <code>setAlarmClock()</code> is the most disruptive user-alarm option. App Standby, battery restriction, and OEM policy can constrain work further.</li>
 <li><code>ELAPSED_REALTIME</code> resists wall-clock/time-zone changes but resets at reboot; <code>RTC</code> follows wall-clock time. All alarms disappear on shutdown: rebuild from a durable domain schedule after <code>BOOT_COMPLETED</code>. For “09:00 local,” store the time zone and civil-time rule, handle time/time-zone changes, and compute the next occurrence rather than adding 24-hour milliseconds.</li>
 </ul>
 
@@ -8437,6 +8429,7 @@ adb shell am start -W -n com.example.app/.MainActivity \
 <h2 id="en-stage5-decision-framework">Decision framework<a aria-label="Link to section: Decision framework" class="heading-anchor" href="#en-stage5-decision-framework">#</a></h2>
 <table><thead><tr><th>Requirement</th><th>Default</th><th>Why / caveat</th></tr></thead><tbody>
 <tr><td>Only while a screen is visible</td><td>Lifecycle scope; bound service only for shared IPC/resource</td><td>Do not turn UI work into a durable job.</td></tr>
+<tr><td>Real-time stream (WebSocket) for one open screen</td><td>Lifecycle-aware coroutine/WebSocket owner</td><td>Lives while a visible subscriber exists; not WorkManager and not an FGS.</td></tr>
 <tr><td>Deferrable and survives process/reboot</td><td>WorkManager</td><td>Constraints, unique policy, retry, idempotent Worker; timing is inexact.</td></tr>
 <tr><td>Short important user-triggered work</td><td>Expedited WorkManager</td><td>Quota and explicit out-of-quota policy.</td></tr>
 <tr><td>Ongoing visible session (media/location/device)</td><td>Typed FGS or purpose-built API</td><td>Visible notification, start eligibility, permission, and stop action.</td></tr>
@@ -8485,6 +8478,29 @@ adb shell am set-standby-bucket com.example.app rare
 # Android 15 device: exercise the FGS timeout path
 adb shell am compat enable FGS_INTRODUCE_TIME_LIMITS com.example.app</code></pre>
 <p>Use WorkManager's <code>work-testing</code>: <code>TestWorkerBuilder</code> for Worker logic and <code>WorkManagerTestInitHelper</code>/<code>TestDriver</code> for delays, periods, and constraints. On devices, assert database transitions, idempotency keys, retry classification, duplicate enqueue, constraint loss during a run, cancellation cleanup, process kill, reboot/reschedule, denied exact-alarm access, Doze/standby, and notification stop actions—not merely “the callback happened.” Restore device state after manual power tests.</p>
+<p><strong>How do you debug WorkManager?</strong> Log work id, name, constraints, attempt count, result, payload size, and failure reason. Use the WorkManager inspector (Background Task Inspector) locally and production metrics for sync health (failure reason, retry count, network state).</p>
+
+<h2 id="en-stage5-practice-notes">Practice notes<a aria-label="Link to section: Practice notes" class="heading-anchor" href="#en-stage5-practice-notes">#</a></h2>
+<h3>Hilt Worker and error classification</h3>
+<p>The default <code>WorkerFactory</code> can only call a <code>(Context, WorkerParameters)</code> constructor, so an extra dependency needs <code>@HiltWorker</code>/<code>@AssistedInject</code> plus <code>HiltWorkerFactory</code> supplied through <code>Configuration.Provider</code> (with the default <code>WorkManagerInitializer</code> removed), or a custom <code>WorkerFactory</code>.</p>
+<pre><code class="language-kotlin">@HiltWorker
+class SyncOrdersWorker @AssistedInject constructor(
+    @Assisted appContext: Context,
+    @Assisted params: WorkerParameters,
+    private val repository: OrdersRepository
+) : CoroutineWorker(appContext, params) {
+    override suspend fun doWork(): Result = try {
+        repository.syncPendingOrders()
+        Result.success()
+    } catch (e: CancellationException) {
+        throw e // never swallow cancellation
+    } catch (e: IOException) {
+        if (runAttemptCount &lt; 3) Result.retry() else Result.failure()
+    }
+}
+</code></pre>
+<h3>ContentProvider</h3>
+<p><code>ContentProvider</code> exposes structured data across process/app boundaries, but most modern apps use it indirectly or for integration scenarios; a provider in active use by another process also raises your process priority (see <a href="#en-stage1-process-importance">Stage 1</a>).</p>
 
 <h2 id="en-stage5-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice Q and A" class="heading-anchor" href="#en-stage5-likely-qa">#</a></h2>
 <p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
@@ -8597,7 +8613,7 @@ adb shell am compat enable FGS_INTRODUCE_TIME_LIMITS com.example.app</code></pre
 
 <h2 id="en-stage6-notifications">Notifications: permission, channels, and interruption<a aria-label="Link to section: Notifications" class="heading-anchor" href="#en-stage6-notifications">#</a></h2>
 <ul>
-<li><strong>Android 13 / API 33:</strong> non-exempt notifications need runtime <code>POST_NOTIFICATIONS</code>. With target 33+, the app controls contextual timing; target ≤32 has system-controlled timing and tighter re-prompt behavior. Fresh installs begin blocked. Eligible OS upgrades can be pre-granted, while an earlier user block persists.</li>
+<li><strong>Android 13 / API 33:</strong> non-exempt notifications need runtime <code>POST_NOTIFICATIONS</code> (media-session notifications are exempt entirely). With target 33+, the app controls contextual timing; target ≤32 has system-controlled timing and tighter re-prompt behavior. Fresh installs begin blocked. Eligible OS upgrades can be pre-granted, while an earlier user block persists.</li>
 <li>An FGS may start without a <code>POST_NOTIFICATIONS</code> grant, but its notification remains mandatory. After denial, the FGS notice can appear in Task Manager rather than the notification drawer. Use <code>areNotificationsEnabled()</code> and channel state for UX, never to bypass service rules.</li>
 <li><strong>Channels (API 26+)</strong> must exist before posting. Their ID is a long-lived product contract: <strong>channels persist, and an app cannot raise importance that the user lowered</strong>. After creation the app cannot change importance or sound semantics, though it can update name and description. Never delete and recreate a channel to reset user choice; use a new ID only for genuinely new semantics.</li>
 <li>App permission, channel importance and user settings, DND, plus system ranking and delivery are separate gates. Importance does not guarantee heads-up; the user and system have final control.</li>
@@ -8609,13 +8625,14 @@ adb shell am compat enable FGS_INTRODUCE_TIME_LIMITS com.example.app</code></pre
 <table><thead><tr><th>Need</th><th>Default API</th><th>Lifetime / risk</th></tr></thead><tbody>
 <tr><td>Private app data</td><td>Internal <code>filesDir</code>/<code>cacheDir</code></td><td>No permission; sandboxed; removed at uninstall. Cache can be evicted.</td></tr>
 <tr><td>Large app-specific files</td><td><code>getExternalFilesDir()</code></td><td>No storage permission; volume can be unavailable; removed at uninstall.</td></tr>
-<tr><td>App-created shared media</td><td><code>MediaStore</code>, <code>RELATIVE_PATH</code>, <code>IS_PENDING</code></td><td>Own inserts normally need no broad read permission; shared media survives uninstall. Editing or deleting others' content needs scoped consent.</td></tr>
+<tr><td>App-created shared media</td><td><code>MediaStore</code>, <code>RELATIVE_PATH</code>, <code>IS_PENDING</code></td><td>Own inserts normally need no broad read permission; shared media survives uninstall. Editing or deleting others' content needs scoped consent — system dialogs via <code>MediaStore.createWriteRequest</code> (and the matching delete/trash requests).</td></tr>
 <tr><td>User-selected photos/videos</td><td>Photo Picker / <code>PickVisualMedia</code></td><td>No broad library permission; scoped URI grant. Persist when the contract supports it and still handle loss.</td></tr>
 <tr><td>Arbitrary document, create, export</td><td>SAF: <code>OPEN_DOCUMENT</code>, <code>CREATE_DOCUMENT</code>, <code>OPEN_DOCUMENT_TREE</code></td><td><code>content://</code> document URI; request and take a persistable grant where needed; provider, reinstall, or user action can invalidate it.</td></tr>
 </tbody></table>
 <p>Scoped storage is the default on Android 10 and enforced for apps targeting Android 11+; <code>requestLegacyExternalStorage</code> is ignored at target 30+. Before the target upgrade, a legacy app must migrate into app-specific storage, MediaStore, or a user-chosen SAF location. Make migration resumable and idempotent, and retain the source until the copy is verified.</p>
 <p><strong>File paths and document URIs are not interchangeable.</strong> Do not turn <code>content://</code> into a guessed <code>/storage/...</code> path. Use <code>ContentResolver</code>, streams or file descriptors, and MIME/display-name metadata. Even where MediaStore supports a direct path for particular media cases, that is not a universal SAF, cloud, or provider property.</p>
-<p><code>MANAGE_EXTERNAL_STORAGE</code> is broad special access for narrow core use cases, not a shortcut. Platform access and Google Play approval remain separate requirements.</p>
+<p>Production trap: persistable URI permissions are limited in count and disappear on reinstall — document URIs stored in Room must be validated before use, or you get a <code>SecurityException</code> months after the user picked the file.</p>
+<p><code>MANAGE_EXTERNAL_STORAGE</code> is broad special access for narrow core use cases, not a shortcut. Platform access and Google Play approval remain separate requirements. Google Play allows it only for apps whose core function needs broad file access (file managers, backup/restore, anti-virus, document management, on-device file search, device migration), with a Play Console declaration and review.</p>
 
 <h2 id="en-stage6-visibility-sharing">Package visibility, URI grants, and FileProvider<a aria-label="Link to section: Package visibility URI grants and FileProvider" class="heading-anchor" href="#en-stage6-visibility-sharing">#</a></h2>
 <ul>
@@ -8702,6 +8719,13 @@ adb shell dumpsys notification --noredact
 adb shell am kill com.example.app
 adb shell am force-stop com.example.app</code></pre>
 <p>Commands and flags vary by API and build, so record the emulator image or device. Use documented page-specific commands for auto-reset, hibernation, and compatibility changes on that version, then restore state. UI tests cannot safely replace system dialogs with brittle app selectors; establish preconditions through shell/test APIs and assert app state after the system result.</p>
+
+<h2 id="en-stage6-practice-notes">Practice notes<a aria-label="Link to section: Practice notes" class="heading-anchor" href="#en-stage6-practice-notes">#</a></h2>
+<h3>Follow-up questions by level</h3>
+<p><strong>Middle+: the user denied a permission twice. What happens and what do you do?</strong><br/>
+The system stops showing the dialog (requests instantly return denied), <code>shouldShowRequestPermissionRationale</code> returns false (though false is not a complete oracle — see the <a href="#en-stage6-permissions-state">permission state machine</a>). The only path left is explaining the value and, on an explicit user action, sending the user to app settings via <code>Settings.ACTION_APPLICATION_DETAILS_SETTINGS</code>. The UI must degrade gracefully: the feature is off, the app still works.</p>
+<p><strong>Staff/Lead: how do you design a permissions policy at product level?</strong><br/>
+Beyond the minimization principle — a grant-rate metric per permission in analytics. This reduces onboarding drop-off and Play review risk at the same time.</p>
 
 <h2 id="en-stage6-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice Q and A" class="heading-anchor" href="#en-stage6-likely-qa">#</a></h2>
 <p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
