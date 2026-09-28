@@ -13077,7 +13077,7 @@ Data first: build scans, configuration vs execution split, the module graph's cr
 
 <h2 id="en-sd-news-feed">4. A news feed with Paging 3 and cache<a aria-label="Link to section: News feed" class="heading-anchor" href="#en-sd-news-feed">#</a></h2>
 <p><strong>Product decisions on top of Room + RemoteMediator:</strong> on REFRESH, delete only the rows and remote keys owned by this feed/query key (and account) — clearing the whole table is acceptable only when it holds just this one feed; "new posts above" — an "N new posts" banner, never a sudden scroll jump; element keys are stable ids so DiffUtil/LazyColumn do not flicker. A personalized feed is not cached long — agree with product on the acceptable content "age".</p>
-<p><strong>Traps:</strong> one error behavior for all LoadStates (edge case #9); losing scroll position after process death (persist an anchor key); images without dimensions from the backend → layout jumps (aspect ratio belongs in the API contract).</p>
+<p><strong>Traps:</strong> one error behavior for all LoadStates (see <a href="#en-offline-first-architecture-paging-3">Offline-first architecture and Paging 3</a>); losing scroll position after process death (persist an anchor key); images without dimensions from the backend → layout jumps (aspect ratio belongs in the API contract).</p>
 
 <h2 id="en-sd-payment-flow">5. A payment flow<a aria-label="Link to section: Payment flow" class="heading-anchor" href="#en-sd-payment-flow">#</a></h2>
 <p><strong>Client state machine:</strong> idle → validating → processing → requires_3ds → success/failed/unknown, with the server as the source of truth. No raw card data in the app: tokenization through the provider SDK (Adyen/Stripe).</p>
