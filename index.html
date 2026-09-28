@@ -5084,7 +5084,7 @@ val client = OkHttpClient.Builder()
 <tr><td>connect timeout</td><td>Встановлення окремого socket connection; DNS/TLS/fallback details залежать від implementation.</td></tr>
 <tr><td>read timeout</td><td>Відсутність progress під час socket read, не максимальна тривалість всього download.</td></tr>
 <tr><td>write timeout</td><td>Відсутність progress під час socket write.</td></tr>
-<tr><td>call timeout</td><td>Приблизна межа повного OkHttp call: queue, connect, write, server processing, read і follow-ups.</td></tr>
+<tr><td>call timeout</td><td>Обмежує весь call від моменту старту виконання: DNS, connect, TLS, write, server processing, read і всі redirects/retries. Час очікування в async Dispatcher queue не входить, тому для end-to-end budget потрібен caller-side deadline (наприклад, <code>withTimeout</code>).</td></tr>
 <tr><td>coroutine timeout/deadline</td><td>Caller budget; має cancel child call, але не є distributed business deadline без propagation до всіх hops.</td></tr>
 </tbody></table>
 <p><strong>Timeouts are not end-to-end business deadlines automatically.</strong> Budget має врахувати UI/workflow SLA, queueing, retries і server deadline propagation. Значення “0 = infinite” та per-call overrides version/API-sensitive — перевіряйте документацію pinned client.</p>
@@ -5239,7 +5239,7 @@ val client = OkHttpClient.Builder()
   → token endpoint: authorization code + PKCE verifier
   → access token → resource server
   → ID token validation → local identity assertion
-  → refresh token rotation → new token family / session state
+  → refresh token rotation → new refresh token у тій самій token family / session state
 
 Request → credential Interceptor reads atomic session snapshot
   → resource server → 401 challenge
@@ -5293,7 +5293,7 @@ Request → credential Interceptor reads atomic session snapshot
 <p>Перевіряйте prior-response count, challenge/endpoint contract, що failed request справді ніс expected old credential, і що новий credential відрізняється. Після одного auth follow-up поверніть <code>null</code> на повторний failure. <strong>401 не завжди означає, що треба refresh.</strong> 401 зазвичай означає missing/invalid authentication або challenge; 403 — authenticated request без дозволу, але backend contracts vary, тому status+error code+<code>WWW-Authenticate</code> узгоджують із API.</p>
 
 <h2 id="stage19-uk-concurrent-refresh">Concurrent 401: single-flight refresh<a aria-label="Посилання на розділ: Concurrent single flight refresh" class="heading-anchor" href="#stage19-uk-concurrent-refresh">#</a></h2>
-<p>Коли N calls отримали 401 на token version 7, лише leader виконує refresh; followers await той самий in-flight result. Перед стартом і після очікування coordinator робить version check: якщо store вже має version 8 тієї самої generation, використовує її без другого refresh. Network I/O відбувається поза lock.</p>
+<p>Коли N calls отримали 401 на token version 7, перший caller стартує один refresh в app scope; усі callers (включно з ним) await той самий shared Deferred. Перед стартом і після очікування coordinator робить version check: якщо store вже має version 8 тієї самої generation, використовує її без другого refresh. Network I/O відбувається поза lock.</p>
 <pre><code class="language-kotlin">data class CredentialSnapshot(
     val generation: Long, val version: Long,
     val access: String, val refresh: String,
@@ -5303,45 +5303,63 @@ Request → credential Interceptor reads atomic session snapshot
 class RefreshCoordinator(
     private val store: SessionStore, // in-memory snapshot; no disk I/O under mutex
     private val refreshApi: RefreshApi, // dedicated client, no Authenticator
+    private val appScope: CoroutineScope, // SupervisorJob; outlives every caller
 ) {
     private val mutex = Mutex()
     private val inFlight = mutableMapOf&lt;
-        Pair&lt;Long, Long&gt;, CompletableDeferred&lt;CredentialSnapshot?&gt;
+        Pair&lt;Long, Long&gt;, Deferred&lt;CredentialSnapshot?&gt;
     &gt;()
 
     suspend fun refreshAfter401(failed: CredentialSnapshot): CredentialSnapshot? {
-        var leader = false
         val flight = mutex.withLock {
             val current = store.current()
             if (current == null || current.generation != failed.generation) return null
             if (current.version != failed.version) return current
             val key = failed.generation to failed.version
-            inFlight[key] ?: CompletableDeferred&lt;CredentialSnapshot?&gt;().also {
-                inFlight[key] = it
-                leader = true
-            }
+            inFlight[key]?.takeIf { it.isActive }
+                ?: appScope.async { rotate(failed, key) }.also { inFlight[key] = it }
         }
-        if (!leader) return flight.await()
-
-        val fetched = runCatching { refreshApi.rotate(failed.refresh) }.getOrNull()
-        val committed = mutex.withLock {
-            val current = store.current()
-            val accepted = fetched?.takeIf {
-                current != null &amp;&amp; current.generation == failed.generation &amp;&amp;
-                    current.version == failed.version
-            }?.also(store::replace)
-            val result = accepted ?: store.current()?.takeIf {
-                it.generation == failed.generation &amp;&amp; it.version != failed.version
-            }
-            flight.complete(result)
-            val key = failed.generation to failed.version
-            if (inFlight[key] === flight) inFlight.remove(key)
-            result
+        // Cancelling a caller only stops its await; the shared refresh keeps running.
+        return try {
+            withTimeoutOrNull(REFRESH_BUDGET_MS) { flight.await() }
+        } catch (e: CancellationException) {
+            currentCoroutineContext().ensureActive() // this caller was cancelled: rethrow
+            null // the refresh itself was cancelled (logout / app scope)
         }
-        return committed
     }
+
+    private suspend fun rotate(
+        failed: CredentialSnapshot, key: Pair&lt;Long, Long&gt;,
+    ): CredentialSnapshot? {
+        val self = currentCoroutineContext().job
+        try {
+            val fetched = try {
+                refreshApi.rotate(failed.refresh)
+            } catch (e: CancellationException) {
+                throw e // never swallow cancellation
+            } catch (e: IOException) {
+                null // production: classify invalid_grant vs transient
+            }
+            return mutex.withLock {
+                val current = store.current()
+                val accepted = fetched?.takeIf {
+                    current != null &amp;&amp; current.generation == failed.generation &amp;&amp;
+                        current.version == failed.version
+                }?.also(store::replace)
+                accepted ?: store.current()?.takeIf {
+                    it.generation == failed.generation &amp;&amp; it.version != failed.version
+                }
+            }
+        } finally {
+            withContext(NonCancellable) {
+                mutex.withLock { if (inFlight[key] === self) inFlight.remove(key) }
+            }
+        }
+    }
+
+    private companion object { const val REFRESH_BUDGET_MS = 15_000L }
 }</code></pre>
-<p><code>Authenticator.authenticate()</code> є synchronous API. Production bridge має бути bounded і не запускати refresh на тому самому saturated OkHttp Dispatcher: використайте dedicated refresh client/executor або coordinator API, сумісний із blocking boundary. Не тримайте Mutex під token HTTP I/O, disk/biometric prompt чи unrelated work; completion має будити всіх followers і на success, і на failure/cancellation. Зберігайте generation/version check, щоб late response не воскресив logout і старіший refresh не overwrote новіший token.</p>
+<p><code>Authenticator.authenticate()</code> є synchronous API. Production bridge має бути bounded і не запускати refresh на тому самому saturated OkHttp Dispatcher: використайте dedicated refresh client/executor або coordinator API, сумісний із blocking boundary. Не тримайте Mutex під token HTTP I/O, disk/biometric prompt чи unrelated work. Refresh іде в app-scoped shared Deferred: cancellation одного caller лише завершує його bounded await і не зупиняє refresh для інших; <code>CancellationException</code> не ковтається, а <code>finally</code> під <code>NonCancellable</code> прибирає in-flight entry навіть при cancellation самого refresh (logout/app scope) — тоді callers отримують <code>null</code>. Зберігайте generation/version check, щоб late response не воскресив logout і старіший refresh не overwrote новіший token.</p>
 
 <h2 id="stage19-uk-retry-logout-semantics">Retry once, replayability, logout race, 401/403<a aria-label="Посилання на розділ: Retry logout and status semantics" class="heading-anchor" href="#stage19-uk-retry-logout-semantics">#</a></h2>
 <ul>
@@ -5425,7 +5443,7 @@ class RefreshCoordinator(
 </ul>
 
 <h2 id="stage19-uk-production-scenario">Production concurrent-401 scenario<a aria-label="Посилання на розділ: Production concurrent 401 scenario" class="heading-anchor" href="#stage19-uk-production-scenario">#</a></h2>
-<p>Після resume 24 API calls несуть access v41 і одночасно отримують provider-defined <code>401 invalid_token</code>. Перший Authenticator бачить session generation 9/version 41, створює in-flight; решта після version check join. Dedicated refresh client без Authenticator робить rotation поза Mutex. Server повертає access/refresh v42; leader під lock перевіряє generation 9/version 41, commit-ить v42, завершує Deferred. Followers перебудовують лише replayable requests з v42; кожен має prior-response cap один.</p>
+<p>Після resume 24 API calls несуть access v41 і одночасно отримують provider-defined <code>401 invalid_token</code>. Перший Authenticator бачить session generation 9/version 41, створює in-flight; решта після version check join. Dedicated refresh client без Authenticator робить rotation поза Mutex. Server повертає access/refresh v42; shared refresh job під lock перевіряє generation 9/version 41, commit-ить v42 і завершує shared Deferred. Followers перебудовують лише replayable requests з v42; кожен має prior-response cap один.</p>
 <p>Паралельно user може натиснути logout. Logout змінює generation 10 і clears credentials до завершення network call. Late v42 не проходить generation CAS, followers отримують signed-out, revocation іде best-effort. Non-replayable upload не повторюється; POST повторюється лише з server idempotency key. Dashboard бачить один leader, 23 followers, latency та discard-by-generation — без token value.</p>
 
 <h2 id="stage19-uk-review-trap">Code-review / debugging / security trap<a aria-label="Посилання на розділ: Code review security trap" class="heading-anchor" href="#stage19-uk-review-trap">#</a></h2>
@@ -5526,7 +5544,7 @@ data class NoteEntity(@PrimaryKey val id: String, val accountId: String, val upd
 <p>Observable Room <code>Flow</code> реєструє tables у invalidation tracker. Commit invalidates table; active collector отримує query rerun, а не row-level change event. <strong>Room Flow не повідомляє точні змінені rows.</strong> Результат може бути рівним попередньому; використовуйте <code>distinctUntilChanged</code> лише якщо equality cost/semantics прийнятні.</p>
 <p>Flow cold щодо collector, але DB/invalidation machinery shared. Query execution і mapping мають cost; cancellation повинна припинити непотрібну роботу настільки, наскільки підтримує driver. Не робіть важкий domain mapping у transaction і вимірюйте executor starvation.</p>
 <h2 id="stage20-uk-relations-batching">Relations, junctions, N+1, batching, limits<a aria-label="Section link: Relations, junctions, N+1, batching, limits" class="heading-anchor" href="#stage20-uk-relations-batching">#</a></h2>
-<p><code>@Relation</code> і junction моделюють one-to-many/many-to-many projections; для consistent multi-query graph потрібен <code>@Transaction</code>. Generated convenience не гарантує один JOIN: інспектуйте SQL, бо nested per-parent loads створюють N+1. Для hot paths часто кращий explicit JOIN/projection.</p>
+<p><code>@Relation</code> і junction моделюють one-to-many/many-to-many projections; для consistent multi-query graph потрібен <code>@Transaction</code>. Generated convenience не гарантує один JOIN: <code>@Relation</code> робить один додатковий batched <code>IN (…)</code> запит на рівень relation (не N+1); стежте за великими IN-списками та вартістю mapping. Справжній N+1 з'являється, коли app code викликає DAO для кожного елемента. Для hot paths часто кращий explicit JOIN/projection.</p>
 <p>Batch inserts зменшують transaction overhead, але chunk-уйте великі <code>IN</code> lists і bulk writes: SQLite variable/query limits залежать від build/runtime, statement size і bind count. Не hardcode «999» як універсальну істину. Keyset/cursor pagination згадуємо лише як boundary; Paging/RemoteMediator — Stage 21.</p>
 <h2 id="stage20-uk-migrations">Schema export and migrations<a aria-label="Section link: Schema export and migrations" class="heading-anchor" href="#stage20-uk-migrations">#</a></h2>
 <ul><li>Увімкніть <code>exportSchema = true</code>, version-control JSON schemas і передайте schema location processor-у. Це input для auto migration та історичний контракт.</li><li><code>AutoMigration</code> доречна для unambiguous structural delta. Rename/delete потребують spec на кшталт <code>@RenameColumn</code>/<code>@DeleteColumn</code>. <strong>Auto migration не може вивести business transformation.</strong></li><li>Manual <code>Migration</code> виконує ordered SQL/data backfill. Для non-null column: додайте nullable/default, backfill/validate, потім rebuild/strengthen schema; врахуйте large-table lock, disk і restart strategy.</li><li>Тестуйте кожен підтримуваний path, не лише latest-1→latest: old→…→latest, direct path якщо зареєстрований, auto+manual edges. <code>MigrationTestHelper</code> відкриває historical schema, запускає migrations і validation.</li></ul>
@@ -5534,7 +5552,7 @@ data class NoteEntity(@PrimaryKey val id: String, val accountId: String, val upd
 <h2 id="stage20-uk-operational-recovery">Multi-process, corruption, disk-full, backup, encryption<a aria-label="Section link: Multi-process, corruption, disk-full, backup, encryption" class="heading-anchor" href="#stage20-uk-operational-recovery">#</a></h2>
 <ul><li>Кілька process означають окремі Room instances/caches. Увімкніть multi-process invalidation лише коли це справді потрібно, однаково конфігуруйте journals/migrations і тестуйте process kill/races; invalidation coordination не дає cross-process business transaction.</li><li><strong>Disk-full/I/O:</strong> write/commit може впасти. Не позначайте domain success до commit; звільніть контрольований cache, покажіть recoverable error, збережіть причину, не retry-те tight loop.</li><li><strong>Corruption:</strong> класифікуйте user-reconstructible cache проти irreplaceable user data. Recovery policy може quarantine/export diagnostics, restore validated backup або rebuild cache; silent destructive reset — data loss.</li><li><strong>Backup/restore:</strong> DB, WAL/SHM, DataStore, keys і server state мають бути однією policy classification. Restore старого DB із новим key/account може бути логічно corrupt.</li><li><strong>Encryption:</strong> persistence не є автоматично encrypted або backup-safe. File encryption/SQLCipher-like layer захищає data at rest за threat model, але не plaintext у compromised process, logs чи authorized runtime access; key lifecycle важливіший за label «encrypted».</li></ul>
 <h2 id="stage20-uk-datastore">DataStore: Preferences, Proto, ownership and evolution<a aria-label="Section link: DataStore: Preferences, Proto, ownership and evolution" class="heading-anchor" href="#stage20-uk-datastore">#</a></h2>
-<p>Preferences DataStore — schema-less typed keys; Proto DataStore — explicit serializer/schema/defaults і краще керована evolution. <code>updateData</code> серіалізує read-modify-write для одного store та атомарно публікує файл; transform може повторитися, тому не робіть side effects. <strong>DataStore не робить операції між stores атомарними.</strong></p>
+<p>Preferences DataStore — schema-less typed keys; Proto DataStore — explicit serializer/schema/defaults і краще керована evolution. <code>updateData</code> серіалізує read-modify-write для одного store: transform виконується один раз під store lock, а нове значення записується атомарно (temp file + rename); якщо transform або запис кидає exception, update скасовується. Повертайте новий immutable value і ніколи не мутуйте input; тримайте transform коротким, бо він блокує всі інші updates цього store. <strong>DataStore не робить операції між stores атомарними.</strong></p>
 <ul><li>Створюйте singleton per file/process через property delegate або DI; multiple writers до того самого file порушують ownership. Multi-process DataStore — окремий/version-sensitive API: усі participants мусять використовувати сумісну multi-process конфігурацію.</li><li><code>CorruptionHandler</code> застосовуйте лише до parse/corruption cases із визначеним safe replacement; I/O failure не маскуйте defaults.</li><li>Proto serializer evolution: не перевикористовуйте field numbers, зберігайте unknown-compatible semantics, плануйте defaults. Preferences keys також мають versioned meaning.</li><li><code>SharedPreferencesMigration</code> виконується до normal reads; зробіть її idempotent та визначте cleanup. Legacy <code>apply()</code> оновлює memory одразу і flush async, <code>commit()</code> sync повертає result; обидва не створюють cross-store atomicity.</li></ul>
 <h2 id="stage20-uk-boundaries">Repository / SSOT boundary<a aria-label="Section link: Repository / SSOT boundary" class="heading-anchor" href="#stage20-uk-boundaries">#</a></h2>
 <p>Repository приховує persistence API, мапить storage DTO/entity у domain і визначає ownership: Room для relational/queryable durable state; DataStore для малого config/user preference state; memory для ephemeral state. Conceptual single source of truth означає один authoritative read path, не «один фізичний файл». Network reconciliation, queues та offline-first policy — Stage 21.</p>
@@ -5593,7 +5611,7 @@ UI command → local entity + outbox → sync worker → API/change feed → ent
 <ul><li><code>Pager</code> exposes a cold <code>Flow&lt;PagingData&lt;T&gt;&gt;</code>. One <code>PagingSource</code> serves one generation; invalidation makes it unusable and Pager emits a new <code>PagingData</code>. Invalidation discards a generation but cannot prove remote freshness.</li><li><code>load()</code> receives <code>LoadParams.Refresh</code>, <code>Append</code>, or <code>Prepend</code> with key/loadSize/placeholders flag and returns <code>LoadResult.Page</code>, <code>Error</code>, or <code>Invalid</code>. Completion/order of loads may vary; make each load race-safe and do not infer business ordering from completion time.</li><li><code>getRefreshKey(state)</code> derives a restart key near <code>anchorPosition</code>, usually via <code>closestPageToPosition()</code>; anchor is a presentation hint, not a server checkpoint. Keys must match dataset/query/account identity.</li><li>UI <code>CombinedLoadStates</code> separates <code>source</code> from <code>mediator</code>, each with refresh/prepend/append. Render initial empty, cached+mediator-loading, source error, mediator error, append retry and end separately.</li><li><code>cachedIn(viewModelScope)</code> shares transformed paging generations within that scope and should usually be last after reusable transformations. It does not persist data or survive process death. Stable item identity/keys and pure <code>map</code>/<code>filter</code>/<code>insertSeparators</code> transformations prevent visual identity drift; separators need stable derived IDs and may be recomputed.</li></ul>
 <h2 id="stage21-uk-paging-config">Config, Room and RemoteMediator<a aria-label="Section link: Config, Room and RemoteMediator" class="heading-anchor" href="#stage21-uk-paging-config">#</a></h2>
 <p><code>PagingConfig</code> balances <code>pageSize</code>, <code>initialLoadSize</code>, <code>prefetchDistance</code>, placeholders, <code>maxSize</code> and <code>jumpThreshold</code>. Placeholders require countable positions and compatible source support. Dropping pages under <code>maxSize</code>, jump behavior and defaults are version-sensitive; verify the pinned Paging release instead of promising an exact memory bound.</p>
-<p>Room DAO can return <code>PagingSource&lt;Key, Entity&gt;</code>; table invalidation creates a new generation. With network+DB, <code>RemoteMediator.initialize()</code> chooses <code>SKIP_INITIAL_REFRESH</code> or <code>LAUNCH_INITIAL_REFRESH</code> from freshness policy. <code>load(REFRESH/APPEND/PREPEND)</code> reads scoped remote keys, calls API, then transactionally writes entities + keys; on refresh it clears only the intended query partition and only under explicit policy. <code>endOfPaginationReached</code> means this direction has no more remote data for that cursor/query, not that cache is globally fresh. RemoteMediator coordinates loading; <strong>it does not solve conflicts itself</strong>.</p>
+<p>Room DAO повертає <code>PagingSource&lt;Int, Entity&gt;</code> — generated LIMIT/OFFSET source; table invalidation створює нову generation. Cursor/keyset keys живуть на network side (RemoteMediator remote keys) або в hand-written PagingSource. With network+DB, <code>RemoteMediator.initialize()</code> chooses <code>SKIP_INITIAL_REFRESH</code> or <code>LAUNCH_INITIAL_REFRESH</code> from freshness policy. <code>load(REFRESH/APPEND/PREPEND)</code> reads scoped remote keys, calls API, then transactionally writes entities + keys; on refresh it clears only the intended query partition and only under explicit policy. <code>endOfPaginationReached</code> means this direction has no more remote data for that cursor/query, not that cache is globally fresh. RemoteMediator coordinates loading; <strong>it does not solve conflicts itself</strong>.</p>
 <h2 id="stage21-uk-guarantees">Guarantees / non-guarantees<a aria-label="Section link: Guarantees / non-guarantees" class="heading-anchor" href="#stage21-uk-guarantees">#</a></h2>
 <ul><li>Offline-first does not mean all actions work offline; publish each capability’s offline contract.</li><li>SSOT is a policy, not automatic consistency; a local transaction protects only local DB.</li><li>WorkManager is durable best-effort, not exact-time/exactly-once; idempotency requires server cooperation.</li><li>Optimistic UI can be rejected. Exactly-once end-to-end effects are generally unavailable; design at-least-once delivery plus deduplication/reconciliation.</li><li>Paging invalidation replaces a generation, not remote freshness. <code>cachedIn</code> shares within a scope and is not durable.</li><li>Paging load order/completion can vary. RemoteMediator does not resolve domain conflicts. Total order and stable cursor are backend contracts.</li></ul>
 <h2 id="stage21-uk-version-sensitive">Version-sensitive behavior<a aria-label="Section link: Version-sensitive behavior" class="heading-anchor" href="#stage21-uk-version-sensitive">#</a></h2>
@@ -8375,7 +8393,7 @@ interface ProductDao {
     @Query("SELECT * FROM products ORDER BY name ASC")
     fun observeProducts(): Flow&lt;List&lt;ProductEntity&gt;&gt;
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert // Room 2.5+: insert-or-update; REPLACE = delete + insert (може cascade-delete children)
     suspend fun upsertAll(products: List&lt;ProductEntity&gt;)
 
     @Query("DELETE FROM products")
@@ -10281,7 +10299,7 @@ val clicksBus: EventBus&lt;ClickEvent&gt; = analytics // ok: in-варіантн
     // 422 -&gt; валідація полів, 429 -&gt; backoff за Retry-After, 5xx -&gt; retry + алерт
     data class Serialization(val cause: Throwable) : NetworkError // контракт зламано: лог + non-fatal
 }</code></pre>
-<p>Ключова думка: retry-політика залежить від класу помилки і від ідемпотентності операції. GET — можна завжди; POST «створити замовлення» — тільки з idempotency key.</p>
+<p>Ключова думка: retry-політика залежить від класу помилки і від ідемпотентності операції. GET ідемпотентний, тому retry безпечний, але лише для вибраних transient-збоїв (connection reset, timeout, 408/429/503) з backoff, jitter і бюджетом спроб/часу; parse-, 4xx-contract-, TLS-помилки та cancellation не ретраїмо. POST «створити замовлення» — тільки з idempotency key.</p>
 
 <h2 id="idempotency">Ідемпотентність у платіжних і order-флоу<a aria-label="Посилання на розділ: Idempotency" class="heading-anchor" href="#idempotency">#</a></h2>
 <p>Сценарій-пастка: запит «оплатити» пішов, відповідь загубилась (timeout). Стан невідомий: гроші могли списатись. Retry без захисту = подвійне списання; відсутність retry = «зависла» оплата.</p>
@@ -10289,12 +10307,12 @@ val clicksBus: EventBus&lt;ClickEvent&gt; = analytics // ok: in-варіантн
 
 <h2 id="paging3-remotemediator">Paging 3: RemoteMediator і інвалідація кешу<a aria-label="Посилання на розділ: Paging 3" class="heading-anchor" href="#paging3-remotemediator">#</a></h2>
 <p>Архітектура offline-first стрічки: <code>PagingSource</code> читає тільки з Room (single source of truth), <code>RemoteMediator</code> підвантажує сторінки з мережі і пише в Room у транзакції разом з remote keys (курсори/next-page токени). Будь-яка зміна даних у Room автоматично інвалідовує PagingSource — UI оновлюється сам.</p>
-<p>Senior-нюанси: (1) REFRESH у медіаторі вирішує — чистити таблицю чи ні (<code>InitialLoad</code> політика: миттєвий показ старого кешу проти «стрибка» контенту); (2) remote keys зберігаються транзакційно з даними, інакше після process death пагінація з'їжджає; (3) <code>cachedIn(viewModelScope)</code> обов'язковий — без нього PagingData не переживає resubscribe і ламається після rotation; (4) jumping/placeholders — окреме рішення з trade-offs по UX.</p>
+<p>Senior-нюанси: (1) <code>RemoteMediator.initialize()</code> → <code>InitializeAction.LAUNCH_INITIAL_REFRESH</code>/<code>SKIP_INITIAL_REFRESH</code> вирішує, чи запускати initial REFRESH (миттєвий показ старого кешу проти «стрибка» контенту), а чистити таблицю чи merge — вирішує ваша реалізація <code>load(REFRESH)</code>; (2) remote keys зберігаються транзакційно з даними, інакше після process death пагінація з'їжджає; (3) <code>cachedIn(viewModelScope)</code> обов'язковий — без нього PagingData не переживає resubscribe і ламається після rotation; (4) jumping/placeholders — окреме рішення з trade-offs по UX.</p>
 
 <h2 id="room-advanced">Room: транзакції, relations, індекси<a aria-label="Посилання на розділ: Room advanced" class="heading-anchor" href="#room-advanced">#</a></h2>
 <ul>
-<li><strong>Транзакції:</strong> <code>@Transaction</code> для атомарних мультитабличних операцій (очистити + вставити при sync; прочитати entity з relations консистентно). suspend DAO-методи в транзакції не повинні перемикати диспетчер всередині — транзакція прив'язана до потоку/контексту.</li>
-<li><strong>Relations:</strong> <code>@Relation</code>/<code>@Embedded</code> зручні для read-моделей, але це N+1-подібні додаткові запити під капотом (Room робить їх у транзакції). Для гарячих списків іноді чесніше написати JOIN-запит у custom POJO.</li>
+<li><strong>Транзакції:</strong> <code>@Transaction</code> для атомарних мультитабличних операцій (очистити + вставити при sync; прочитати entity з relations консистентно). усередині <code>withTransaction</code> віддавайте перевагу suspend DAO-викликам — вони лишаються в транзакції навіть після зміни контексту; блокуючі DAO/DB API з іншого диспетчера чи scope всередині блоку Room відхиляє, щоб уникнути deadlock; не запускайте незалежні child-корутини, що переживають блок.</li>
+<li><strong>Relations:</strong> <code>@Embedded</code> не додає запитів — лише розгортає колонки в той самий row. Кожен <code>@Relation</code> додає один batched <code>IN (…)</code> запит на рівень relation (1 + k запитів, не 1 + N), тому метод потребує <code>@Transaction</code> для консистентності. Для гарячих списків explicit JOIN у custom POJO все ще може бути дешевшим; справжній N+1 виникає, коли код викликає DAO для кожного елемента в циклі.</li>
 <li><strong>Індекси:</strong> кожен зовнішній ключ і кожна колонка з WHERE/ORDER BY у частих запитах — кандидат на <code>@Index</code>. Перевірка — <code>EXPLAIN QUERY PLAN</code> і Database Inspector. Trade-off: індекси сповільнюють запис — для таблиць, які масово перезаписуються при sync, індексувати треба свідомо.</li>
 <li><strong>Flow з Room:</strong> інвалідація на рівні таблиці — Flow переемітить навіть якщо ваші конкретні рядки не змінились; <code>distinctUntilChanged()</code> після мапінгу — стандартний прийом.</li>
 </ul>
@@ -10306,7 +10324,7 @@ val clicksBus: EventBus&lt;ClickEvent&gt; = analytics // ok: in-варіантн
 <ul>
 <li><strong>Де зберігати токени:</strong> базовий рівень — приватні файли застосунку (DataStore): інші застосунки без root їх не читають. Підсилення — шифрування ключем з <strong>Android Keystore</strong>: ключ не екстрагується з secure hardware, дані шифруються AES/GCM. Чесний Senior-коментар: це захист від офлайн-екстракції і бекапів, а не від атакуючого з root на розблокованому девайсі.</li>
 <li><strong>EncryptedSharedPreferences:</strong> бібліотека Jetpack Security (security-crypto) deprecated і не розвивається — у нових проєктах краще власна тонка обгортка Keystore + DataStore, у старих — план міграції, а не сліпе копіювання туторіалів.</li>
-<li><strong>Certificate pinning:</strong> захищає від скомпрометованих CA і MITM з установленим користувацьким сертифікатом. Trade-offs, які обов'язково треба назвати: ротація сертифікатів стає релізним ризиком (запінений сертифікат протух → застосунок осліп, а оновлення через Play займає дні), тому пінити публічний ключ (SPKI), тримати backup pins, мати kill-switch через remote config. Альтернатива для багатьох кейсів — Certificate Transparency monitoring або пінінг лише для критичних ендпоінтів (платежі).</li>
+<li><strong>Certificate pinning:</strong> для targetSdk ≥ 24 user-installed CA і так не довіряються за замовчуванням (Network Security Config, якщо застосунок явно не додав <code>&lt;certificates src="user"/&gt;</code>), тож MITM з користувацьким сертифікатом відсікається без pinning. Pinning додатково звужує довіру проти скомпрометованого або помилково видаючого system CA; Android guidance не радить пінити, якщо threat model цього не вимагає. Trade-offs, які обов'язково треба назвати: ротація сертифікатів стає релізним ризиком (запінений сертифікат протух → застосунок осліп, а оновлення через Play займає дні), тому пінити публічний ключ (SPKI), тримати backup pins, мати kill-switch через remote config. Альтернатива для багатьох кейсів — Certificate Transparency monitoring або пінінг лише для критичних ендпоінтів (платежі).</li>
 <li><strong>Інше, що згадати за нагоди:</strong> <code>android:allowBackup</code> і правила бекапу для чутливих даних, заборона логування PII/токенів (interceptor для редагування), obfuscation ≠ security.</li>
 </ul>
 
@@ -14156,7 +14174,7 @@ val client = OkHttpClient.Builder()
 <tr><td>connect timeout</td><td>Establishing one socket connection; DNS/TLS/fallback details depend on the implementation.</td></tr>
 <tr><td>read timeout</td><td>Lack of progress during a socket read, not the maximum total download duration.</td></tr>
 <tr><td>write timeout</td><td>Lack of progress during a socket write.</td></tr>
-<tr><td>call timeout</td><td>An approximate bound for the complete OkHttp call: queue, connect, write, server processing, read, and follow-ups.</td></tr>
+<tr><td>call timeout</td><td>Bounds the whole call once it starts executing: DNS, connect, TLS, write, server processing, read, and all redirects/retries. Time spent waiting in the async Dispatcher queue is not included, so use a caller-side deadline (for example <code>withTimeout</code>) for an end-to-end budget.</td></tr>
 <tr><td>coroutine timeout/deadline</td><td>The caller's budget; it should cancel the child call but is not a distributed business deadline without propagation to downstream hops.</td></tr>
 </tbody></table>
 <p><strong>Timeouts are not end-to-end business deadlines automatically.</strong> A budget must account for the UI/workflow SLA, queueing, retries, and server deadline propagation. The meaning of “0 = infinite” and per-call overrides is version/API-sensitive, so inspect the pinned client documentation.</p>
@@ -14311,7 +14329,7 @@ val client = OkHttpClient.Builder()
   → token endpoint: authorization code + PKCE verifier
   → access token → resource server
   → validate ID token → local identity assertion
-  → refresh token rotation → token family / session state
+  → refresh token rotation → new refresh token in the same token family / session state
 
 Request → credential Interceptor reads atomic session snapshot
   → resource server → 401 challenge
@@ -14365,7 +14383,7 @@ Request → credential Interceptor reads atomic session snapshot
 <p>Check prior-response count, challenge/error contract, whether the failed request carried the expected old credential, and whether the replacement differs. Stop after one auth follow-up. <strong>A 401 does not always mean refresh.</strong> A 401 commonly means missing/invalid authentication or a challenge, while 403 commonly means authenticated but not permitted; backend contracts vary, so use status, <code>WWW-Authenticate</code>, and a documented error code.</p>
 
 <h2 id="en-stage19-concurrent-refresh">Concurrent 401 single-flight refresh<a aria-label="Link to section: Concurrent single flight refresh" class="heading-anchor" href="#en-stage19-concurrent-refresh">#</a></h2>
-<p>If N calls fail with access-token version 7, one leader refreshes and followers await the same in-flight result. Before starting and after waiting, compare versions: if the same generation already has version 8, reuse it. Run token-endpoint I/O outside the lock.</p>
+<p>If N calls fail with access-token version 7, the first caller starts one refresh in an app scope and every caller, including it, awaits the same shared Deferred. Before starting and after waiting, compare versions: if the same generation already has version 8, reuse it. Run token-endpoint I/O outside the lock.</p>
 <pre><code class="language-kotlin">data class CredentialSnapshot(
     val generation: Long, val version: Long,
     val access: String, val refresh: String,
@@ -14375,44 +14393,63 @@ Request → credential Interceptor reads atomic session snapshot
 class RefreshCoordinator(
     private val store: SessionStore, // in-memory snapshot; no disk I/O under mutex
     private val refreshApi: RefreshApi, // dedicated client; no Authenticator
+    private val appScope: CoroutineScope, // SupervisorJob; outlives every caller
 ) {
     private val mutex = Mutex()
     private val inFlight = mutableMapOf&lt;
-        Pair&lt;Long, Long&gt;, CompletableDeferred&lt;CredentialSnapshot?&gt;
+        Pair&lt;Long, Long&gt;, Deferred&lt;CredentialSnapshot?&gt;
     &gt;()
 
     suspend fun refreshAfter401(failed: CredentialSnapshot): CredentialSnapshot? {
-        var leader = false
         val flight = mutex.withLock {
             val current = store.current()
             if (current == null || current.generation != failed.generation) return null
             if (current.version != failed.version) return current
             val key = failed.generation to failed.version
-            inFlight[key] ?: CompletableDeferred&lt;CredentialSnapshot?&gt;().also {
-                inFlight[key] = it
-                leader = true
-            }
+            inFlight[key]?.takeIf { it.isActive }
+                ?: appScope.async { rotate(failed, key) }.also { inFlight[key] = it }
         }
-        if (!leader) return flight.await()
-
-        val fetched = runCatching { refreshApi.rotate(failed.refresh) }.getOrNull()
-        return mutex.withLock {
-            val current = store.current()
-            val accepted = fetched?.takeIf {
-                current != null &amp;&amp; current.generation == failed.generation &amp;&amp;
-                    current.version == failed.version
-            }?.also(store::replace)
-            val result = accepted ?: store.current()?.takeIf {
-                it.generation == failed.generation &amp;&amp; it.version != failed.version
-            }
-            flight.complete(result)
-            val key = failed.generation to failed.version
-            if (inFlight[key] === flight) inFlight.remove(key)
-            result
+        // Cancelling a caller only stops its await; the shared refresh keeps running.
+        return try {
+            withTimeoutOrNull(REFRESH_BUDGET_MS) { flight.await() }
+        } catch (e: CancellationException) {
+            currentCoroutineContext().ensureActive() // this caller was cancelled: rethrow
+            null // the refresh itself was cancelled (logout / app scope)
         }
     }
+
+    private suspend fun rotate(
+        failed: CredentialSnapshot, key: Pair&lt;Long, Long&gt;,
+    ): CredentialSnapshot? {
+        val self = currentCoroutineContext().job
+        try {
+            val fetched = try {
+                refreshApi.rotate(failed.refresh)
+            } catch (e: CancellationException) {
+                throw e // never swallow cancellation
+            } catch (e: IOException) {
+                null // production: classify invalid_grant vs transient
+            }
+            return mutex.withLock {
+                val current = store.current()
+                val accepted = fetched?.takeIf {
+                    current != null &amp;&amp; current.generation == failed.generation &amp;&amp;
+                        current.version == failed.version
+                }?.also(store::replace)
+                accepted ?: store.current()?.takeIf {
+                    it.generation == failed.generation &amp;&amp; it.version != failed.version
+                }
+            }
+        } finally {
+            withContext(NonCancellable) {
+                mutex.withLock { if (inFlight[key] === self) inFlight.remove(key) }
+            }
+        }
+    }
+
+    private companion object { const val REFRESH_BUDGET_MS = 15_000L }
 }</code></pre>
-<p><code>Authenticator.authenticate()</code> is synchronous. A production bridge must be bounded and must not schedule refresh on the same saturated OkHttp Dispatcher; use a dedicated refresh client/executor or a coordinator designed for the blocking boundary. Do not hold a Mutex during token HTTP I/O, disk work, a biometric prompt, or unrelated I/O. Complete the Deferred for success, failure, and cancellation. Generation/version checks prevent a late response reviving logout or an older refresh overwriting a newer token.</p>
+<p><code>Authenticator.authenticate()</code> is synchronous. A production bridge must be bounded and must not schedule refresh on the same saturated OkHttp Dispatcher; use a dedicated refresh client/executor or a coordinator designed for the blocking boundary. Do not hold a Mutex during token HTTP I/O, disk work, a biometric prompt, or unrelated I/O. Run the refresh in an app-scoped shared Deferred: cancelling one caller only ends its bounded await and never stops the refresh for others; <code>CancellationException</code> is rethrown, not swallowed, and a <code>finally</code> under <code>NonCancellable</code> removes the in-flight entry even when the refresh itself is cancelled (logout/app scope), in which case callers get <code>null</code>. Generation/version checks prevent a late response reviving logout or an older refresh overwriting a newer token.</p>
 
 <h2 id="en-stage19-retry-logout-semantics">Retry once, replayability, logout race, and 401/403<a aria-label="Link to section: Retry logout and status semantics" class="heading-anchor" href="#en-stage19-retry-logout-semantics">#</a></h2>
 <ul>
@@ -14496,7 +14533,7 @@ class RefreshCoordinator(
 </ul>
 
 <h2 id="en-stage19-production-scenario">Production concurrent-401 scenario<a aria-label="Link to section: Production concurrent 401 scenario" class="heading-anchor" href="#en-stage19-production-scenario">#</a></h2>
-<p>After resume, 24 API calls carry access v41 and receive the provider-defined <code>401 invalid_token</code>. The first Authenticator sees session generation 9/version 41 and creates the in-flight operation; the others check version and join. A dedicated refresh client without an Authenticator rotates outside the Mutex. The server returns access/refresh v42; under the lock the leader verifies generation 9/version 41, commits v42, and completes the Deferred. Followers rebuild only replayable requests with v42, and each prior-response chain is capped at one follow-up.</p>
+<p>After resume, 24 API calls carry access v41 and receive the provider-defined <code>401 invalid_token</code>. The first Authenticator sees session generation 9/version 41 and creates the in-flight operation; the others check version and join. A dedicated refresh client without an Authenticator rotates outside the Mutex. The server returns access/refresh v42; under the lock the shared refresh job verifies generation 9/version 41, commits v42, and completes the shared Deferred. Followers rebuild only replayable requests with v42, and each prior-response chain is capped at one follow-up.</p>
 <p>The user may log out concurrently. Logout advances generation to 10 and clears credentials before the network response. Late v42 fails the generation CAS; followers become signed out and revocation proceeds best-effort. A non-replayable upload is not retried, and POST retry requires a server idempotency key. Metrics show one leader, 23 followers, latency, and generation discard without recording credentials.</p>
 
 <h2 id="en-stage19-review-trap">Code-review / debugging / security trap<a aria-label="Link to section: Code review security trap" class="heading-anchor" href="#en-stage19-review-trap">#</a></h2>
@@ -14597,7 +14634,7 @@ data class NoteEntity(@PrimaryKey val id: String, val accountId: String, val upd
 <p>An observable Room <code>Flow</code> registers tables with the invalidation tracker. A commit invalidates a table and an active collector gets a query rerun, not a row-level event. <strong>Room Flow does not identify the exact changed rows.</strong> The result may equal the prior value; use <code>distinctUntilChanged</code> only when its equality semantics and cost are acceptable.</p>
 <p>The Flow is cold per collector, while DB/invalidation infrastructure is shared. Querying and mapping cost real work; cancellation should stop obsolete work as supported by the driver. Avoid heavy domain mapping inside a transaction and measure executor starvation.</p>
 <h2 id="en-stage20-relations-batching">Relations, junctions, N+1, batching, and limits<a aria-label="Section link: Relations, junctions, N+1, batching, and limits" class="heading-anchor" href="#en-stage20-relations-batching">#</a></h2>
-<p><code>@Relation</code> and a junction model one-to-many and many-to-many projections; a consistent multi-query object graph needs <code>@Transaction</code>. Generated convenience does not promise one JOIN: inspect SQL because nested per-parent loads can create N+1. Explicit JOIN/projection queries are often better for hot paths.</p>
+<p><code>@Relation</code> and a junction model one-to-many and many-to-many projections; a consistent multi-query object graph needs <code>@Transaction</code>. Generated convenience does not promise one JOIN: <code>@Relation</code> issues one extra batched <code>IN (…)</code> query per relation level, not N+1; watch large IN lists and the mapping cost. True N+1 appears when app code calls a DAO per item. Explicit JOIN/projection queries are often better for hot paths.</p>
 <p>Batch inserts reduce transaction overhead, but chunk large <code>IN</code> lists and bulk writes. The SQLite variable/query limits depend on the build/runtime, statement size, and bind count; “999” is not a universal constant. Mention keyset/cursor pagination only as a boundary—Paging and RemoteMediator belong to Stage 21.</p>
 <h2 id="en-stage20-migrations">Schema export and migrations<a aria-label="Section link: Schema export and migrations" class="heading-anchor" href="#en-stage20-migrations">#</a></h2>
 <ul><li>Enable <code>exportSchema = true</code>, version-control JSON schemas, and provide the processor schema location. The history is input to auto migration and a reviewable contract.</li><li><code>AutoMigration</code> fits an unambiguous structural delta. Rename/delete operations need a spec such as <code>@RenameColumn</code>/<code>@DeleteColumn</code>. <strong>Auto migration cannot infer a business transformation.</strong></li><li>A manual <code>Migration</code> performs ordered SQL and data backfill. For a required column, consider expand/backfill/validate/rebuild rather than guessing a default; account for large-table lock time, disk, and restart behavior.</li><li>Test every supported path, not only latest-1→latest: each old→…→latest chain and every registered direct edge. <code>MigrationTestHelper</code> creates historical schemas, runs migrations, and validates the result.</li></ul>
@@ -14605,7 +14642,7 @@ data class NoteEntity(@PrimaryKey val id: String, val accountId: String, val upd
 <h2 id="en-stage20-operational-recovery">Multi-process, corruption, disk-full, backup, encryption<a aria-label="Section link: Multi-process, corruption, disk-full, backup, encryption" class="heading-anchor" href="#en-stage20-operational-recovery">#</a></h2>
 <ul><li>Multiple processes have separate Room instances and caches. Enable multi-process invalidation only when required, configure journals/migrations consistently, and test races and process kill; invalidation is not a cross-process business transaction.</li><li><strong>Disk-full/I/O:</strong> a write or commit can fail. Do not report domain success before commit. Free only controlled cache, surface a recoverable error, retain the cause, and avoid a tight retry loop.</li><li><strong>Corruption:</strong> classify reconstructible cache versus irreplaceable user data. A policy may quarantine/export diagnostics, restore a validated backup, or rebuild only cache; silent destructive reset is data loss.</li><li><strong>Backup/restore:</strong> classify DB, WAL/SHM, DataStore, keys, and server state as one policy. Restoring an old DB with a new account or key can be logically corrupt.</li><li><strong>Encryption:</strong> persistence is not automatically encrypted or backup-safe. File encryption or a SQLCipher-like layer addresses a defined at-rest threat, not plaintext in a compromised process, logs, or authorized runtime access; key lifecycle matters.</li></ul>
 <h2 id="en-stage20-datastore">DataStore: Preferences, Proto, ownership, and evolution<a aria-label="Section link: DataStore: Preferences, Proto, ownership, and evolution" class="heading-anchor" href="#en-stage20-datastore">#</a></h2>
-<p>Preferences DataStore provides schema-less typed keys. Proto DataStore provides an explicit serializer/schema/default and more controlled evolution. <code>updateData</code> serializes read-modify-write for one store and atomically publishes that file; its transform may rerun, so it must not perform side effects. <strong>DataStore does not make cross-store operations atomic.</strong></p>
+<p>Preferences DataStore provides schema-less typed keys. Proto DataStore provides an explicit serializer/schema/default and more controlled evolution. <code>updateData</code> serializes read-modify-write per store; the transform runs once under the store lock and the new value is written atomically (temp file + rename). If the transform or the write throws, the update is aborted. Return a new immutable value and never mutate the input. Keep the transform short, because it blocks every other update to that store. <strong>DataStore does not make cross-store operations atomic.</strong></p>
 <ul><li>Create one singleton per file/process through a property delegate or DI. Multiple writers to one file violate ownership. Multi-process DataStore is a separate, version-sensitive API; all participants need compatible multi-process configuration.</li><li>Use a <code>CorruptionHandler</code> only for defined parse/corruption cases with a safe replacement; do not turn arbitrary I/O failure into defaults.</li><li>For Proto serializer evolution, never reuse field numbers and preserve compatible unknown-field semantics. Preferences keys also have versioned meaning.</li><li><code>SharedPreferencesMigration</code> runs before normal reads; make it idempotent and define cleanup. Legacy <code>apply()</code> updates memory then flushes asynchronously; <code>commit()</code> synchronously returns success. Neither creates cross-store atomicity.</li></ul>
 <h2 id="en-stage20-boundaries">Repository / SSOT boundary<a aria-label="Section link: Repository / SSOT boundary" class="heading-anchor" href="#en-stage20-boundaries">#</a></h2>
 <p>A repository hides persistence APIs, maps storage entities to domain types, and owns placement: Room for relational/queryable durable state, DataStore for small configuration/preferences, memory for ephemeral state. A conceptual single source of truth means one authoritative read path, not one physical file. Network reconciliation, queues, and offline-first policy are Stage 21.</p>
@@ -14664,7 +14701,7 @@ UI command → local entity + outbox → sync worker → API/change feed → ent
 <ul><li><code>Pager</code> exposes a cold <code>Flow&lt;PagingData&lt;T&gt;&gt;</code>. One <code>PagingSource</code> serves one generation; invalidation makes it unusable and Pager emits a new <code>PagingData</code>. Invalidation discards a generation but cannot prove remote freshness.</li><li><code>load()</code> receives <code>LoadParams.Refresh</code>, <code>Append</code>, or <code>Prepend</code> with key/loadSize/placeholders flag and returns <code>LoadResult.Page</code>, <code>Error</code>, or <code>Invalid</code>. Paging load order and completion can vary; each load must be race-safe, and business order cannot be inferred from completion time.</li><li><code>getRefreshKey(state)</code> derives a restart key near <code>anchorPosition</code>, commonly using <code>closestPageToPosition()</code>. The anchor is a presentation hint, not a server checkpoint. Keys must belong to the same dataset/query/account identity.</li><li>UI <code>CombinedLoadStates</code> separates <code>source</code> from <code>mediator</code>, each with refresh/prepend/append. Render initial empty, cached plus mediator-loading, source error, mediator error, append retry, and end independently.</li><li><code>cachedIn(viewModelScope)</code> shares transformed paging generations within that scope and should usually be applied after reusable transformations. It does not persist data or survive process death. Stable item identity/keys and pure <code>map</code>/<code>filter</code>/<code>insertSeparators</code> transformations avoid visual identity drift; separators need stable derived IDs and may be recomputed.</li></ul>
 <h2 id="en-stage21-paging-config">Config, Room, and RemoteMediator<a aria-label="Section link: Config, Room, and RemoteMediator" class="heading-anchor" href="#en-stage21-paging-config">#</a></h2>
 <p><code>PagingConfig</code> balances <code>pageSize</code>, <code>initialLoadSize</code>, <code>prefetchDistance</code>, placeholders, <code>maxSize</code>, and <code>jumpThreshold</code>. Placeholders require countable positions and source support. Page dropping under <code>maxSize</code>, jumping, and defaults are version-sensitive; inspect the pinned Paging release rather than promising an exact memory bound.</p>
-<p>A Room DAO can return <code>PagingSource&lt;Key, Entity&gt;</code>; table invalidation creates a new generation. With network plus DB, <code>RemoteMediator.initialize()</code> chooses <code>SKIP_INITIAL_REFRESH</code> or <code>LAUNCH_INITIAL_REFRESH</code> from freshness policy. <code>load(REFRESH/APPEND/PREPEND)</code> reads scoped remote keys, calls the API, and transactionally writes entities plus keys. On refresh it clears only the intended query partition and only under an explicit policy. <code>endOfPaginationReached</code> means that direction has no more remote data for that cursor/query, not that the cache is globally fresh. RemoteMediator coordinates loading; <strong>it does not solve conflicts itself</strong>.</p>
+<p>A Room DAO returns <code>PagingSource&lt;Int, Entity&gt;</code>: a generated LIMIT/OFFSET source that is invalidated on table change, creating a new generation. Cursor/keyset keys apply to the network side, stored as RemoteMediator remote keys, or to a hand-written PagingSource. With network plus DB, <code>RemoteMediator.initialize()</code> chooses <code>SKIP_INITIAL_REFRESH</code> or <code>LAUNCH_INITIAL_REFRESH</code> from freshness policy. <code>load(REFRESH/APPEND/PREPEND)</code> reads scoped remote keys, calls the API, and transactionally writes entities plus keys. On refresh it clears only the intended query partition and only under an explicit policy. <code>endOfPaginationReached</code> means that direction has no more remote data for that cursor/query, not that the cache is globally fresh. RemoteMediator coordinates loading; <strong>it does not solve conflicts itself</strong>.</p>
 <h2 id="en-stage21-guarantees">Guarantees / non-guarantees<a aria-label="Section link: Guarantees / non-guarantees" class="heading-anchor" href="#en-stage21-guarantees">#</a></h2>
 <ul><li>Offline-first does not mean all actions work offline; publish each capability’s offline contract.</li><li>SSOT is a policy, not automatic consistency; a local transaction protects only the local DB.</li><li>WorkManager is durable best-effort, not exact-time or exactly-once; idempotency requires server cooperation.</li><li>Optimistic UI can be rejected. Exactly-once end-to-end effects are generally unavailable; design at-least-once delivery plus deduplication and reconciliation.</li><li>Paging invalidation replaces a generation; it does not prove remote freshness. <code>cachedIn</code> shares within a scope and does not make data durable.</li><li>Paging load order and completion can vary. RemoteMediator does not solve domain conflicts. Total order and stable cursor are backend contracts.</li></ul>
 <h2 id="en-stage21-version-sensitive">Version-sensitive behavior<a aria-label="Section link: Version-sensitive behavior" class="heading-anchor" href="#en-stage21-version-sensitive">#</a></h2>
@@ -16508,7 +16545,7 @@ Weigh the gain (lambda allocations on hot paths, reified convenience) against th
     // 422 -&gt; field validation, 429 -&gt; backoff per Retry-After, 5xx -&gt; retry + alert
     data class Serialization(val cause: Throwable) : NetworkError // broken contract: log + non-fatal
 }</code></pre>
-<p>The key thought: the retry policy depends on the error class and on the idempotency of the operation. GET — always retryable; a POST "create order" — only with an idempotency key.</p>
+<p>The key thought: the retry policy depends on the error class and on the idempotency of the operation. GET is idempotent, so it is safe to retry, but only for selected transient failures (connection reset, timeout, 408/429/503) with backoff, jitter, and an attempt/time budget; never retry parse, 4xx contract, TLS, or cancellation errors. A POST "create order" — only with an idempotency key.</p>
 
 <h2 id="en-idempotency">Idempotency in payment and order flows<a aria-label="Link to section: Idempotency" class="heading-anchor" href="#en-idempotency">#</a></h2>
 <p>The trap scenario: a "pay" request went out, the response was lost (timeout). The state is unknown: money may have been charged. Retry without protection = double charge; no retry = a "stuck" payment.</p>
@@ -16516,12 +16553,12 @@ Weigh the gain (lambda allocations on hot paths, reified convenience) against th
 
 <h2 id="en-paging3-remotemediator">Paging 3: RemoteMediator and cache invalidation<a aria-label="Link to section: Paging 3" class="heading-anchor" href="#en-paging3-remotemediator">#</a></h2>
 <p>The offline-first feed architecture: the <code>PagingSource</code> reads only from Room (single source of truth); the <code>RemoteMediator</code> fetches pages from the network and writes them to Room in a transaction together with remote keys (cursors/next-page tokens). Any change to Room data automatically invalidates the PagingSource — the UI updates by itself.</p>
-<p>Senior nuances: (1) REFRESH in the mediator decides whether to clear the table (instant display of the old cache versus a content "jump"); (2) remote keys are stored transactionally with the data, otherwise pagination drifts after process death; (3) <code>cachedIn(viewModelScope)</code> is mandatory — without it PagingData does not survive resubscription and breaks after rotation; (4) jumping/placeholders are a separate decision with UX trade-offs.</p>
+<p>Senior nuances: (1) <code>RemoteMediator.initialize()</code> → <code>InitializeAction.LAUNCH_INITIAL_REFRESH</code>/<code>SKIP_INITIAL_REFRESH</code> decides whether an initial REFRESH runs (instant display of the old cache versus a content "jump"); the clear-vs-merge choice lives in your <code>load(REFRESH)</code> implementation; (2) remote keys are stored transactionally with the data, otherwise pagination drifts after process death; (3) <code>cachedIn(viewModelScope)</code> is mandatory — without it PagingData does not survive resubscription and breaks after rotation; (4) jumping/placeholders are a separate decision with UX trade-offs.</p>
 
 <h2 id="en-room-advanced">Room: transactions, relations, indexes<a aria-label="Link to section: Room advanced" class="heading-anchor" href="#en-room-advanced">#</a></h2>
 <ul>
-<li><strong>Transactions:</strong> <code>@Transaction</code> for atomic multi-table operations (clear + insert on sync; reading an entity with relations consistently). Suspend DAO methods inside a transaction must not switch dispatchers mid-way — the transaction is bound to its thread/context.</li>
-<li><strong>Relations:</strong> <code>@Relation</code>/<code>@Embedded</code> are convenient for read models, but under the hood they are extra N+1-like queries (Room runs them in a transaction). For hot lists an explicit JOIN into a custom POJO is often more honest.</li>
+<li><strong>Transactions:</strong> <code>@Transaction</code> for atomic multi-table operations (clear + insert on sync; reading an entity with relations consistently). Inside <code>withTransaction</code>, prefer suspending DAO calls; they stay in the transaction even across context switches. Do not call blocking DAO/DB APIs from another dispatcher or scope inside the block, because Room rejects that to avoid deadlock. Never launch independent child coroutines that outlive the block.</li>
+<li><strong>Relations:</strong> <code>@Embedded</code> adds no query; it only flattens columns into the same row. Each <code>@Relation</code> adds one extra batched <code>IN (…)</code> query per relation level (1 + k queries, not 1 + N), so the method needs <code>@Transaction</code> for consistency. For hot lists an explicit JOIN projection into a custom POJO can still be cheaper, and N+1 comes from calling the DAO per item in a loop.</li>
 <li><strong>Indexes:</strong> every foreign key and every column in WHERE/ORDER BY of frequent queries is an <code>@Index</code> candidate. Verify with <code>EXPLAIN QUERY PLAN</code> and Database Inspector. Trade-off: indexes slow writes — for tables mass-rewritten on sync, index deliberately.</li>
 <li><strong>Flow from Room:</strong> invalidation is table-level — the Flow re-emits even when your specific rows did not change; <code>distinctUntilChanged()</code> after mapping is the standard move.</li>
 </ul>
@@ -16533,7 +16570,7 @@ Weigh the gain (lambda allocations on hot paths, reified convenience) against th
 <ul>
 <li><strong>Where to keep tokens:</strong> the base level — the app's private storage (DataStore): other apps cannot read it without root. Hardening — encryption with an <strong>Android Keystore</strong> key: the key is non-extractable from secure hardware, data encrypted with AES/GCM. The honest Senior comment: this protects against offline extraction and backups, not against an attacker with root on an unlocked device.</li>
 <li><strong>EncryptedSharedPreferences:</strong> the Jetpack Security library (security-crypto) is deprecated and unmaintained — new projects are better off with a thin custom Keystore + DataStore wrapper; old ones need a migration plan, not blind tutorial copying.</li>
-<li><strong>Certificate pinning:</strong> protects against compromised CAs and MITM with a user-installed certificate. The trade-offs you must name: certificate rotation becomes a release risk (a pinned cert expires → the app goes blind, and a Play update takes days), so pin the public key (SPKI), keep backup pins, and have a remote-config kill switch. For many cases the alternative is Certificate Transparency monitoring, or pinning only critical endpoints (payments).</li>
+<li><strong>Certificate pinning:</strong> for targetSdk ≥ 24, user-installed CAs are not trusted by default (Network Security Config, unless the app opts in with <code>&lt;certificates src="user"/&gt;</code>), so a user-installed MITM certificate is already rejected without pinning. Pinning additionally narrows trust against a compromised or mis-issuing system CA; Android guidance discourages pinning unless the threat model requires it. The trade-offs you must name: certificate rotation becomes a release risk (a pinned cert expires → the app goes blind, and a Play update takes days), so pin the public key (SPKI), keep backup pins, and have a remote-config kill switch. For many cases the alternative is Certificate Transparency monitoring, or pinning only critical endpoints (payments).</li>
 <li><strong>Also worth mentioning:</strong> <code>android:allowBackup</code> and backup rules for sensitive data, a logging-redaction interceptor so PII/tokens never hit logs, and obfuscation ≠ security.</li>
 </ul>
 
