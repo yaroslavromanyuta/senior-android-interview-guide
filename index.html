@@ -588,17 +588,6 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </ol>
 </li>
 <li class="toc-major">
-<a data-target="jetpack-compose" href="#jetpack-compose">Jetpack Compose</a>
-<ol class="toc-children">
-<li><a data-target="recomposition" href="#recomposition">Recomposition</a></li>
-<li><a data-target="remember-vs-remembersaveable" href="#remember-vs-remembersaveable">remember vs rememberSaveable</a></li>
-<li><a data-target="state-hoisting" href="#state-hoisting">State hoisting</a></li>
-<li><a data-target="compose-side-effects" href="#compose-side-effects">Compose side effects</a></li>
-<li><a data-target="derivedstateof" href="#derivedstateof">derivedStateOf</a></li>
-<li><a data-target="jetpack-compose-підсумок" href="#jetpack-compose-підсумок">Jetpack Compose — підсумок</a></li>
-</ol>
-</li>
-<li class="toc-major">
 <a data-target="architecture" href="#architecture">Architecture</a>
 <ol class="toc-children">
 <li><a data-target="mvvm" href="#mvvm">MVVM</a></li>
@@ -921,12 +910,6 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="en-coroutines-and-concurrency" href="#en-coroutines-and-concurrency">Coroutines and Concurrency</a>
 <ol class="toc-children">
 <li><a data-target="en-structured-concurrency" href="#en-structured-concurrency">Structured concurrency</a></li>
-</ol>
-</li>
-<li class="toc-major">
-<a data-target="en-jetpack-compose" href="#en-jetpack-compose">Jetpack Compose</a>
-<ol class="toc-children">
-<li><a data-target="en-state-hoisting" href="#en-state-hoisting">State hoisting</a></li>
 </ol>
 </li>
 <li class="toc-major">
@@ -3956,6 +3939,7 @@ rows.value.add(newRow) // MutableList mutation is not observed by mutableStateOf
 <tr><td><code>ViewModel</code></td><td>Screen/business state owner across configuration changes</td><td>Does not itself survive process death; use <code>SavedStateHandle</code> for minimal restorable input and durable repository for business truth.</td></tr>
 </tbody></table>
 <p><code>Saver</code>, <code>mapSaver</code> і <code>listSaver</code> convert a state holder to minimal saveable values and reconstruct it. Save query, selected IDs or scroll key/index—not repositories, callbacks, coroutine scopes, large object graphs or duplicate server data. Restoration can occur after system recreation; validate missing/old values and rebuild runtime-only dependencies.</p>
+<p>Типові приклади: <code>remember</code> — expanded dropdown, temporary animation state; <code>rememberSaveable</code> — text input, selected tab, scroll state, прості filters. Compose state не має ставати mini-database: якщо state потрібен business flow або має пережити process death, потрібна persistence strategy, а не тільки Compose memory.</p>
 
 <h2 id="stage14-uk-hoisting">State hoisting та plain state holders<a aria-label="Посилання на розділ: State hoisting and plain state holders" class="heading-anchor" href="#stage14-uk-hoisting">#</a></h2>
 <ul>
@@ -3963,10 +3947,13 @@ rows.value.add(newRow) // MutableList mutation is not observed by mutableStateOf
 <li>Extract a plain state holder when cohesive UI behavior coordinates several element states. Create it with a <code>remember…State</code> factory; if restoration matters, save minimal reconstructible values with a truthful Saver.</li>
 <li>Business rules, repositories and durable screen state belong to a screen owner such as ViewModel/component as established in Stage 12. Pass observable immutable values/callbacks into stateless rendering.</li>
 <li>State holder lifetime must match objects it owns. A composition-owned holder may safely encapsulate Compose UI state; do not leak it into a longer-lived owner.</li>
+<li>Коротко: “state down, events up” — parent володіє state, child лише рендерить value і повідомляє events. Переваги: reusable UI components, централізовані state transitions, простіше тестувати, менше duplicated state, ViewModel як single source of truth для screen state.</li>
+<li>Local visual state, який може лишитися в composable: ripple, dropdown expanded, temporary animation, local text before debounce — межа залежить від product semantics. Помилки: hoist-ити абсолютно все у ViewModel, навіть purely visual state; передавати mutable state object (<code>MutableState</code>) вниз замість value + callback.</li>
 </ul>
 
 <h2 id="stage14-uk-derived-policies">derivedStateOf та mutation policies<a aria-label="Посилання на розділ: Derived state and mutation policies" class="heading-anchor" href="#stage14-uk-derived-policies">#</a></h2>
 <p><code>derivedStateOf</code> tracks snapshot reads and is useful when dependencies change more often than the derived result needed by consumers—for example, scroll index to “show back to top”. It is not a generic memoization wrapper and is not free: it adds observation, calculation and equality bookkeeping. For ordinary computation that should update whenever inputs do, calculate directly or use keyed <code>remember</code> only when avoiding a proven expensive recomputation.</p>
+<p>Якщо derived value є частиною business UI state, частіше рахуйте його у ViewModel або mapper-і, а не через <code>derivedStateOf</code> у composable. Типова помилка — забути <code>remember</code> навколо <code>derivedStateOf</code>: <code>val show by remember { derivedStateOf { listState.firstVisibleItemIndex &gt; 0 } }</code>; без <code>remember</code> derived state створюється заново на кожній recomposition.</p>
 <ul>
 <li><code>structuralEqualityPolicy()</code>: equivalent by <code>==</code> is not a change; common default.</li>
 <li><code>referentialEqualityPolicy()</code>: only a different reference counts; useful only when identity is the contract.</li>
@@ -4045,6 +4032,14 @@ class CartUiState(val lines: MutableList&lt;Line&gt;) // false stability promise
     }
 }</code></pre>
 <p>Symptoms: total is stale, mutation may not invalidate, recomposition can loop if another observed state is written, and editor state moves after insertion. Debug in order: identify owner/lifetime; log immutable state versions; find exact snapshot reads/writes and phase; verify setter/collection operation; inspect remember keys and sibling keys; remove false stability annotation. Fix with immutable replacement or snapshot collection under one owner, pure composition, <code>remember(state.lines, currency)</code> only if caching is justified, and <code>key(line.id)</code>. Then reproduce reorder/recreation/process restoration; performance tooling waits for Stage 16.</p>
+
+<h2 id="stage14-uk-practice-notes">Практичні нотатки<a aria-label="Посилання на розділ: Практичні нотатки" class="heading-anchor" href="#stage14-uk-practice-notes">#</a></h2>
+<h3>Що насправді перевіряють у Compose на Senior interview</h3>
+<p>Compose перевіряють не як набір API, а як mental model: declarative UI, state ownership, recomposition, side effects, stability і performance. Сильна відповідь показує, що ти не переносиш imperative View-підхід у Compose, а проєктуєш UI через state, events і predictable rendering.</p>
+<h3>Коротке формулювання для співбесіди</h3>
+<blockquote>
+<p>У Compose я тримаю composables side-effect free. State hoist-ю до правильного owner-а, effects запускаю через <code>LaunchedEffect</code>/<code>DisposableEffect</code> з правильними keys, а performance оптимізую після вимірювання, не через blind <code>remember</code>.</p>
+</blockquote>
 
 <h2 id="stage14-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice questions and answers" class="heading-anchor" href="#stage14-uk-likely-qa">#</a></h2>
 <p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
@@ -4131,6 +4126,29 @@ deep link → parse + validate/authorize ID → repository truth</code></pre>
 <tr><td><code>snapshotFlow</code></td><td>Перетворити snapshot reads на cold Flow всередині coroutine.</td><td>Очікувати emission кожного write або будувати chain без terminal collection.</td></tr>
 </tbody></table>
 <p>Abandoned composition не повинна залишити зовнішній effect: body ще не є committed lifecycle. <code>DisposableEffect</code> setup/cleanup і post-commit <code>SideEffect</code> існують саме для межі успішної composition. Але crash/process kill може не дати виконати cleanup, тому correctness зовнішньої системи не може залежати лише від <code>onDispose</code>.</p>
+<p><code>DisposableEffect</code> — для listener/observer, який треба гарантовано прибрати при зміні key або виході з composition: lifecycle observer, broadcast receiver, sensor listener, callback registration. Production приклад — analytics на <code>ON_RESUME</code>:</p>
+<pre><code class="language-kotlin">@Composable
+fun LifecycleAnalytics(
+    screenName: String,
+    analytics: AnalyticsManager
+) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner, screenName) {
+        val observer = LifecycleEventObserver { _, event -&gt;
+            if (event == Lifecycle.Event.ON_RESUME) {
+                analytics.trackScreenVisible(screenName)
+            }
+        }
+
+        lifecycleOwner.lifecycle.addObserver(observer)
+
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+}</code></pre>
+<p>Помилка: запускати business logic у <code>rememberCoroutineScope</code> замість ViewModel — scope скасовується разом із composition, а business operation має жити у screen/business owner.</p>
 
 <h2 id="stage15-uk-keys-snapshotflow">Semantic keys, stale capture та snapshotFlow topology<a aria-label="Посилання на розділ: Semantic keys stale capture and snapshotFlow" class="heading-anchor" href="#stage15-uk-keys-snapshotflow">#</a></h2>
 <pre><code class="language-kotlin">@Composable
@@ -4157,6 +4175,7 @@ LaunchedEffect(listState) {
 
 <h2 id="stage15-uk-lifecycle-collection">Lifecycle-aware collection та duplicated collectors<a aria-label="Посилання на розділ: Lifecycle aware collection" class="heading-anchor" href="#stage15-uk-lifecycle-collection">#</a></h2>
 <p>Android route зазвичай читає render state через <code>collectAsStateWithLifecycle()</code>; underlying collection active лише на заданому minimum lifecycle і може unsubscribe/re-subscribe. Це економить work, але cold upstream може restart-нути, replay/current state може бути read знову, а transient emission під час неактивності може загубитися. Для platform-neutral Compose використовуйте відповідний <code>collectAsState</code> contract. Не запускайте паралельно два collectors одного UI effect у route і Activity: lifecycle re-entry або duplicate composition створить дублікати.</p>
+<p>One-shot events (navigate/snackbar), якщо вони моделюються stream-ом, collect-ять в одному місці — у route, lifecycle-aware: <code>LaunchedEffect(viewModel, lifecycleOwner) { lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.events.collect { /* navController.navigate(Success) — typed @Serializable route; showSnackbar */ } } }</code>. SharedFlow/Channel не гарантує exactly-once delivery; критичне (успіх checkout) краще моделювати як UI state з явним consume (див. нижче).</p>
 <p>Lifecycle collection не є acknowledgement. Якщо payment завершився, durable order/payment status має жити в repository/state і після resubscription визначати UI; snackbar про completion може бути best-effort. SharedFlow/Channel — in-memory coordination, не durable exactly-once queue.</p>
 
 <h2 id="stage15-uk-route-content">Stateless content + route/state-holder wiring<a aria-label="Посилання на розділ: Stateless content and route wiring" class="heading-anchor" href="#stage15-uk-route-content">#</a></h2>
@@ -4180,6 +4199,7 @@ fun CheckoutContent(
     onReceipt: () -&gt; Unit,
 ) { /* layout only; preview/test with plain values */ }</code></pre>
 <p>Route отримує ViewModel/controller, collect-ить state та перетворює navigation у callbacks. Content приймає immutable UI contract і user-event lambdas; він не знає про DI, repositories, <code>NavController</code> або lifecycle. Не передавайте controller глибоко: <code>onProductClick(id)</code> легше тестувати й перевикористовувати.</p>
+<p>Анти-патерн: <code>repository.loadProductBlocking(productId)</code> прямо в body composable — виконується на кожній recomposition і блокує UI. Натомість route collect-ить <code>viewModel.uiState</code> через <code>collectAsStateWithLifecycle()</code> і передає state + callbacks (<code>onRetry = viewModel::onRetryClicked</code>) у screen.</p>
 
 <h2 id="stage15-uk-viewmodel-scoping">ViewModel ownership, factories та scoping<a aria-label="Посилання на розділ: ViewModel ownership factories and scoping" class="heading-anchor" href="#stage15-uk-viewmodel-scoping">#</a></h2>
 <ul>
@@ -4223,6 +4243,35 @@ navController.navigate(Home) {
 <tr><td>Navigate after click</td><td>UI callback/navigator contract.</td><td>Simple; protect against double tap and define stack options.</td></tr>
 <tr><td>Snackbar</td><td>Best-effort UI effect, or render durable message state with explicit acknowledgement if loss is unacceptable.</td><td>SharedFlow/Channel can lose or duplicate around lifecycle/process boundaries.</td></tr>
 </tbody></table>
+<p>State + explicit consume: completion і error живуть в UI state, route виконує UI action і явно acknowledge-ить її у ViewModel; <code>rememberUpdatedState</code> дає effect-у latest callback без restart.</p>
+<pre><code class="language-kotlin">@Composable
+fun CheckoutRoute(
+    viewModel: CheckoutViewModel,
+    snackbarHostState: SnackbarHostState,
+    onPaymentSuccess: () -&gt; Unit
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val latestOnPaymentSuccess by rememberUpdatedState(onPaymentSuccess)
+
+    LaunchedEffect(uiState.paymentCompleted) {
+        if (uiState.paymentCompleted) {
+            latestOnPaymentSuccess()
+            viewModel.onPaymentSuccessHandled()
+        }
+    }
+
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let { message -&gt;
+            snackbarHostState.showSnackbar(message)
+            viewModel.onErrorShown()
+        }
+    }
+
+    CheckoutScreen(
+        state = uiState,
+        onAction = viewModel::onAction
+    )
+}</code></pre>
 <p>Не перетворюйте <code>NavController</code> destination на source of truth для payment/auth. Domain outcome authoritatively exists outside navigation; route selection is a projection. Якщо effect stream використовується, документуйте loss, replay, duplicate collection і acknowledgement policy без claims про durable exactly-once.</p>
 
 <h2 id="stage15-uk-guarantees">Guarantees vs explicit non-guarantees<a aria-label="Посилання на розділ: Guarantees and non guarantees" class="heading-anchor" href="#stage15-uk-guarantees">#</a></h2>
@@ -4378,7 +4427,7 @@ release/profileable app + representative dataset
 <tr><td>Compose compiler reports</td><td>Що restartable/skippable і яку stability inferred compiler?</td><td>Build-time model, не runtime proof of jank.</td></tr>
 <tr><td>JankStats/frame metrics</td><td>Які frames janky і який UI state був активний?</td><td>Observability/field signal, не автоматичний root cause.</td></tr>
 </tbody></table>
-<p>Фінальні висновки робіть на release-like, non-debuggable або контрольовано <code>profileable</code> build; debug builds непридатні для остаточних performance conclusions. Baseline Profile може змінити compilation state і startup/rendering numbers, тому фіксуйте його presence/mode, але повний profile workflow — Stage 25.</p>
+<p>Фінальні висновки робіть на release-like, non-debuggable або контрольовано <code>profileable</code> build; debug builds непридатні для остаточних performance conclusions. Для швидкого lead у debug-збірці корисні також compose compiler metrics і recomposition highlighter (візуальне підсвічування composables, що recompose-ються), але, як і counters, це не frame-time verdict. Baseline Profile може змінити compilation state і startup/rendering numbers, тому фіксуйте його presence/mode, але повний profile workflow — Stage 25.</p>
 
 <h2 id="stage16-uk-recomposition-stability">Recomposition, skipping, stability та churn<a aria-label="Посилання на розділ: Recomposition skipping stability and churn" class="heading-anchor" href="#stage16-uk-recomposition-stability">#</a></h2>
 <ul>
@@ -4387,6 +4436,7 @@ release/profileable app + representative dataset
 <li><code>@Immutable</code> обіцяє, що observable public state не зміниться; <code>@Stable</code> — stable equality і observable changes. Це compiler contracts, не runtime enforcement. Неправдива annotation може залишити stale UI; stable annotations не роблять mutable data safe.</li>
 <li>Kotlin <code>List</code>/<code>Set</code>/<code>Map</code> interfaces не є доказом immutability. На UI boundary доречні truly immutable models/immutable collections; stability configuration — promise для external types, а не suppression file.</li>
 <li>Перевіряйте instance/lambda churn у call site. Strong skipping може automatically memoize lambdas, але version/mode і capture keys важливі; не додавайте ручний <code>remember</code> без виміру або correct keys.</li>
+<li>Чекліст джерел зайвих recompositions: новий unstable instance на кожну композицію; хибний stability contract; читання state на зависокому рівні дерева (читайте state якомога ближче до composable, якому він потрібен); відсутні keys у <code>LazyColumn</code>; похідні обчислення від часто змінюваного state без <code>derivedStateOf</code>. Типові помилки: створювати expensive objects без <code>remember</code>; вважати, що recomposition — це завжди full redraw.</li>
 </ul>
 <pre><code class="language-kotlin">@Immutable
 data class FeedUi(val items: ImmutableList&lt;FeedItemUi&gt;)
@@ -6366,72 +6416,6 @@ class ProductViewModelTest {
 <hr/>
 <h2 id="coroutines-and-concurrency-підсумок">Coroutines and Concurrency — підсумок<a aria-label="Посилання на розділ: Coroutines and Concurrency — підсумок" class="heading-anchor" href="#coroutines-and-concurrency-підсумок">#</a></h2>
 <p>На Senior Android interview Coroutines — одна з найважливіших тем. Недостатньо сказати “launch запускає, async повертає результат”. Треба пояснити structured concurrency, lifecycle ownership, cancellation, exception propagation, partial failure, dispatcher strategy і testing. Найсильніша відповідь завжди прив’язує concurrency design до business semantics.</p>
-</div></details><details class="major-section" data-key="jetpack-compose" data-title="Jetpack Compose" id="jetpack-compose" open=""><summary class="major-summary"><span class="major-title">Jetpack Compose</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
-<p><strong>Детальніше:</strong> <a href="#jetpack-compose-runtime-state">Jetpack Compose runtime та state</a>, <a href="#compose-effects-navigation-viewmodel">Compose effects, navigation та ViewModel integration</a>, <a href="#jetpack-compose-performance">Jetpack Compose performance</a>. Нижче — лише короткі відповіді для співбесіди та практичні нюанси, яких немає в цих етапах.</p>
-<h2 id="recomposition">Recomposition<a aria-label="Посилання на розділ: Recomposition" class="heading-anchor" href="#recomposition">#</a></h2>
-<blockquote>
-<p>Recomposition — це механізм, через який Compose оновлює UI після зміни state. Я пишу composables як pure/idempotent functions: вони описують UI для поточного state, але не виконують business side effects напряму. Side effects виношу у ViewModel або Compose effect APIs. Для performance думаю про stable inputs, keys у lists, remember для expensive objects і state hoisting.</p>
-</blockquote>
-<ul>
-<li>Анти-патерн: <code>repository.loadProductBlocking(productId)</code> прямо в body composable — виконується на кожній recomposition і блокує UI; краще route collect-ить <code>viewModel.uiState</code> через <code>collectAsStateWithLifecycle()</code> і передає state + callbacks (<code>onRetry = viewModel::onRetryClicked</code>) у screen.</li>
-<li>Типові помилки: створювати expensive objects без <code>remember</code>; вважати, що recomposition — це завжди full redraw.</li>
-<li>Джерела зайвих recompositions: новий unstable instance на кожну композицію (зі strong skipping, default з Kotlin 2.0.20, unstable params порівнюються за <code>===</code>, а lambdas memoized автоматично), хибний stability contract, читання state на зависокому рівні дерева, відсутні keys у <code>LazyColumn</code>, похідні обчислення без <code>derivedStateOf</code>. Stable/unstable і ліки — <a href="#jetpack-compose-performance">Jetpack Compose performance</a>.</li>
-<li>Debug: Layout Inspector (recomposition counts), compose compiler metrics/reports (звіт стабільності класів), recomposition highlighter у debug-збірці, system tracing для зв'язку з jank.</li>
-</ul>
-<hr/>
-<h2 id="remember-vs-remembersaveable">remember vs rememberSaveable<a aria-label="Посилання на розділ: remember vs rememberSaveable" class="heading-anchor" href="#remember-vs-remembersaveable">#</a></h2>
-<blockquote>
-<p><code>remember</code> — це cache в composition. <code>rememberSaveable</code> додає збереження через saved instance state. Я використовую їх для local UI state, але screen/business state тримаю у ViewModel. Якщо state потрібен для business flow або має пережити process death, його треба persistence strategy, а не тільки Compose memory.</p>
-</blockquote>
-<p>Приклади: <code>remember</code> — expanded dropdown, temporary animation state; <code>rememberSaveable</code> — text input, selected tab, scroll state, прості filters. Compose state не має ставати mini-database.</p>
-<hr/>
-<h2 id="state-hoisting">State hoisting<a aria-label="Посилання на розділ: State hoisting" class="heading-anchor" href="#state-hoisting">#</a></h2>
-<blockquote>
-<p>State hoisting — це спосіб зробити composable stateless: parent володіє state, child тільки рендерить і повідомляє events (“state down, events up”). Я hoist-ю state до рівня, де приймається рішення. Якщо це screen/business state — ViewModel. Якщо це local visual state — може залишитися у composable.</p>
-</blockquote>
-<ul>
-<li>Переваги: reusable UI components, централізовані state transitions, простіше тестувати, менше duplicated state, ViewModel як single source of truth для screen state.</li>
-<li>Local visual state, який може лишитися в composable: ripple, dropdown expanded, temporary animation, local text before debounce — залежить від product semantics.</li>
-<li>Помилки: hoist-ити абсолютно все у ViewModel, навіть purely visual state; передавати mutable state object вниз замість value/callback.</li>
-</ul>
-<hr/>
-<h2 id="compose-side-effects">Compose side effects<a aria-label="Посилання на розділ: Compose side effects" class="heading-anchor" href="#compose-side-effects">#</a></h2>
-<blockquote>
-<p>Compose effects — це контрольований спосіб виконувати side effects у declarative UI. Я обираю effect за lifecycle: <code>LaunchedEffect</code> для suspend work, <code>DisposableEffect</code> для listener setup/cleanup, <code>SideEffect</code> для синхронізації з imperative API після recomposition. Найважливіше — правильно вибрати keys, бо вони визначають restart behavior.</p>
-</blockquote>
-<p>Production приклад: <code>DisposableEffect</code> для lifecycle observer (analytics на <code>ON_RESUME</code>):</p>
-<pre><code class="language-kotlin">@Composable
-fun LifecycleAnalytics(
-    screenName: String,
-    analytics: AnalyticsManager
-) {
-    val lifecycleOwner = LocalLifecycleOwner.current
-
-    DisposableEffect(lifecycleOwner, screenName) {
-        val observer = LifecycleEventObserver { _, event -&gt;
-            if (event == Lifecycle.Event.ON_RESUME) {
-                analytics.trackScreenVisible(screenName)
-            }
-        }
-
-        lifecycleOwner.lifecycle.addObserver(observer)
-
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
-    }
-}
-</code></pre>
-<p>One-shot events (navigate/snackbar) collect-ять у route lifecycle-aware: <code>LaunchedEffect(viewModel, lifecycleOwner) { lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.events.collect { /* navController.navigate(Success) — typed @Serializable route; showSnackbar */ } } }</code>. SharedFlow/Channel не гарантує exactly-once delivery; критичне (успіх checkout) краще моделювати як UI state з явним consume. Помилка: запускати business logic у <code>rememberCoroutineScope</code> замість ViewModel.</p>
-<hr/>
-<h2 id="derivedstateof">derivedStateOf<a aria-label="Посилання на розділ: derivedStateOf" class="heading-anchor" href="#derivedstateof">#</a></h2>
-<blockquote>
-<p><code>derivedStateOf</code> використовую не як default computed property, а як optimization для derived values, які залежать від часто змінюваного Compose state. Якщо derived state є частиною business UI state, частіше тримаю його у ViewModel або mapper-і.</p>
-</blockquote>
-<p>Помилка: забути <code>remember</code> навколо <code>derivedStateOf</code> (<code>val show by remember { derivedStateOf { ... } }</code>), інакше derived state створюється заново на кожній recomposition.</p>
-<hr/>
-<h2 id="jetpack-compose-підсумок">Jetpack Compose — підсумок<a aria-label="Посилання на розділ: Jetpack Compose — підсумок" class="heading-anchor" href="#jetpack-compose-підсумок">#</a></h2>
-<p>На Senior interview Compose перевіряють не як набір API, а як mental model: declarative UI, state ownership, recomposition, side effects, stability і performance. Сильна відповідь показує, що ти не переносиш imperative View-підхід у Compose, а проектуєш UI через state, events і predictable rendering.</p>
 </div></details><details class="major-section" data-key="architecture" data-title="Architecture" id="architecture" open=""><summary class="major-summary"><span class="major-title">Architecture</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
 <p><strong>Детальніше:</strong> <a href="#android-ui-architecture-state-modeling">Android UI architecture та state modeling: MVVM, MVI, UDF</a>, <a href="#clean-architecture-android-modularization">Clean Architecture та Android modularization</a>, <a href="#offline-first-architecture-paging-3">Offline-first architecture і Paging 3</a>, <a href="#android-networking-fundamentals">Android networking fundamentals</a> (error taxonomy). Нижче — лише доповнення, яких немає в цих етапах.</p>
 <h2 id="mvvm">MVVM<a aria-label="Посилання на розділ: MVVM" class="heading-anchor" href="#mvvm">#</a></h2>
@@ -10357,6 +10341,7 @@ rows.value.add(newRow) // Hidden mutation: State's value reference did not chang
 <li>Extract a plain state holder when cohesive UI behavior coordinates several element states. Create it through a <code>remember…State</code> factory; if restoration matters, save minimal reconstructible values with a truthful Saver.</li>
 <li>Business rules, repositories, and durable screen state belong to the Stage 12 screen owner such as a ViewModel/component. Feed observable immutable values and callbacks into stateless rendering.</li>
 <li>A holder's lifetime must match the objects it owns. Do not leak a composition-owned holder into a longer-lived owner.</li>
+<li>Interview wording: “I hoist state when the parent needs to control it, when it must be shared, or when I want testable stateless UI. I keep local state only when it is purely internal UI behavior.”</li>
 </ul>
 
 <h2 id="en-stage14-derived-policies">derivedStateOf and mutation policies<a aria-label="Link to section: Derived state and mutation policies" class="heading-anchor" href="#en-stage14-derived-policies">#</a></h2>
@@ -10525,6 +10510,18 @@ deep link → parse + validate/authorize ID → repository truth</code></pre>
 <tr><td><code>snapshotFlow</code></td><td>Turn snapshot reads into a cold Flow inside a coroutine.</td><td>Expecting every write, or building a chain with no terminal collection.</td></tr>
 </tbody></table>
 <p>An abandoned composition must not leak an external effect: a body is not a committed lifecycle. Post-commit <code>SideEffect</code> and the setup/disposal boundary of <code>DisposableEffect</code> exist for this reason. A crash or process kill can still skip cleanup, so external correctness cannot depend only on <code>onDispose</code>.</p>
+<p>Use <code>DisposableEffect</code> for a listener/observer that must be removed when a key changes or the instance leaves composition (lifecycle observer, broadcast receiver, sensor listener, callback registration):</p>
+<pre><code class="language-kotlin">@Composable
+fun LifecycleAnalytics(screenName: String, analytics: AnalyticsManager) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, screenName) {
+        val observer = LifecycleEventObserver { _, event -&gt;
+            if (event == Lifecycle.Event.ON_RESUME) analytics.trackScreenVisible(screenName)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+}</code></pre>
 
 <h2 id="en-stage15-keys-snapshotflow">Semantic keys, stale capture, and snapshotFlow topology<a aria-label="Link to section: Semantic keys stale capture and snapshotFlow" class="heading-anchor" href="#en-stage15-keys-snapshotflow">#</a></h2>
 <pre><code class="language-kotlin">@Composable
@@ -10617,6 +10614,32 @@ navController.navigate(Home) {
 <tr><td>Navigate after click</td><td>UI callback/navigator contract.</td><td>Simple; debounce double taps and define stack options.</td></tr>
 <tr><td>Snackbar</td><td>Best-effort effect, or durable message state with explicit acknowledgement if loss is unacceptable.</td><td>SharedFlow/Channel can lose or duplicate around lifecycle/process boundaries.</td></tr>
 </tbody></table>
+<p>State plus explicit consumption: completion and error live in UI state; the route performs the UI action and acknowledges it to the ViewModel, while <code>rememberUpdatedState</code> lets the effect call the latest callback without restarting.</p>
+<pre><code class="language-kotlin">@Composable
+fun CheckoutRoute(
+    viewModel: CheckoutViewModel,
+    snackbarHostState: SnackbarHostState,
+    onPaymentSuccess: () -&gt; Unit
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val latestSuccess by rememberUpdatedState(onPaymentSuccess)
+
+    LaunchedEffect(uiState.paymentCompleted) {
+        if (uiState.paymentCompleted) {
+            latestSuccess()
+            viewModel.onPaymentSuccessHandled()
+        }
+    }
+
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.onErrorShown()
+        }
+    }
+
+    CheckoutScreen(state = uiState, onAction = viewModel::onAction)
+}</code></pre>
 <p>Never turn the current <code>NavController</code> destination into the source of truth for payment or auth. The domain outcome exists authoritatively outside navigation; route selection is only a projection. When an effect stream is used, document loss, replay, duplicate collection, and acknowledgement policy without durable exactly-once claims.</p>
 
 <h2 id="en-stage15-guarantees">Guarantees versus explicit non-guarantees<a aria-label="Link to section: Guarantees and non guarantees" class="heading-anchor" href="#en-stage15-guarantees">#</a></h2>
@@ -12535,10 +12558,6 @@ Result (verified metrics only) → learning/revisit trigger
 <h2 id="en-structured-concurrency">Structured concurrency<a aria-label="Link to section: Structured concurrency" class="heading-anchor" href="#en-structured-concurrency">#</a></h2>
 <h3 id="en-interview-wording-5">Interview wording<a aria-label="Link to section: Interview wording" class="heading-anchor" href="#en-interview-wording-5">#</a></h3>
 <p>“I design coroutine ownership explicitly. UI work belongs to <code>viewModelScope</code> or lifecycle scopes; domain suspend functions do not launch unowned background work. If a parent operation is cancelled, its children should normally be cancelled too.”</p>
-</div></details><details class="major-section" data-key="jetpack-compose" data-title="Jetpack Compose" id="en-jetpack-compose" open=""><summary class="major-summary"><span class="major-title">Jetpack Compose</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
-<p><strong>More detail:</strong> <a href="#en-jetpack-compose-runtime-state">Jetpack Compose runtime and state</a>, <a href="#en-compose-effects-navigation-viewmodel">Compose effects, navigation, and ViewModel integration</a>, <a href="#en-jetpack-compose-performance">Jetpack Compose performance</a>. Only a short interview line not phrased the same way in those stages is kept below.</p>
-<h2 id="en-state-hoisting">State hoisting<a aria-label="Link to section: State hoisting" class="heading-anchor" href="#en-state-hoisting">#</a></h2>
-<p>Interview wording: “I hoist state when the parent needs to control it, when it must be shared, or when I want testable stateless UI. I keep local state only when it is purely internal UI behavior.”</p>
 </div></details><details class="major-section" data-key="architecture" data-title="Architecture" id="en-architecture" open=""><summary class="major-summary"><span class="major-title">Architecture</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
 <p><strong>More detail:</strong> <a href="#en-android-ui-architecture-state-modeling">Android UI architecture and state modeling: MVVM, MVI, UDF</a>, <a href="#en-clean-architecture-android-modularization">Clean Architecture and Android modularization</a>, <a href="#en-offline-first-architecture-paging-3">Offline-first architecture and Paging 3</a>. Only points not covered there remain below.</p>
 <h2 id="en-mvvm-and-mvi">MVVM and MVI<a aria-label="Link to section: MVVM and MVI" class="heading-anchor" href="#en-mvvm-and-mvi">#</a></h2>
