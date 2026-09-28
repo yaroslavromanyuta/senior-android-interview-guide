@@ -975,20 +975,13 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <li class="toc-major">
 <a data-target="en-testing" href="#en-testing">Testing</a>
 <ol class="toc-children">
-<li><a data-target="en-unit-integration-and-ui-tests" href="#en-unit-integration-and-ui-tests">Unit, integration, and UI tests</a></li>
 <li><a data-target="en-viewmodel-tests" href="#en-viewmodel-tests">ViewModel tests</a></li>
-<li><a data-target="en-fake-vs-mock" href="#en-fake-vs-mock">Fake vs mock</a></li>
-<li><a data-target="en-coroutine-and-flow-testing" href="#en-coroutine-and-flow-testing">Coroutine and Flow testing</a></li>
 </ol>
 </li>
 <li class="toc-major">
 <a data-target="en-performance" href="#en-performance">Performance</a>
 <ol class="toc-children">
-<li><a data-target="en-memory-leaks" href="#en-memory-leaks">Memory leaks</a></li>
 <li><a data-target="en-anr-and-threading" href="#en-anr-and-threading">ANR and threading</a></li>
-<li><a data-target="en-startup-performance" href="#en-startup-performance">Startup performance</a></li>
-<li><a data-target="en-rendering-and-compose-performance" href="#en-rendering-and-compose-performance">Rendering and Compose performance</a></li>
-<li><a data-target="en-profiling" href="#en-profiling">Profiling</a></li>
 </ol>
 </li>
 <li class="toc-major">
@@ -6700,40 +6693,12 @@ interface ProductDao {
 <h2 id="persistence-підсумок">Persistence — підсумок<a aria-label="Посилання на розділ: Persistence — підсумок" class="heading-anchor" href="#persistence-підсумок">#</a></h2>
 <p>Persistence — це не тільки “Room чи DataStore”. Senior має думати про source of truth, migrations, transactions, query performance, cache invalidation, security і offline behavior. Найкраща відповідь показує, як local storage інтегрується з repository і UI state.</p>
 </div></details><details class="major-section" data-key="testing" data-title="Testing" id="testing" open=""><summary class="major-summary"><span class="major-title">Testing</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<p><strong>Детальніше:</strong> <a href="#senior-android-testing-strategy">Senior Android testing strategy</a> (test portfolio, seams, test doubles, coroutine/Flow, Compose, Hilt, flaky CI), <a href="#kotlin-coroutines-failures-supervision-testing">Kotlin Coroutines: failures, supervision, cleanup, testing та debugging</a>. Нижче — лише доповнення та приклади, яких немає в етапах.</p>
 <h2 id="unit-tests-integration-tests-ui-tests">Unit tests, integration tests, UI tests<a aria-label="Посилання на розділ: Unit tests, integration tests, UI tests" class="heading-anchor" href="#unit-tests-integration-tests-ui-tests">#</a></h2>
-<h3 id="питання-53">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-53">#</a></h3>
-<p>Які типи тестів використовують в Android?</p>
-<h3 id="коротка-відповідь-42">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-42">#</a></h3>
-<p>Unit tests перевіряють маленькі частини логіки на JVM. Integration tests перевіряють взаємодію кількох компонентів. UI/instrumented tests запускаються на device/emulator і перевіряють Android UI/framework behavior. Хороша test strategy має піраміду: багато unit tests, менше integration, ще менше UI tests.</p>
-<h3 id="senior-level-пояснення-52">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-52">#</a></h3>
-<p>Senior не має казати “покрию все UI тестами”. UI tests дорогі, повільні й flaky. Найкраща стратегія:</p>
-<ul>
-<li>domain/use cases — pure unit tests;</li>
-<li>ViewModel — unit tests з fake repositories і test dispatchers;</li>
-<li>repository — integration tests з fake API/Room in-memory;</li>
-<li>Compose screens — UI tests для critical flows;</li>
-<li>E2E — мінімум для smoke/critical paths.</li>
-</ul>
-<p>Тест має перевіряти behavior, а не implementation details.</p>
-<h3 id="типові-помилки-52">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-52">#</a></h3>
-<ul>
-<li>Mock everything, включно з data classes.</li>
-<li>Тестувати private methods.</li>
-<li>UI tests для всієї business logic.</li>
-<li>Немає deterministic coroutine/Flow tests.</li>
-<li>Tests залежать від real network/time.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-53">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-53">#</a></h3>
-<blockquote>
-<p>Я будую test strategy за cost/value. Business logic і ViewModel state transitions покриваю unit tests. Repository/cache behavior — integration tests. UI tests залишаю для critical user flows і accessibility/semantics. Важливо, щоб тести були deterministic і не залежали від real time/network.</p>
-</blockquote>
+<p>Коротко для інтерв’ю: багато unit tests (JVM), менше integration, ще менше UI/E2E лише для critical flows; тест перевіряє behavior, а не implementation details. Додаткові типові помилки: mock-ати все, включно з data classes; тестувати private methods.</p>
 <hr/>
 <h2 id="viewmodel-tests">ViewModel tests<a aria-label="Посилання на розділ: ViewModel tests" class="heading-anchor" href="#viewmodel-tests">#</a></h2>
-<h3 id="питання-54">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-54">#</a></h3>
-<p>Як тестувати ViewModel?</p>
-<h3 id="коротка-відповідь-43">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-43">#</a></h3>
-<p>ViewModel тестують через observable state/events. Dependencies замінюють fake/mock. Для coroutines використовують <code>runTest</code>, test dispatcher і <code>advanceUntilIdle</code>. Для Flow — Turbine або direct state assertions.</p>
-<h3 id="production-like-приклад-2">Production-like приклад<a aria-label="Посилання на розділ: Production-like приклад" class="heading-anchor" href="#production-like-приклад-2">#</a></h3>
+<p>ViewModel тестують як state machine через observable state та one-shot events (їх теж треба покривати, не лише success path і state). Приклад: <code>StandardTestDispatcher</code> + <code>Dispatchers.setMain/resetMain</code> у JUnit 5 <code>@BeforeEach/@AfterEach</code>, fake use case і Turbine для events:</p>
 <pre><code class="language-kotlin">@OptIn(ExperimentalCoroutinesApi::class)
 class LoginViewModelTest {
     private val dispatcher = StandardTestDispatcher()
@@ -6766,25 +6731,9 @@ class LoginViewModelTest {
     }
 }
 </code></pre>
-<h3 id="типові-помилки-53">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-53">#</a></h3>
-<ul>
-<li>Тестувати тільки success path.</li>
-<li>Не перевіряти loading -&gt; content/error transitions.</li>
-<li>Не тестувати one-shot events.</li>
-<li>Використовувати real dispatcher.</li>
-<li>Flaky tests через delays замість virtual time.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-54">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-54">#</a></h3>
-<blockquote>
-<p>ViewModel я тестую як state machine: input events -&gt; state/events output. Мене не цікавить private implementation, мене цікавить observable behavior. Для Flow використовую Turbine, для coroutines — <code>runTest</code> і injected dispatchers.</p>
-</blockquote>
 <hr/>
 <h2 id="flow-tests-with-turbine">Flow tests with Turbine<a aria-label="Посилання на розділ: Flow tests with Turbine" class="heading-anchor" href="#flow-tests-with-turbine">#</a></h2>
-<h3 id="питання-55">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-55">#</a></h3>
-<p>Як тестувати Flow/StateFlow?</p>
-<h3 id="коротка-відповідь-44">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-44">#</a></h3>
-<p>Turbine дозволяє collect-ити Flow у тесті і послідовно перевіряти emissions через <code>awaitItem</code>, <code>awaitComplete</code>, <code>awaitError</code>. Для StateFlow треба враховувати initial value.</p>
-<h3 id="production-like-приклад-3">Production-like приклад<a aria-label="Посилання на розділ: Production-like приклад" class="heading-anchor" href="#production-like-приклад-3">#</a></h3>
+<p>Turbine API: <code>awaitItem</code>, <code>awaitComplete</code>, <code>awaitError</code>, <code>cancelAndIgnoreRemainingEvents</code>. <code>StateFlow</code> одразу віддає initial value — перший <code>awaitItem()</code> отримує початковий стан; типова помилка — забути цю initial emission.</p>
 <pre><code class="language-kotlin">@Test
 fun `products flow emits loading then content`() = runTest {
     repository.products = listOf(Product("1", "Phone"))
@@ -6800,26 +6749,9 @@ fun `products flow emits loading then content`() = runTest {
     }
 }
 </code></pre>
-<h3 id="типові-помилки-54">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-54">#</a></h3>
-<ul>
-<li>Забути initial emission StateFlow.</li>
-<li>Не cancel Turbine collection.</li>
-<li>Тестувати timing через real delay.</li>
-<li>Не перевіряти completion/error там, де це важливо.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-55">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-55">#</a></h3>
-<blockquote>
-<p>Flow tests мають перевіряти emissions у правильному порядку. Для StateFlow я враховую initial value. Якщо є debounce/retry/delay, використовую virtual time. Turbine робить такі тести читабельними і deterministic.</p>
-</blockquote>
 <hr/>
 <h2 id="fake-vs-mock">Fake vs Mock<a aria-label="Посилання на розділ: Fake vs Mock" class="heading-anchor" href="#fake-vs-mock">#</a></h2>
-<h3 id="питання-56">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-56">#</a></h3>
-<p>Коли використовувати fake, а коли mock?</p>
-<h3 id="коротка-відповідь-45">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-45">#</a></h3>
-<p>Fake — проста робоча implementation для тесту. Mock — об’єкт, поведінку якого задають/перевіряють через mocking framework. Для stateful repositories fake часто стабільніший і читабельніший. Mock корисний для interaction verification або складних dependencies.</p>
-<h3 id="senior-level-пояснення-53">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-53">#</a></h3>
-<p>Зловживання mocks робить тести brittle: вони перевіряють implementation details, а не behavior. Fake repository може краще імітувати реальний stream/cache.</p>
-<h3 id="приклад-fake">Приклад fake<a aria-label="Посилання на розділ: Приклад fake" class="heading-anchor" href="#приклад-fake">#</a></h3>
+<p>Fake repository на <code>MutableStateFlow</code> імітує реальний stream/cache краще за mock; MockK доречний, коли треба перевірити interaction або швидко замінити зовнішню dependency.</p>
 <pre><code class="language-kotlin">class FakeProductRepository : ProductRepository {
     private val products = MutableStateFlow&lt;List&lt;Product&gt;&gt;(emptyList())
 
@@ -6830,17 +6762,9 @@ fun `products flow emits loading then content`() = runTest {
     }
 }
 </code></pre>
-<h3 id="як-пояснити-на-співбесіді-56">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-56">#</a></h3>
-<blockquote>
-<p>Я не використовую mocks автоматично. Для repositories, які expose-ять Flow/state, fake часто краще, бо тестує реальний behavior. MockK використовую, коли треба перевірити interaction або швидко замінити зовнішню dependency.</p>
-</blockquote>
 <hr/>
 <h2 id="compose-ui-tests">Compose UI tests<a aria-label="Посилання на розділ: Compose UI tests" class="heading-anchor" href="#compose-ui-tests">#</a></h2>
-<h3 id="питання-57">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-57">#</a></h3>
-<p>Як тестувати Compose UI?</p>
-<h3 id="коротка-відповідь-46">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-46">#</a></h3>
-<p>Compose UI tests використовують semantics tree: <code>onNodeWithText</code>, <code>onNodeWithContentDescription</code>, <code>performClick</code>, <code>assertIsDisplayed</code>. Краще тестувати UI behavior через stable semantics, а не internal implementation.</p>
-<h3 id="production-like-приклад-4">Production-like приклад<a aria-label="Посилання на розділ: Production-like приклад" class="heading-anchor" href="#production-like-приклад-4">#</a></h3>
+<p>Базові API: <code>createComposeRule</code>, <code>onNodeWithText</code>, <code>onNodeWithContentDescription</code>, <code>performClick</code>, <code>assertIsDisplayed</code>. Pure screen отримує fake state і callbacks, тому тест не потребує ViewModel/network; більшість UI states тестуйте як isolated composables, critical flows — інтеграційно. Помилки: не додавати <code>contentDescription</code>/<code>testTag</code> для custom components; перевіряти кожен padding/color UI-тестами.</p>
 <pre><code class="language-kotlin">@get:Rule
 val composeRule = createComposeRule()
 
@@ -6860,58 +6784,17 @@ fun errorState_showsRetryButton() {
         .assertIsDisplayed()
 }
 </code></pre>
-<h3 id="типові-помилки-55">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-55">#</a></h3>
-<ul>
-<li>Тестувати implementation замість user-visible behavior.</li>
-<li>Не додавати contentDescription/testTag для custom components.</li>
-<li>Робити UI tests залежними від real backend.</li>
-<li>Перевіряти кожен padding/color UI тестами.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-57">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-57">#</a></h3>
-<blockquote>
-<p>Compose UI tests я будую навколо semantics і user behavior. Для pure screens передаю fake state і callbacks, тому тест не потребує ViewModel/network. Critical flows можна тестувати інтеграційно, але більшість UI states краще тестувати як isolated composables.</p>
-</blockquote>
 <hr/>
 <h2 id="hilt-testing">Hilt testing<a aria-label="Посилання на розділ: Hilt testing" class="heading-anchor" href="#hilt-testing">#</a></h2>
-<h3 id="питання-58">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-58">#</a></h3>
-<p>Як тестувати компоненти, які використовують Hilt?</p>
-<h3 id="коротка-відповідь-47">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-47">#</a></h3>
-<p>Для unit tests клас створюють напряму через constructor і передають fake dependencies. Для instrumented tests використовують <code>@HiltAndroidTest</code>, test rules і replacement modules/<code>@BindValue</code>.</p>
-<h3 id="senior-level-пояснення-54">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-54">#</a></h3>
-<p>Hilt testing потрібен тоді, коли тестуємо Android integration graph. Для ViewModel unit tests піднімати Hilt часто зайве. Добра архітектура дозволяє тестувати більшість business logic без Android framework.</p>
-<h3 id="типові-помилки-56">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-56">#</a></h3>
-<ul>
-<li>Все тестувати через Hilt instrumentation tests.</li>
-<li>Не відділяти unit і integration concerns.</li>
-<li>Test module випадково потрапляє у production source set.</li>
-<li>Немає fake implementation для interfaces.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-58">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-58">#</a></h3>
-<blockquote>
-<p>Я розділяю DI graph testing і business logic testing. Constructor injection дозволяє unit tests без Hilt. Hilt instrumentation використовую для перевірки wiring, navigation або Android-specific behavior.</p>
-</blockquote>
+<p>Для unit tests (зокрема ViewModel) Hilt не піднімають: constructor injection дозволяє створити клас напряму з fake dependencies. Instrumented <code>@HiltAndroidTest</code> + test rules і replacement modules/<code>@BindValue</code> — для перевірки DI wiring, navigation або Android-specific behavior. Помилки: test module випадково потрапляє у production source set; немає fake implementation для interfaces.</p>
 <hr/>
 <h2 id="testing-підсумок">Testing — підсумок<a aria-label="Посилання на розділ: Testing — підсумок" class="heading-anchor" href="#testing-підсумок">#</a></h2>
 <p>Senior testing answer має звучати як strategy, а не список бібліотек. Треба пояснити test pyramid, deterministic coroutine/Flow tests, fake vs mock, DI replacement, Compose semantics, critical paths і баланс cost/value.</p>
 <hr/>
 </div></details><details class="major-section" data-key="performance" data-title="Performance" id="performance" open=""><summary class="major-summary"><span class="major-title">Performance</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<p><strong>Детальніше:</strong> <a href="#android-memory-threading">Android memory and threading</a> (leaks, retention paths, bitmap/cache memory, StrictMode, threading), <a href="#startup-rendering-performance">Startup and rendering performance</a> (startup, TTID/TTFD, Baseline Profiles, jank, RecyclerView/LazyColumn), <a href="#senior-android-reliability-observability">Senior Android reliability and observability</a> (ANR/vitals), <a href="#jetpack-compose-performance">Jetpack Compose performance</a>, <a href="#android-background-execution">Android background execution</a>. Нижче — лише доповнення, яких немає в етапах.</p>
 <h2 id="memory-leaks">Memory leaks<a aria-label="Посилання на розділ: Memory leaks" class="heading-anchor" href="#memory-leaks">#</a></h2>
-<h3 id="питання-59">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-59">#</a></h3>
-<p>Що таке memory leak в Android і як його знаходити?</p>
-<h3 id="коротка-відповідь-48">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-48">#</a></h3>
-<p>Memory leak — це ситуація, коли object більше не потрібен, але все ще reachable через reference chain, тому GC не може його звільнити. В Android часто leak-яться Activity/Fragment/View через static references, listeners, callbacks, long-running coroutines, adapters, context misuse.</p>
-<h3 id="senior-level-пояснення-55">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-55">#</a></h3>
-<p>Типові Android leaks:</p>
-<ul>
-<li>singleton тримає Activity context;</li>
-<li>Fragment binding не очищений у <code>onDestroyView</code>;</li>
-<li>listener registered, але не unregistered;</li>
-<li>coroutine/callback тримає reference на UI після lifecycle end;</li>
-<li>adapter/listener тримає old view;</li>
-<li>anonymous inner class/Handler тримає outer class.</li>
-</ul>
-<p>Tools: LeakCanary, Android Studio Profiler, heap dump, MAT, StrictMode для деяких leak patterns.</p>
-<h3 id="production-приклад-правильний-cleanup">Production приклад: правильний cleanup<a aria-label="Посилання на розділ: Production приклад: правильний cleanup" class="heading-anchor" href="#production-приклад-правильний-cleanup">#</a></h3>
+<p>Інструменти, крім LeakCanary, Profiler і heap dump: MAT для аналізу heap dump. Пастка: використовувати Application context для UI, щоб «уникнути leak», і отримати інші баги. Приклад симетричного cleanup listener-а (register в <code>onStart</code>, unregister + null в <code>onStop</code>):</p>
 <pre><code class="language-kotlin">class LocationFragment : Fragment(R.layout.fragment_location) {
     private var listener: LocationListener? = null
 
@@ -6928,158 +6811,21 @@ fun errorState_showsRetryButton() {
     }
 }
 </code></pre>
-<h3 id="типові-помилки-57">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-57">#</a></h3>
-<ul>
-<li>“GC сам усе прибере” без розуміння reachability.</li>
-<li>Використовувати Application context для UI, щоб “уникнути leak”, і отримати інші баги.</li>
-<li>Ігнорувати Fragment view lifecycle.</li>
-<li>Не cancel custom scopes.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-59">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-59">#</a></h3>
-<blockquote>
-<p>Leak — це не про обсяг пам’яті напряму, а про object, який залишився reachable. Я шукаю reference chain: хто тримає Activity/Fragment/View. У production використовую LeakCanary, heap dump і перевіряю lifecycle cleanup: listeners, bindings, coroutines, adapters, context references.</p>
-</blockquote>
 <hr/>
 <h2 id="anr">ANR<a aria-label="Посилання на розділ: ANR" class="heading-anchor" href="#anr">#</a></h2>
-<h3 id="питання-60">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-60">#</a></h3>
-<p>Що таке ANR і як його уникати?</p>
-<h3 id="коротка-відповідь-49">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-49">#</a></h3>
-<p>ANR виникає, коли Main thread не відповідає достатньо довго. Причини: blocking IO на Main, deadlock, heavy computation, slow BroadcastReceiver/Service, lock contention, надто багато work у UI thread.</p>
-<h3 id="senior-level-пояснення-56">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-56">#</a></h3>
-<p>Main thread відповідає за input, layout, draw, lifecycle callbacks. Якщо ти блокуєш Main, app не може обробляти input/events. Senior має знати:</p>
-<ul>
-<li>StrictMode для виявлення disk/network on Main;</li>
-<li>traces і ANR reports;</li>
-<li>moving work to IO/Default;</li>
-<li>avoiding synchronized locks on Main;</li>
-<li>measuring startup/lifecycle callbacks;</li>
-<li>not doing heavy work in BroadcastReceiver.</li>
-</ul>
-<h3 id="production-приклад-33">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-33">#</a></h3>
-<pre><code class="language-kotlin">class ImportContactsUseCase @Inject constructor(
-    @IoDispatcher private val io: CoroutineDispatcher,
-    private val contactsReader: ContactsReader
-) {
-    suspend operator fun invoke(): List&lt;Contact&gt; = withContext(io) {
-        contactsReader.readContacts()
-    }
-}
-</code></pre>
-<h3 id="типові-помилки-58">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-58">#</a></h3>
-<ul>
-<li>Room/SharedPreferences commit/file IO на Main.</li>
-<li>Heavy JSON parsing на Main.</li>
-<li>Blocking <code>runBlocking</code> у UI.</li>
-<li>Deadlock або contention на <code>synchronized</code>/<code>ReentrantLock</code>, який тримає або чекає Main (або <code>runBlocking</code> на Main, що чекає suspended coroutine/Mutex).</li>
-<li>Повільний app startup через eager initialization.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-60">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-60">#</a></h3>
-<blockquote>
-<p>ANR — це симптом blocked main thread або system callback timeout. Я шукаю main thread trace, StrictMode violations, locks і heavy work. Правило: UI thread тільки для UI coordination, heavy IO/CPU — на відповідний dispatcher/thread pool.</p>
-</blockquote>
+<p>Додаткові типові причини на Main: SharedPreferences <code>commit</code>/Room/file IO, heavy JSON parsing, повільний BroadcastReceiver/Service. Правило: UI thread тільки для UI coordination, heavy IO/CPU — у main-safe use case/repository через injected dispatcher (<code>withContext(io)</code>).</p>
 <hr/>
 <h2 id="startup-performance">Startup performance<a aria-label="Посилання на розділ: Startup performance" class="heading-anchor" href="#startup-performance">#</a></h2>
-<h3 id="питання-61">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-61">#</a></h3>
-<p>Як оптимізувати startup performance?</p>
-<h3 id="коротка-відповідь-50">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-50">#</a></h3>
-<p>Потрібно зменшити work до first frame: lazy initialization, App Startup, background init, baseline profiles, оптимізація DI graph, уникнення heavy work у Application.onCreate, measuring cold/warm/hot startup.</p>
-<h3 id="senior-level-пояснення-57">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-57">#</a></h3>
-<p>Startup має етапи:</p>
-<ul>
-<li>process start;</li>
-<li>Application creation;</li>
-<li>Activity creation;</li>
-<li>first draw;</li>
-<li>fully drawn/interactive.</li>
-</ul>
-<p>Оптимізація без вимірювання небезпечна. Використовують Macrobenchmark, Android Studio Profiler, startup tracing.</p>
-<h3 id="типові-помилки-59">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-59">#</a></h3>
-<ul>
-<li>Ініціалізувати analytics, remote config, DB, image loader, SDKs синхронно в Application.</li>
-<li>Heavy DI graph creation на старті.</li>
-<li>Blocking token read на Main.</li>
-<li>Не мати baseline profile.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-61">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-61">#</a></h3>
-<blockquote>
-<p>Startup оптимізую через measurement. Спочатку визначаю cold/warm/hot startup і дивлюся trace. Потім прибираю eager work з Application, роблю lazy/deferred init, використовую baseline profiles і перевіряю first frame/fully drawn metrics.</p>
-</blockquote>
+<p>Типові кандидати на eager work у <code>Application</code>, які варто зробити lazy/deferred: analytics, remote config, DB, image loader, інші SDK, blocking token read на Main, heavy DI graph creation.</p>
 <hr/>
 <h2 id="rendering-performance-views-recyclerview-lazycolumn-compose">Rendering performance: Views, RecyclerView, LazyColumn, Compose<a aria-label="Посилання на розділ: Rendering performance: Views, RecyclerView, LazyColumn, Compose" class="heading-anchor" href="#rendering-performance-views-recyclerview-lazycolumn-compose">#</a></h2>
-<h3 id="питання-62">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-62">#</a></h3>
-<p>Як боротися з jank у списках?</p>
-<h3 id="коротка-відповідь-51">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-51">#</a></h3>
-<p>Jank виникає, коли frame не вкладається у budget. Для списків треба оптимізувати item layout, diffing, stable ids/keys, image loading, avoid nested scroll issues, не робити heavy work у bind/composable, використовувати paging і profiling.</p>
-<h3 id="senior-level-пояснення-58">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-58">#</a></h3>
-<p>RecyclerView:</p>
-<ul>
-<li>DiffUtil/ListAdapter;</li>
-<li>stable IDs за потреби;</li>
-<li>payload updates;</li>
-<li>view recycling;</li>
-<li>avoid nested RecyclerViews без pooling;</li>
-<li>image size/caching.</li>
-</ul>
-<p>Compose LazyColumn:</p>
-<ul>
-<li><code>key</code> і <code>contentType</code>;</li>
-<li>immutable/stable item models;</li>
-<li>heavy mapping поза composition;</li>
-<li>avoid recomposition storm;</li>
-<li>правильно працювати зі scroll state.</li>
-</ul>
-<h3 id="типові-помилки-60">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-60">#</a></h3>
-<ul>
-<li>Завантажувати/resize bitmap у bind/composable.</li>
-<li>Не використовувати DiffUtil.</li>
-<li>Не задавати keys у LazyColumn.</li>
-<li>Створювати nested scroll layout без constraints.</li>
-<li>Великий overdraw/complex layout.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-62">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-62">#</a></h3>
-<blockquote>
-<p>Для rendering performance я спочатку вимірюю jank і frame time. У RecyclerView дивлюся bind cost, diffing, image loading і layout hierarchy. У Compose — recomposition, lazy list keys, stable models і heavy work у composition. Оптимізація має бути targeted, не “на око”.</p>
-</blockquote>
+<p>Доповнення для списків: великі дані — через paging; у Compose heavy mapping робіть поза composition, уникайте recomposition storm і правильно працюйте зі scroll state.</p>
 <hr/>
 <h2 id="bitmap-optimization">Bitmap optimization<a aria-label="Посилання на розділ: Bitmap optimization" class="heading-anchor" href="#bitmap-optimization">#</a></h2>
-<h3 id="питання-63">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-63">#</a></h3>
-<p>Як оптимізувати роботу з bitmap/images?</p>
-<h3 id="коротка-відповідь-52">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-52">#</a></h3>
-<p>Потрібно завантажувати image у потрібному розмірі, використовувати caching, downsampling, не декодувати великі bitmap на Main, правильно керувати memory cache/disk cache і lifecycle. У production зазвичай використовують Coil/Glide/Picasso.</p>
-<h3 id="senior-level-пояснення-59">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-59">#</a></h3>
-<p>Image bugs часто проявляються як OOM, jank, slow scrolling, excessive network. Senior має думати про:</p>
-<ul>
-<li>target size;</li>
-<li>memory cache;</li>
-<li>disk cache;</li>
-<li>placeholders/error state;</li>
-<li>lifecycle-aware requests;</li>
-<li>prefetching;</li>
-<li>animated images cost.</li>
-</ul>
-<h3 id="типові-помилки-61">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-61">#</a></h3>
-<ul>
-<li>Декодувати full-size image для thumbnail.</li>
-<li>Завантажувати images без cache.</li>
-<li>Не cancel image requests при recycled view.</li>
-<li>Зберігати bitmap у ViewModel state.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-63">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-63">#</a></h3>
-<blockquote>
-<p>Для images я не працюю з full-size bitmap без потреби. Завжди думаю про target size, cache і lifecycle. У списках image loading має бути asynchronous, cancellable і optimized під scrolling.</p>
-</blockquote>
+<p>Image bugs проявляються як OOM, jank, slow scrolling, excessive network. У production використовують Coil/Glide/Picasso. Крім target size/downsampling і memory cache, думайте про disk cache, placeholders/error state, lifecycle-aware requests (cancel image requests при recycled view), prefetching і cost animated images. Не зберігайте bitmap у ViewModel state. У списках image loading має бути asynchronous, cancellable і optimized під scrolling.</p>
 <hr/>
 <h2 id="battery-background-work-profiling">Battery, background work, profiling<a aria-label="Посилання на розділ: Battery, background work, profiling" class="heading-anchor" href="#battery-background-work-profiling">#</a></h2>
-<h3 id="питання-64">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-64">#</a></h3>
-<p>Як Android performance пов’язаний із battery?</p>
-<h3 id="коротка-відповідь-53">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-53">#</a></h3>
-<p>Зайвий background work, wakeups, network polling, GPS, foreground services і часті sync-и розряджають battery. Android обмежує background execution через Doze/App Standby, а app має використовувати WorkManager, batching і lifecycle-aware operations.</p>
-<h3 id="senior-level-пояснення-60">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-60">#</a></h3>
-<p>Battery optimization — це architecture concern. Наприклад realtime app має вибрати між polling, WebSocket, FCM, sync windows. Location має balancing accuracy vs power. Sync має бути incremental і idempotent.</p>
-<h3 id="як-пояснити-на-співбесіді-64">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-64">#</a></h3>
-<blockquote>
-<p>Battery я розглядаю як production constraint. Не запускаю background loops, не polling-ю без потреби, використовую WorkManager/FCM/realtime connection залежно від requirement. Для location вибираю accuracy і interval під product value.</p>
-</blockquote>
+<p>Зайвий background work, wakeups, network polling, GPS, foreground services і часті sync-и розряджають battery. Android обмежує background execution через Doze/App Standby, тому використовуйте WorkManager, batching і lifecycle-aware operations; не запускайте background loops і не polling-іть без потреби. Battery — architecture concern: realtime app обирає між polling, WebSocket, FCM і sync windows; location балансує accuracy vs power (accuracy та interval під product value); sync має бути incremental і idempotent.</p>
 <hr/>
 <h2 id="performance-підсумок">Performance — підсумок<a aria-label="Посилання на розділ: Performance — підсумок" class="heading-anchor" href="#performance-підсумок">#</a></h2>
 <p>Senior performance відповідь має бути measurement-driven. Треба знати memory leaks, ANR, startup, rendering, images, threading, battery, StrictMode, profiling і baseline profiles. Головне — не оптимізувати інтуїтивно, а знаходити bottleneck і виправляти root cause.</p>
@@ -8535,48 +8281,40 @@ HTTP-кеш — транспортний рівень (Cache-Control/ETag), Room
 Що болить зараз (over-fetching? версіювання?), як зміняться кешування (нормалізований кеш Apollo проти Room — хто source of truth?), офлайн-сценарії і пагінація, error-контракт (GraphQL повертає 200 з errors — вся таксономія помилок переписується), вартість для батареї/розміру відповідей, тулінг і кодоген у CI, навчання команди. Рішення — пілот на одному некритичному екрані з метриками до/після, а не big bang.</p>
 </div></details><details class="major-section" data-key="release-engineering" data-title="Release Engineering: R8, signing, Gradle, мультимодульність" id="release-engineering" open=""><summary class="major-summary"><span class="major-title">Release Engineering: R8, signing, Gradle, мультимодульність</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
 <p>Тема, яку Middle зазвичай «бачив здалеку», а Senior зобов'язаний вести: як код перетворюється на реліз у Play Store і не ламається дорогою.</p>
+<p><strong>Детальніше:</strong> <a href="#build-release-delivery-engineering">Build, release and delivery engineering</a> (Gradle, caches, KSP/KAPT, R8, AAB, signing, CI/CD, staged rollout), <a href="#clean-architecture-android-modularization">Clean Architecture та Android modularization</a> (граф app/feature/core, api/impl, navigation contracts), <a href="#senior-android-reliability-observability">Senior Android reliability and observability</a> (flags, observability, incidents), <a href="#system-design-auth-analytics-feature-flags">System design: auth, analytics and feature flags</a>. Нижче — лише деталі, яких немає в етапах.</p>
 
 <h2 id="r8-minification">R8: shrinking, obfuscation, optimization, mapping<a aria-label="Посилання на розділ: R8" class="heading-anchor" href="#r8-minification">#</a></h2>
-<p>R8 робить чотири речі: <strong>tree shaking</strong> (видаляє недосяжний код за keep-правилами як коренями), <strong>obfuscation</strong> (короткі імена → менший DEX; безпекою це не є), <strong>optimization</strong> (інлайнінг, видалення null-checks, class merging), <strong>resource shrinking</strong> (спільно з AGP). Вхідні правила збираються з вашого <code>proguard-rules.pro</code>, consumer rules бібліотек і дефолтів AGP — тому «звідки це keep-правило» теж треба вміти дебажити (<code>-printconfiguration</code>).</p>
-<p>Обов'язкові виробничі практики: зберігати <code>mapping.txt</code> кожного релізу (Play Console + Crashlytics — інакше стектрейси нечитабельні), мати CI-smoke на minified-збірці, ретельні точкові keep-правила замість <code>-dontobfuscate</code>/<code>-dontoptimize</code> «бо щось падало». Деталі типових поломок — в edge case №12.</p>
+<p>Optimization у R8 — це, зокрема, інлайнінг, видалення null-checks, class merging. Ефективні правила збираються з вашого <code>proguard-rules.pro</code>, consumer rules бібліотек і дефолтів AGP — «звідки це keep-правило» дебажать через <code>-printconfiguration</code>. <code>mapping.txt</code> кожного релізу завантажуйте в Play Console + Crashlytics; замість <code>-dontobfuscate</code>/<code>-dontoptimize</code> «бо щось падало» — точкові keep-правила. Деталі типових поломок — в edge case №12.</p>
 
 <h2 id="signing-release">Signing, versioning, staged rollout<a aria-label="Посилання на розділ: Signing release" class="heading-anchor" href="#signing-release">#</a></h2>
 <ul>
-<li><strong>Play App Signing:</strong> ключ підпису зберігає Google; ви підписуєте AAB <em>upload key</em>. Перевага — upload key можна скинути через Play support, якщо його втрачено або скомпрометовано. App signing key змінити складно, але Play Console підтримує app signing key upgrade: новий ключ підписує installs і updates на Android 13+, а старий і далі підписує updates для старіших версій Android (через key-rotation lineage). AAB + Play генерує оптимізовані split APK під девайс.</li>
-<li><strong>Versioning:</strong> <code>versionCode</code> — монотонний int (часто генерується з CI build number або дати), <code>versionName</code> — людський semver. У мультиflavor-збірках — схема, що гарантує унікальність між треками.</li>
-<li><strong>Staged rollout:</strong> реліз на 1% → 5% → 20% → 50% → 100% з гейтами по crash-free rate і ключових vitals; rollout можна <em>halt</em>, але не відкотити встановлені версії — тому критичні зміни ховаються за feature flag (kill switch), який вимикається без релізу. In-app updates API (immediate flow) показує блокуючий full-screen update prompt, коли Play має доступне оновлення; користувач може його скасувати, тож оновлення не гарантоване — minimum version enforcement потребує app/server logic (напр. server-driven minimum-supported version), і це не kill switch.</li>
+<li><strong>Play App Signing:</strong> upload key можна скинути через Play support, якщо його втрачено або скомпрометовано. App signing key змінити складно, але Play Console підтримує app signing key upgrade: новий ключ підписує installs і updates на Android 13+, а старий і далі підписує updates для старіших версій Android (через key-rotation lineage).</li>
+<li><strong>Versioning:</strong> <code>versionCode</code> часто генерується з CI build number або дати; у мультиflavor-збірках — схема, що гарантує унікальність між треками.</li>
+<li><strong>Staged rollout:</strong> типові кроки 1% → 5% → 20% → 50% → 100% з гейтами по crash-free rate і ключових vitals. In-app updates API (immediate flow) показує блокуючий full-screen update prompt, коли Play має доступне оновлення; користувач може його скасувати, тож оновлення не гарантоване — minimum version enforcement потребує app/server logic (напр. server-driven minimum-supported version), і це не kill switch.</li>
 <li><strong>Чек перед релізом:</strong> чернетка release notes, мапінг завантажений, міграції БД протестовані, флаги нового функціоналу вимкнені за замовчуванням, моніторинг-дашборд відкритий на час rollout.</li>
 </ul>
 
 <h2 id="gradle-performance">Gradle: швидкість збірки і організація<a aria-label="Посилання на розділ: Gradle performance" class="heading-anchor" href="#gradle-performance">#</a></h2>
-<p>Build time — це гроші команди. Важелі за впливом: <strong>модульність</strong> (інкрементальність і паралелізм — Gradle перебудовує тільки змінені модулі та їхніх залежних); <strong>configuration cache</strong> і build cache (локальний + remote для CI і команди); <strong>KSP замість KAPT</strong> (KAPT генерує Java-стаби — це повільно; Room/Hilt/Moshi вже на KSP); <strong>version catalogs</strong> (<code>libs.versions.toml</code>) як єдине джерело версій; <strong>convention plugins</strong> (<code>build-logic</code>) замість копіпасти конфігів по 60 модулях; мінімум логіки в <code>build.gradle</code>, профілювання через build scans.</p>
-<p><strong>Variants і flavors:</strong> buildTypes (debug/release — як збираємо) × productFlavors (що збираємо: brand, environment, market). Пастка масштабу: комбінаторний вибух варіантів множить час конфігурації і матрицю тестування; environment часто чесніше тримати в runtime-конфігу, ніж у flavor.</p>
+<p>Build time — це гроші команди. Доповнення до етапу: Room/Hilt/Moshi вже на KSP; version catalog (<code>libs.versions.toml</code>) — єдине джерело версій; convention plugins (<code>build-logic</code>) замість копіпасти конфігів по десятках модулів; мінімум логіки в <code>build.gradle</code>. Variants: buildTypes (debug/release — як збираємо) × productFlavors (що збираємо: brand, environment, market); environment часто чесніше тримати в runtime-конфігу, ніж у flavor.</p>
 
 <h2 id="multi-module">Мультимодульна архітектура: напрям залежностей<a aria-label="Посилання на розділ: Multi module" class="heading-anchor" href="#multi-module">#</a></h2>
-<p>Робоча схема: <code>app</code> (склейка, DI-граф, навігація) → <code>feature:*</code> (екрани, ViewModel) → <code>core:*</code> (domain, data, network, database, designsystem, common). Правила, які тримають граф здоровим:</p>
-<ul>
-<li>feature-модулі <strong>не залежать один від одного</strong> — спільне опускається в core або спілкування йде через api-інтерфейси (патерн <code>feature:x:api</code> + <code>feature:x:impl</code>: залежати можна тільки від api);</li>
-<li><code>implementation</code> за замовчуванням, <code>api</code> — лише коли тип реально протікає в публічну сигнатуру: це і чесні контракти, і менше каскадних перекомпіляцій;</li>
-<li>навігація між фічами — через абстракцію (Navigator-інтерфейс у core, реалізація в app), інакше з'являються «таємні» залежності;</li>
-<li>метрика здоров'я — глибина і ширина графа: build scan показує критичний шлях збірки.</li>
-</ul>
 <p><strong>Dynamic Feature Modules</strong> — окреме рішення з вузькою нішею: великі рідковживані фічі (AR, SDK на десятки МБ). Ціна: SplitInstallManager-сценарії (запит, прогрес, помилки, instant restart), ускладнене тестування і навігація через рефлексію/інтерфейси. Якщо мета — лише організація коду, звичайних модулів достатньо.</p>
 
 <h2 id="cicd-observability">CI/CD, feature flags, observability<a aria-label="Посилання на розділ: CI/CD observability" class="heading-anchor" href="#cicd-observability">#</a></h2>
 <ul>
 <li><strong>Pipeline:</strong> PR → static checks (lint, detekt, custom lint rules) → unit tests → збірка → instrumented/screenshot tests (Gradle Managed Devices або device farm) → minified smoke → internal track. Реліз — окремий тегований pipeline з публікацією через Play Publisher API.</li>
-<li><strong>Feature flags:</strong> три різні інструменти, які не можна змішувати в голові: release toggles (викочування коду, видаляються після 100%), experiments (A/B з аналітикою і виставленням у sticky bucket), kill switches (операційна безпека). Гігієна: дефолт = вимкнено і безпечно, оффлайн-поведінка визначена (останнє закешоване значення), тести на обидва стани критичних флагів, регулярне прибирання мертвих флагів.</li>
-<li><strong>Observability:</strong> крашів недостатньо — потрібні non-fatals з контекстом, breadcrumbs (навігація, ключові дії — щоб краш мав історію), метрики (crash-free users, ANR rate, startup P90, network error rate по ендпоінтах), structured logging з вимкненим PII. Алерти на дельту після релізу, а не на абсолютні значення.</li>
-<li><strong>Analytics architecture:</strong> типізовані події замість рядків (sealed class/генерація зі схеми), єдиний AnalyticsTracker-фасад (вендори підмінні), валідація схеми подій у CI, план подій як артефакт, узгоджений з продуктом. Найдорожча помилка аналітики — тиха: подія перестала надходити, і ніхто не помітив до квартального звіту, тому моніторинг обсягу подій теж потрібен.</li>
+<li><strong>Feature flags:</strong> три різні інструменти: release toggles (викочування коду, видаляються після 100%), experiments (A/B з аналітикою і sticky bucket), kill switches (операційна безпека). Тести на обидва стани критичних флагів.</li>
+<li><strong>Observability:</strong> серед метрик — startup P90 і network error rate по ендпоінтах; алерти на дельту після релізу, а не на абсолютні значення.</li>
+<li><strong>Analytics architecture:</strong> єдиний AnalyticsTracker-фасад (вендори підмінні), валідація схеми подій у CI, план подій як артефакт, узгоджений з продуктом.</li>
 </ul>
 
 <h3 id="release-follow-up">Follow-up питання за рівнями<a aria-label="Посилання на розділ: Release follow-up" class="heading-anchor" href="#release-follow-up">#</a></h3>
 <p><strong>Middle+: чим AAB відрізняється від APK і навіщо він?</strong><br/>
-AAB — формат публікації, не встановлення: Play з нього генерує split APK під конкретний девайс (ABI, density, мова) — користувач качає менше. Підпис при цьому робить Play App Signing. Локально для тестів зі сплітами є bundletool.</p>
+Play генерує з AAB split APK під конкретний девайс (ABI, density, мова) — користувач качає менше. Локально для тестів зі сплітами є bundletool.</p>
 <p><strong>Senior: о 23:00 після rollout на 20% crash-free впав з 99.8% до 97%. Ваші дії?</strong><br/>
-Перше — halt rollout (зупиняє нові встановлення, це безкоштовно і зворотно). Далі: Crashlytics — топ нового крашу, по mapping деобфускувати, зрозуміти сегмент (версія ОС? девайс? фіча?). Якщо краш у новій фічі за флагом — вимкнути kill switch, rollout можна відновити. Якщо в ядрі — hotfix-реліз з пріоритетним rollout. Паралельно — інцидент-канал, таймлайн, і постмортем: чому не зловили на internal track / staged 1%.</p>
+Halt rollout (безкоштовно і зворотно) → Crashlytics: топ нового крашу, деобфускація по mapping, сегмент (версія ОС? девайс? фіча?). Краш у новій фічі за флагом — вимкнути kill switch і відновити rollout; у ядрі — hotfix-реліз з пріоритетним rollout. Паралельно — інцидент-канал, таймлайн, постмортем: чому не зловили на internal track / staged 1%.</p>
 <p><strong>Staff/Lead: збірка проєкту виросла до 25 хвилин, команда зла. План?</strong><br/>
-Спочатку дані: build scans, розподіл часу configuration vs execution, критичний шлях модульного графа, частка cache hits у CI. Типові виграші за порядком вартості: remote build cache, configuration cache, KAPT→KSP, розрізання модулів-«хабів» на критичному шляху, винесення environment з flavors, перегляд api→implementation. Ставлю бюджет (наприклад, локальна інкрементальна збірка ≤ 2 хв, CI PR ≤ 12 хв) і дашборд тренду — інакше за пів року все повернеться.</p>
+Спочатку дані: build scans, configuration vs execution, критичний шлях модульного графа, частка cache hits у CI. Типові виграші за порядком вартості: remote build cache, configuration cache, KAPT→KSP, розрізання модулів-«хабів» на критичному шляху, винесення environment з flavors, перегляд api→implementation. Далі бюджет (наприклад, локальна інкрементальна збірка ≤ 2 хв, CI PR ≤ 12 хв) і дашборд тренду — інакше за пів року все повернеться.</p>
 </div></details><details class="major-section" data-key="system-design-scenarios" data-title="Android System Design: практичні сценарії" id="system-design-scenarios" open=""><summary class="major-summary"><span class="major-title">Android System Design: практичні сценарії</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
 <p>Доповнення до framework-розділу: готові розбори типових сценаріїв. Структура кожного: вимоги → архітектура і дані → офлайн/помилки → безпека → тестування й observability → trade-offs і пастки. На співбесіді не розповідай усе підряд — починай з уточнення вимог і веди interviewer-а по шарах.</p>
 
@@ -13676,10 +13414,9 @@ interface ProductDao {
 </code></pre>
 <p>Typical DataStore contents: preferences, feature flags, onboarding state, and small settings.</p>
 </div></details><details class="major-section" data-key="testing" data-title="Testing" id="en-testing" open=""><summary class="major-summary"><span class="major-title">Testing</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
-<h2 id="en-unit-integration-and-ui-tests">Unit, integration, and UI tests<a aria-label="Link to section: Unit, integration, and UI tests" class="heading-anchor" href="#en-unit-integration-and-ui-tests">#</a></h2>
-<p>Unit tests validate isolated logic. Integration tests validate collaboration between components. UI tests validate user-visible behavior. A senior test strategy chooses the cheapest test that gives enough confidence.</p>
+<p><strong>More detail:</strong> <a href="#en-senior-android-testing-strategy">Senior Android testing strategy</a> (test portfolio, seams, fakes vs mocks, coroutine/Flow testing, Compose, Hilt, flaky CI), <a href="#en-kotlin-coroutines-failures-supervision-testing">Kotlin Coroutines: failures, supervision, cleanup, testing, and debugging</a>. Only the example not shown in those stages remains below.</p>
 <h2 id="en-viewmodel-tests">ViewModel tests<a aria-label="Link to section: ViewModel tests" class="heading-anchor" href="#en-viewmodel-tests">#</a></h2>
-<p>ViewModel tests should control dispatchers, use fake repositories, and assert state/events.</p>
+<p>Example: the test dispatcher is injected into the ViewModel, the repository is a fake, and the one-shot event is asserted with Turbine.</p>
 <pre><code class="language-kotlin">@Test
 fun `login success emits navigation event`() = runTest {
     val repository = FakeAuthRepository(success = true)
@@ -13691,21 +13428,10 @@ fun `login success emits navigation event`() = runTest {
     }
 }
 </code></pre>
-<h2 id="en-fake-vs-mock">Fake vs mock<a aria-label="Link to section: Fake vs mock" class="heading-anchor" href="#en-fake-vs-mock">#</a></h2>
-<p>Use fakes when you want realistic behavior and state. Use mocks when you need to verify a specific interaction. Over-mocking makes tests brittle.</p>
-<h2 id="en-coroutine-and-flow-testing">Coroutine and Flow testing<a aria-label="Link to section: Coroutine and Flow testing" class="heading-anchor" href="#en-coroutine-and-flow-testing">#</a></h2>
-<p>Use <code>runTest</code>, injected dispatchers, virtual time, and Turbine. Avoid real delays and real dispatchers in unit tests.</p>
 </div></details><details class="major-section" data-key="performance" data-title="Performance" id="en-performance" open=""><summary class="major-summary"><span class="major-title">Performance</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
-<h2 id="en-memory-leaks">Memory leaks<a aria-label="Link to section: Memory leaks" class="heading-anchor" href="#en-memory-leaks">#</a></h2>
-<p>Leaks happen when long-lived objects keep references to short-lived objects. Common Android leaks include Activity context in singletons, Fragment binding after <code>onDestroyView</code>, callbacks not unregistered, and coroutines outliving lifecycle.</p>
+<p><strong>More detail:</strong> <a href="#en-android-memory-threading">Android memory and threading</a> (leaks, retention paths, StrictMode, threading), <a href="#en-startup-rendering-performance">Startup and rendering performance</a> (startup, Baseline Profiles, jank, Compose/RecyclerView lists, profiling tools), <a href="#en-senior-android-reliability-observability">Senior Android reliability and observability</a> (ANR/vitals), <a href="#en-jetpack-compose-performance">Jetpack Compose performance</a>. Only points not stated in those stages remain below.</p>
 <h2 id="en-anr-and-threading">ANR and threading<a aria-label="Link to section: ANR and threading" class="heading-anchor" href="#en-anr-and-threading">#</a></h2>
-<p>ANR happens when the main thread is blocked. Avoid disk, network, heavy JSON parsing, bitmap decoding, or long computations on Main.</p>
-<h2 id="en-startup-performance">Startup performance<a aria-label="Link to section: Startup performance" class="heading-anchor" href="#en-startup-performance">#</a></h2>
-<p>Startup is affected by Application initialization, DI graph creation, synchronous disk IO, content providers, and heavy first-screen work. Lazy initialization and baseline profiles can help, but measure first.</p>
-<h2 id="en-rendering-and-compose-performance">Rendering and Compose performance<a aria-label="Link to section: Rendering and Compose performance" class="heading-anchor" href="#en-rendering-and-compose-performance">#</a></h2>
-<p>Jank appears when frames miss the rendering deadline. Avoid unnecessary recomposition, unstable list keys, heavy work in composables, and large images without optimization.</p>
-<h2 id="en-profiling">Profiling<a aria-label="Link to section: Profiling" class="heading-anchor" href="#en-profiling">#</a></h2>
-<p>Use Android Studio Profiler, Layout Inspector, Macrobenchmark, Baseline Profiles, StrictMode, and logs/metrics. A senior answer should include how you would measure, not only how you would guess.</p>
+<p>Besides disk, network, bitmap decoding, and long computations, heavy JSON parsing is a typical main-thread offender.</p>
 </div></details><details class="major-section" data-key="android-system-design" data-title="Android System Design" id="en-android-system-design" open=""><summary class="major-summary"><span class="major-title">Android System Design</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
 <h2 id="en-designing-a-chat-app">Designing a chat app<a aria-label="Link to section: Designing a chat app" class="heading-anchor" href="#en-designing-a-chat-app">#</a></h2>
 <p>Cover authentication, local database as source of truth, WebSocket or push for real-time updates, message queue for offline sends, delivery/read state, pagination, conflict handling, media uploads, encryption/security if needed, and observability.</p>
@@ -14452,46 +14178,38 @@ Beyond backoff with jitter, an attempt cap, <code>Retry-After</code> on 429/503 
 What hurts today (over-fetching? versioning?), how caching changes (Apollo's normalized cache versus Room — who is the source of truth?), offline scenarios and pagination, the error contract (GraphQL returns 200 with errors — the whole error taxonomy gets rewritten), battery/payload costs, tooling and codegen in CI, team learning curve. The decision: a pilot on one non-critical screen with before/after metrics, not a big bang.</p>
 </div></details><details class="major-section" data-key="release-engineering" data-title="Release Engineering: R8, signing, Gradle, multi-module" id="en-release-engineering" open=""><summary class="major-summary"><span class="major-title">Release Engineering: R8, signing, Gradle, multi-module</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
 <p>The area a Middle has usually "seen from afar" and a Senior is obliged to own: how code becomes a Play Store release and does not break along the way.</p>
+<p><strong>More detail:</strong> <a href="#en-build-release-delivery-engineering">Build, release and delivery engineering</a> (Gradle, caches, KSP/KAPT, R8, AAB, signing, CI/CD, staged rollout), <a href="#en-clean-architecture-android-modularization">Clean Architecture and Android modularization</a> (app/feature/core graph, api/impl, navigation contracts), <a href="#en-senior-android-reliability-observability">Senior Android reliability and observability</a> (flags, observability, incidents), <a href="#en-system-design-auth-analytics-feature-flags">System design: auth, analytics and feature flags</a>. Only details not covered there remain below.</p>
 
 <h2 id="en-r8-minification">R8: shrinking, obfuscation, optimization, mapping<a aria-label="Link to section: R8" class="heading-anchor" href="#en-r8-minification">#</a></h2>
-<p>R8 does four things: <strong>tree shaking</strong> (removes unreachable code, with keep rules as roots), <strong>obfuscation</strong> (short names → smaller DEX; it is not security), <strong>optimization</strong> (inlining, null-check removal, class merging), <strong>resource shrinking</strong> (together with AGP). The effective rules are assembled from your <code>proguard-rules.pro</code>, libraries' consumer rules and AGP defaults — so "where did this keep rule come from" is also a debugging skill (<code>-printconfiguration</code>).</p>
-<p>Mandatory production practices: archive <code>mapping.txt</code> for every release (Play Console + Crashlytics — otherwise stack traces are unreadable), run a CI smoke on the minified build, and write targeted keep rules instead of <code>-dontobfuscate</code>/<code>-dontoptimize</code> "because something crashed". Typical breakages are covered in edge case #12.</p>
+<p>R8 optimization includes inlining, null-check removal, and class merging. The effective rules are assembled from your <code>proguard-rules.pro</code>, libraries' consumer rules and AGP defaults — "where did this keep rule come from" is debugged with <code>-printconfiguration</code>. Upload <code>mapping.txt</code> for every release to Play Console + Crashlytics; write targeted keep rules instead of <code>-dontobfuscate</code>/<code>-dontoptimize</code> "because something crashed". Typical breakages are covered in edge case #12.</p>
 
 <h2 id="en-signing-release">Signing, versioning, staged rollout<a aria-label="Link to section: Signing release" class="heading-anchor" href="#en-signing-release">#</a></h2>
 <ul>
-<li><strong>Play App Signing:</strong> Google holds the signing key; you sign the AAB with an <em>upload key</em>. The benefit — an upload key can be reset through Play support if lost or compromised. The app signing key is hard to change, but Play Console supports an app signing key upgrade: the new key signs installs and updates on Android 13+, and the old key keeps signing updates for earlier Android versions (via key-rotation lineage). AAB + Play generates device-optimized split APKs.</li>
-<li><strong>Versioning:</strong> <code>versionCode</code> — a monotonic int (often derived from CI build number or date), <code>versionName</code> — human semver. In multi-flavor builds — a scheme guaranteeing uniqueness across tracks.</li>
-<li><strong>Staged rollout:</strong> release to 1% → 5% → 20% → 50% → 100% with gates on crash-free rate and key vitals; a rollout can be <em>halted</em>, but installed versions cannot be rolled back — so risky changes hide behind a feature flag (kill switch) that can be flipped without a release. The in-app updates API (immediate flow) prompts a blocking full-screen update when Play has an update available; the user can cancel it, so the update is not guaranteed — enforcing a minimum version needs app/server logic (e.g., a server-driven minimum-supported version), and it is not a kill switch.</li>
+<li><strong>Play App Signing:</strong> an upload key can be reset through Play support if lost or compromised. The app signing key is hard to change, but Play Console supports an app signing key upgrade: the new key signs installs and updates on Android 13+, and the old key keeps signing updates for earlier Android versions (via key-rotation lineage).</li>
+<li><strong>Versioning:</strong> <code>versionCode</code> is often derived from the CI build number or date; in multi-flavor builds — a scheme guaranteeing uniqueness across tracks.</li>
+<li><strong>Staged rollout:</strong> typical steps 1% → 5% → 20% → 50% → 100% with gates on crash-free rate and key vitals. The in-app updates API (immediate flow) prompts a blocking full-screen update when Play has an update available; the user can cancel it, so the update is not guaranteed — enforcing a minimum version needs app/server logic (e.g., a server-driven minimum-supported version), and it is not a kill switch.</li>
 <li><strong>Pre-release check:</strong> release notes drafted, mapping uploaded, DB migrations tested, new functionality flags default-off, the monitoring dashboard open for the duration of the rollout.</li>
 </ul>
 
 <h2 id="en-gradle-performance">Gradle: build speed and organization<a aria-label="Link to section: Gradle performance" class="heading-anchor" href="#en-gradle-performance">#</a></h2>
-<p>Build time is team money. Levers by impact: <strong>modularization</strong> (incrementality and parallelism — Gradle rebuilds only changed modules and their dependents); <strong>configuration cache</strong> and build cache (local + remote for CI and the whole team); <strong>KSP over KAPT</strong> (KAPT generates Java stubs — slow; Room/Hilt/Moshi are on KSP already); <strong>version catalogs</strong> (<code>libs.versions.toml</code>) as the single source of versions; <strong>convention plugins</strong> (<code>build-logic</code>) instead of copy-pasting config across 60 modules; minimal logic in <code>build.gradle</code>; profiling via build scans.</p>
-<p><strong>Variants and flavors:</strong> buildTypes (debug/release — how we build) × productFlavors (what we build: brand, environment, market). The scaling trap: combinatorial variant explosion multiplies configuration time and the test matrix; environment is often more honestly kept in runtime config than in a flavor.</p>
+<p>Build time is team money. Additions to the stage: Room/Hilt/Moshi are on KSP already; a version catalog (<code>libs.versions.toml</code>) is the single source of versions; convention plugins (<code>build-logic</code>) replace copy-pasted config across dozens of modules; keep minimal logic in <code>build.gradle</code>. Variants: buildTypes (debug/release — how we build) × productFlavors (what we build: brand, environment, market); environment is often more honestly kept in runtime config than in a flavor.</p>
 
 <h2 id="en-multi-module">Multi-module architecture: dependency direction<a aria-label="Link to section: Multi module" class="heading-anchor" href="#en-multi-module">#</a></h2>
-<p>The working skeleton: <code>app</code> (assembly, DI graph, navigation) → <code>feature:*</code> (screens, ViewModels) → <code>core:*</code> (domain, data, network, database, designsystem, common). Rules that keep the graph healthy:</p>
-<ul>
-<li>feature modules <strong>never depend on each other</strong> — shared code sinks into core, or communication goes through api interfaces (the <code>feature:x:api</code> + <code>feature:x:impl</code> pattern: only api modules may be depended on);</li>
-<li><code>implementation</code> by default, <code>api</code> only when a type genuinely leaks into a public signature: honest contracts and fewer cascading recompilations;</li>
-<li>navigation between features goes through an abstraction (a Navigator interface in core, implemented in app), otherwise "secret" dependencies appear;</li>
-<li>the health metric is the graph's depth and width: the build scan shows the critical path of the build.</li>
-</ul>
 <p><strong>Dynamic Feature Modules</strong> are a separate decision with a narrow niche: large rarely-used features (AR, multi-MB SDKs). The price: SplitInstallManager flows (request, progress, errors, instant restart), harder testing and reflection/interface-based navigation. If the goal is merely code organization, regular modules suffice.</p>
 
 <h2 id="en-cicd-observability">CI/CD, feature flags, observability<a aria-label="Link to section: CI/CD observability" class="heading-anchor" href="#en-cicd-observability">#</a></h2>
 <ul>
 <li><strong>Pipeline:</strong> PR → static checks (lint, detekt, custom lint rules) → unit tests → build → instrumented/screenshot tests (Gradle Managed Devices or a device farm) → minified smoke → internal track. Releases run as a separate tagged pipeline publishing via the Play Publisher API.</li>
-<li><strong>Feature flags:</strong> three different tools that must not blur together: release toggles (code rollout, deleted after 100%), experiments (A/B with analytics and sticky bucketing), kill switches (operational safety). Hygiene: default = off and safe, defined offline behavior (last cached value), tests for both states of critical flags, regular cleanup of dead flags.</li>
-<li><strong>Observability:</strong> crashes are not enough — you need non-fatals with context, breadcrumbs (navigation, key actions — so a crash has a story), metrics (crash-free users, ANR rate, startup P90, network error rate per endpoint), structured logging with PII off. Alerts on the post-release delta, not on absolute values.</li>
-<li><strong>Analytics architecture:</strong> typed events instead of strings (sealed classes / schema-generated), a single AnalyticsTracker facade (vendors swappable), event schema validation in CI, an event plan agreed with product as an artifact. The most expensive analytics bug is silent: an event stops flowing and nobody notices until the quarterly report — so monitor event volumes too.</li>
+<li><strong>Feature flags:</strong> three different tools: release toggles (code rollout, deleted after 100%), experiments (A/B with analytics and sticky bucketing), kill switches (operational safety). Test both states of critical flags.</li>
+<li><strong>Observability:</strong> useful metrics include startup P90 and network error rate per endpoint; alert on the post-release delta, not on absolute values.</li>
+<li><strong>Analytics architecture:</strong> a single AnalyticsTracker facade (vendors swappable), event schema validation in CI, an event plan agreed with product as an artifact.</li>
 </ul>
 
 <h3 id="en-release-follow-up">Follow-up questions by level<a aria-label="Link to section: Release follow-up" class="heading-anchor" href="#en-release-follow-up">#</a></h3>
 <p><strong>Middle+: how does AAB differ from APK and why does it exist?</strong><br/>
-AAB is a publishing format, not an installation one: Play generates split APKs for the specific device (ABI, density, language) — users download less. Signing is then done by Play App Signing. Locally, bundletool tests split behavior.</p>
+From an AAB, Play generates split APKs for the specific device (ABI, density, language) — users download less. Locally, bundletool tests split behavior.</p>
 <p><strong>Senior: 11 PM, after rolling out to 20% crash-free dropped from 99.8% to 97%. Your actions?</strong><br/>
-First — halt the rollout (stops new installs; free and reversible). Then: Crashlytics — the top new crash, deobfuscate via mapping, identify the segment (OS version? device? feature?). If the crash is in a flagged new feature — flip the kill switch, the rollout can resume. If it is in the core — a hotfix release with priority rollout. In parallel — an incident channel, a timeline, and a postmortem: why didn't the internal track / 1% stage catch it.</p>
+Halt the rollout (free and reversible) → Crashlytics: the top new crash, deobfuscate via mapping, identify the segment (OS version? device? feature?). Crash in a flagged new feature — flip the kill switch and resume the rollout; in the core — a hotfix release with priority rollout. In parallel — an incident channel, a timeline, and a postmortem: why didn't the internal track / 1% stage catch it.</p>
 <p><strong>Staff/Lead: project build time grew to 25 minutes, the team is angry. The plan?</strong><br/>
 Data first: build scans, configuration vs execution split, the module graph's critical path, CI cache hit rate. Typical wins ordered by cost: remote build cache, configuration cache, KAPT→KSP, splitting "hub" modules on the critical path, moving environment out of flavors, auditing api→implementation. Then set a budget (e.g., local incremental ≤ 2 min, CI PR ≤ 12 min) and a trend dashboard — otherwise it all comes back within six months.</p>
 </div></details><details class="major-section" data-key="system-design-scenarios" data-title="Android System Design: practical scenarios" id="en-system-design-scenarios" open=""><summary class="major-summary"><span class="major-title">Android System Design: practical scenarios</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
