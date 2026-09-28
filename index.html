@@ -560,21 +560,6 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <a data-target="senior-engineering-practice" href="#senior-engineering-practice">Senior engineering practice — final guide stage</a>
 </li>
 <li class="toc-major">
-<a data-target="coroutines-and-concurrency" href="#coroutines-and-concurrency">Coroutines and Concurrency</a>
-<ol class="toc-children">
-<li><a data-target="structured-concurrency" href="#structured-concurrency">Structured concurrency</a></li>
-<li><a data-target="launch-vs-async" href="#launch-vs-async">launch vs async</a></li>
-<li><a data-target="coroutinescope-vs-supervisorscope" href="#coroutinescope-vs-supervisorscope">coroutineScope vs supervisorScope</a></li>
-<li><a data-target="job-vs-supervisorjob" href="#job-vs-supervisorjob">Job vs SupervisorJob</a></li>
-<li><a data-target="dispatchers-withcontext-suspend-vs-blocking" href="#dispatchers-withcontext-suspend-vs-blocking">Dispatchers, withContext, suspend vs blocking</a></li>
-<li><a data-target="coroutine-cancellation" href="#coroutine-cancellation">Coroutine cancellation</a></li>
-<li><a data-target="exception-handling-in-coroutines" href="#exception-handling-in-coroutines">Exception handling in coroutines</a></li>
-<li><a data-target="lifecycle-aware-coroutine-scopes" href="#lifecycle-aware-coroutine-scopes">Lifecycle-aware coroutine scopes</a></li>
-<li><a data-target="testing-coroutines" href="#testing-coroutines">Testing coroutines</a></li>
-<li><a data-target="coroutines-and-concurrency-підсумок" href="#coroutines-and-concurrency-підсумок">Coroutines and Concurrency — підсумок</a></li>
-</ol>
-</li>
-<li class="toc-major">
 <a data-target="networking" href="#networking">Networking</a>
 <ol class="toc-children">
 <li><a data-target="networking-підсумок" href="#networking-підсумок">Networking — підсумок</a></li>
@@ -824,12 +809,6 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </li>
 <li class="toc-major">
 <a data-target="en-senior-engineering-practice" href="#en-senior-engineering-practice">Senior engineering practice — final guide stage</a>
-</li>
-<li class="toc-major">
-<a data-target="en-coroutines-and-concurrency" href="#en-coroutines-and-concurrency">Coroutines and Concurrency</a>
-<ol class="toc-children">
-<li><a data-target="en-structured-concurrency" href="#en-structured-concurrency">Structured concurrency</a></li>
-</ol>
 </li>
 <li class="toc-major">
 <a data-target="en-networking" href="#en-networking">Networking</a>
@@ -2359,9 +2338,23 @@ fun profile(id: UserId, completion: Continuation&lt;Profile&gt;): Any? =
 <tr><td><code>limitedParallelism(n)</code></td><td>A dispatcher view limiting concurrent execution for a subsystem.</td><td>Not a dedicated thread, queue durability, fairness SLA, or external resource pool. Use <code>n=1</code> for sequential execution, not thread identity.</td></tr>
 </tbody></table>
 <p><code>withContext(context)</code> merges the supplied context, runs the block, and returns its result while preserving structured ownership. A changed dispatcher normally dispatches to it and back, but no universal thread switch is guaranteed: equivalent/immediate contexts may execute inline. Inject dispatchers at boundaries so blocking/CPU implementation details are main-safe and testable.</p>
+<p>Хто гарантує dispatcher — repository чи caller — має бути стандартизовано в команді; типово data-шар робить свої suspend APIs main-safe через injected dispatcher, а ViewModel про потоки не знає. <code>Default</code> — пул приблизно за кількістю ядер для CPU-bound роботи (парсинг, сортування), <code>IO</code> — еластичний пул для blocking I/O: CPU-робота на <code>IO</code> дає oversubscription, blocking I/O на <code>Default</code> — голодування пулу. Типові помилки: вважати, що Retrofit suspend call вирішує всі threading питання; робити heavy JSON/list mapping на Main; використовувати <code>Dispatchers.IO</code> для CPU-heavy work.</p>
+<pre><code class="language-kotlin">class ProductRepository @Inject constructor(
+    private val api: ProductApi,
+    private val dao: ProductDao,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
+) {
+    suspend fun refreshProduct(id: String): Product = withContext(ioDispatcher) {
+        val dto = api.getProduct(id)
+        val entity = dto.toEntity()
+        dao.upsert(entity)
+        entity.toDomain()
+    }
+}
+</code></pre>
 
 <h3 id="stage7-uk-cancellation">Cooperative cancellation і cleanup<a aria-label="Посилання на розділ: Cooperative cancellation and cleanup" class="heading-anchor" href="#stage7-uk-cancellation">#</a></h3>
-<p>Cancellation is <strong>cooperative</strong>. Cancellable suspending functions check it; a CPU loop or blocking API that never suspends must poll <code>ensureActive()</code>, use <code>yield()</code> where fair yielding is actually desired, or call an interruptible/cancellable adapter. <code>yield()</code> is not a scheduler fairness guarantee or performance fix.</p>
+<p>Cancellation is <strong>cooperative</strong>: це прапорець стану Job, який перевіряється в suspension points, бо примусово безпечно вбити thread неможливо. Cancellable suspending functions check it; a CPU loop or blocking API that never suspends must poll <code>ensureActive()</code>, use <code>yield()</code> where fair yielding is actually desired, or call an interruptible/cancellable adapter. <code>yield()</code> is not a scheduler fairness guarantee or performance fix.</p>
 <pre><code class="language-kotlin">suspend fun index(rows: List&lt;Row&gt;): Index = withContext(cpuDispatcher) {
     buildIndex {
         rows.forEachIndexed { i, row -&gt;
@@ -2384,6 +2377,8 @@ try {
 <li><code>lifecycleScope</code> is cancelled when its <code>Lifecycle</code> is destroyed. For Fragment View UI, use <code>viewLifecycleOwner.lifecycleScope</code>, not the Fragment lifetime for stale bindings.</li>
 <li><code>repeatOnLifecycle(STARTED)</code> suspends its caller, launches the block while at least STARTED, cancels that block below STARTED, and restarts it on re-entry. Launch independent collectors as children inside the block; sequential <code>collect</code> calls do not run concurrently.</li>
 <li>A true application scope can be injected for app-lifetime work, but must have documented owner/shutdown/error policy. Avoid <code>GlobalScope</code> and per-call <code>CoroutineScope(...)</code> because they hide cancellation and leak work beyond the caller.</li>
+<li>Coroutine, що без потреби переживає екран, може продовжити network/database work після закриття, оновити неіснуючий UI, утримувати references (leak), витрачати battery/network і створити race condition при повторному відкритті екрана. Щоб уникнути coroutine leaks: scope за ownership, не тримати посилання на View/Activity у довгих корутинах, скасовувати збережені <code>Job</code>-и, не ковтати <code>CancellationException</code>.</li>
+<li>Compose: <code>rememberCoroutineScope</code> — для UI-дій з callback-ів (snackbar, animation, scroll), не для business logic; довгу задачу в Composable запускайте через effect із правильним key (<code>LaunchedEffect</code>), а не напряму. App-wide sync — application scope або WorkManager залежно від потрібних гарантій, не ViewModel.</li>
 </ul>
 
 <h3 id="stage7-uk-bridging">Callback bridging, runBlocking і context propagation<a aria-label="Посилання на розділ: Callback bridging runBlocking and context propagation" class="heading-anchor" href="#stage7-uk-bridging">#</a></h3>
@@ -2402,7 +2397,7 @@ try {
     start(callback)
 }</code></pre>
 <p>Adapter має atomic/single terminal protocol: callback resumes continuation at most once, cancellation unregisters callback and releases resources, synchronous callback during registration is safe, and late callback is ignored or disposed. <code>suspendCancellableCoroutine</code> має prompt cancellation guarantee: якщо Job скасовано до dispatched resumption, coroutine не продовжить успішно, тому transferred resource потребує cancellation disposer. <code>isActive</code> alone is not atomic protection against two racing callbacks; prefer upstream unregister/atomic guard and the overloads that define resource cleanup.</p>
-<p><code>runBlocking</code> bridges blocking callers by blocking the current thread while running an event loop. Use at process entry points, narrow legacy/test boundaries—not inside suspend code, Android main callbacks, repositories, or servers where it can starve/deadlock constrained executors.</p>
+<p><code>runBlocking</code> bridges blocking callers by blocking the current thread while running an event loop. Use at process entry points, narrow legacy/test boundaries—not inside suspend code, Android main callbacks, repositories, or servers where it can starve/deadlock constrained executors. На Main він блокує потік до завершення всієї корутини — фризи кадрів і ANR. Рідкісний легітимний синхронний міст у legacy-коді — наприклад, OkHttp <code>Authenticator</code>, чий API синхронний.</p>
 <p>A coroutine may resume on another thread; raw <code>ThreadLocal</code> values do not automatically follow it. Prefer explicit context parameters. Where legacy libraries require it, use <code>ThreadLocal.asContextElement(value)</code> and understand it propagates a context value, not arbitrary in-coroutine mutations; MDC and copyable context behavior are library/version-specific.</p>
 
 <h2 id="stage7-uk-guarantees">Guarantees vs non-guarantees<a aria-label="Посилання на розділ: Guarantees versus non guarantees" class="heading-anchor" href="#stage7-uk-guarantees">#</a></h2>
@@ -2458,6 +2453,26 @@ suspend fun awaitSdk() = suspendCancellableCoroutine&lt;Result&gt; { c -&gt;
     sdk.start { c.resume(it) }              // no unregister; callback may fire twice
 }</code></pre>
 <p>Review questions: хто owns Job і де shutdown; чи <code>api.load</code> справді main-safe; навіщо ручний Main hop замість state owner; чи inline <code>Main.immediate</code> створює reentrancy; що робить cancellation; чи callback має single terminal protocol. Debug з <code>CoroutineName</code>, IDE Coroutines view, <code>-Dkotlinx.coroutines.debug</code> у non-production diagnostic run, job-tree/log correlation та traces навколо blocking call. Debug probes допомагають побачити suspended stacks, але не доводять business ownership або exactly-once.</p>
+
+<h2 id="stage7-uk-practice-notes">Практичні нотатки<a aria-label="Посилання на розділ: Практичні нотатки" class="heading-anchor" href="#stage7-uk-practice-notes">#</a></h2>
+<h3>Interview-формулювання: structured concurrency</h3>
+<p>Structured concurrency дає контроль lifetime async задач, автоматичну cancellation propagation, зрозуміле exception propagation, відсутність orphan coroutines і predictable cleanup.</p>
+<blockquote>
+<p>Structured concurrency для мене — це про ownership async роботи. Кожна coroutine має мати parent scope з правильним lifecycle. У ViewModel я використовую <code>viewModelScope</code>, у UI — lifecycle-aware scopes, у repository — suspend APIs або application-level scope тільки для справді app-wide задач. Я уникаю <code>GlobalScope</code>, бо він створює orphan work. Якщо екран закривається, робота має скасуватися, якщо тільки product requirement не каже інше.</p>
+</blockquote>
+<p><strong>Чому <code>GlobalScope</code> небезпечний?</strong> Живе весь процес і стоїть поза structured concurrency: ніхто не скасує, помилки не пропагуються до власника, робота і посилання течуть. Замість нього — injected scope з явним owner-ом і lifecycle.</p>
+<p><strong>Чим structured concurrency краща за callbacks?</strong> Явний lifecycle і ownership, автоматична propagation скасування і помилок по ієрархії, predictable failure behavior і послідовний читабельний код замість пірамід колбеків, де ownership і error handling розмиті.</p>
+<h3>Application-level CoroutineScope</h3>
+<p>Доречний, коли робота логічно переживає конкретний екран: синк, outbox, analytics event queue, app-level session observer, long-lived WebSocket manager, shared repository cache warmer. Такий scope створюється в DI (наприклад, <code>SupervisorJob() + Dispatchers.Default</code> + <code>CoroutineExceptionHandler</code> для non-fatal reporting), інжектиться явно, логується, тестується і контрольовано cancel-иться при shutdown/logout, якщо це потрібно — а не <code>GlobalScope</code> «бо зручно».</p>
+<pre><code class="language-kotlin">class AppCoroutineScope @Inject constructor() : CoroutineScope {
+    override val coroutineContext: CoroutineContext =
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, throwable -&gt;
+            // Log to crash/non-fatal reporting
+            logger.error(throwable)
+        }
+}
+</code></pre>
+<p>Явний cancel такого scope при shutdown потрібен лише в специфічних середовищах; в Android process-level lifetime зазвичай закінчується разом із process.</p>
 
 <h2 id="stage7-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice Q and A" class="heading-anchor" href="#stage7-uk-likely-qa">#</a></h2>
 <p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
@@ -2541,6 +2556,7 @@ supervisorScope: child failure ↛ supervisor/siblings; each child outcome still
 <tr><td>Child <code>async</code></td><td>Its Job fails immediately and ordinary parent is cancelled even before <code>await</code>.</td><td><code>await</code> determines when caller observes the deferred exception; it does not postpone structural propagation.</td></tr>
 </tbody></table>
 <p><code>try/catch</code> must surround the suspending call or <code>await()</code> that rethrows. A <code>try</code> around <code>launch { ... }</code> only surrounds coroutine creation and will not catch a later asynchronous failure. <code>CoroutineExceptionHandler</code> sees uncaught exceptions only at applicable root-like boundaries after failure; coroutine already completed, so it is not a general <code>try/catch</code> and cannot recover that coroutine.</p>
+<p><strong><code>awaitAll()</code>:</strong> використовуйте, коли є колекція <code>Deferred</code> і всі результати потрібні разом як одна операція. <code>awaitAll</code> падає одразу при першому failure будь-якого Deferred (не в порядку списку), але сам нічого не скасовує: решту скасовує enclosing <code>coroutineScope</code>/звичайний Job; у <code>supervisorScope</code> інші Deferred продовжують працювати. Для часткових результатів — <code>supervisorScope</code> і обробка кожного окремо.</p>
 
 <h3 id="stage8-uk-supervision">supervisorScope, SupervisorJob та ownership traps<a aria-label="Посилання на розділ: Supervision and ownership traps" class="heading-anchor" href="#stage8-uk-supervision">#</a></h3>
 <ul>
@@ -2571,6 +2587,19 @@ suspend fun consume(session: Session) {
     }
 }</code></pre>
 <p>Cancellation is cooperative: cancellable suspensions check it, але blocking/native call або CPU loop без checks не зупиняться магічно. Catch only exceptions you can classify. Якщо потрібен broad <code>catch (Throwable)</code>, rethrow <code>CancellationException</code> before mapping/logging. Kotlin <code>runCatching</code> catches <code>Throwable</code>; тому без explicit rethrow cancellation може бути перетворена на ordinary failure. <code>finally</code> і <code>use</code> мають бути idempotent де possible. <code>NonCancellable</code> використовуйте вузько лише для suspending cleanup: він відкладає cancellation, але не робить external effect atomic, retryable чи exactly once.</p>
+<p>Тому в production часто пишуть helper, який повертає <code>Result</code>, але rethrow-ить cancellation (використовується в «Практичних нотатках» нижче):</p>
+<pre><code class="language-kotlin">suspend inline fun &lt;T&gt; runCatchingNonCancellation(
+    crossinline block: suspend () -&gt; T
+): Result&lt;T&gt; {
+    return try {
+        Result.success(block())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+}
+</code></pre>
 
 <h3 id="stage8-uk-timeouts-callback-flow">Timeouts, callbackFlow/channelFlow та awaitClose<a aria-label="Посилання на розділ: Timeouts callbackFlow channelFlow and awaitClose" class="heading-anchor" href="#stage8-uk-timeouts-callback-flow">#</a></h3>
 <ul>
@@ -2581,7 +2610,7 @@ suspend fun consume(session: Session) {
 </ul>
 
 <h3 id="stage8-uk-flow-boundaries">Narrow Flow exception boundaries<a aria-label="Посилання на розділ: Narrow Flow exception boundaries" class="heading-anchor" href="#stage8-uk-flow-boundaries">#</a></h3>
-<p><code>catch</code> є transparent до downstream exceptions і ловить лише upstream від його position; cancellation треба rethrow/не map-ити. <code>retry</code>/<code>retryWhen</code> повторюють upstream, не downstream collector failures і не cancellation; predicate має обмежувати transient classes, attempts, backoff і side-effect safety. Не retry-те non-idempotent write без operation key. Flow content навмисно вузький; повна модель Flow належить Stages 9–11.</p>
+<p><code>catch</code> є transparent до downstream exceptions і ловить лише upstream від його position; cancellation треба rethrow/не map-ити. <code>retry</code>/<code>retryWhen</code> повторюють upstream, не downstream collector failures і не cancellation; predicate має обмежувати transient classes, attempts, backoff і side-effect safety. Не retry-те non-idempotent write без operation key. Відмінність від звичайних корутин: у Flow виняток тече вниз по ланцюжку до <code>catch</code>/<code>retry</code> (які бачать лише upstream) і термінально завершує потік; у корутинах помилка пропагується вгору по Job-ієрархії і скасовує сусідів. Flow content навмисно вузький; повна модель Flow належить Stages 9–11.</p>
 
 <h2 id="stage8-uk-guarantees">Guarantees vs non-guarantees<a aria-label="Посилання на розділ: Guarantees versus non guarantees" class="heading-anchor" href="#stage8-uk-guarantees">#</a></h2>
 <table><thead><tr><th>Можна стверджувати</th><th>Не можна обіцяти</th></tr></thead><tbody>
@@ -2633,6 +2662,37 @@ suspend fun consume(session: Session) {
 
 <h3 id="stage8-uk-android-testing">Android ViewModel/repository tests<a aria-label="Посилання на розділ: Android ViewModel and repository tests" class="heading-anchor" href="#stage8-uk-android-testing">#</a></h3>
 <p>Для local ViewModel test replace Main через reusable rule, construct ViewModel після rule setup, trigger intent, run scheduler, assert public UI state і failure/cancellation transitions. Repository test injects dispatcher, scope only when repository truly owns longer work, clock/time policy and fake data sources; verify main-safety, cleanup and result—not private coroutine structure. Instrumented/UI tests keep real Main and cover lifecycle/Looper integration separately. Для Flow assertions можна використати manual collector у <code>backgroundScope</code>. <strong>Turbine</strong> — popular third-party helper from Cash App, not Kotlin/AndroidX official guarantee; pin its version і не приписуйте йому production ordering semantics.</p>
+<pre><code class="language-kotlin">@OptIn(ExperimentalCoroutinesApi::class)
+class ProductViewModelTest {
+    private val testDispatcher = StandardTestDispatcher()
+    private val repository = FakeProductRepository()
+
+    @BeforeEach
+    fun setUp() {
+        Dispatchers.setMain(testDispatcher)
+    }
+
+    @AfterEach
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `load product exposes content state`() = runTest {
+        repository.product = Product(id = "1", name = "Phone")
+        val viewModel = ProductViewModel(repository)
+
+        viewModel.load("1")
+        advanceUntilIdle()
+
+        assertEquals(
+            ProductUiState.Content("Phone"),
+            viewModel.uiState.value
+        )
+    }
+}
+</code></pre>
+<p>Не зловживайте mocks для простих repositories, де fake був би стабільніший.</p>
 
 <h3 id="stage8-uk-debugging">Debugging failures and lost cancellation<a aria-label="Посилання на розділ: Debugging coroutine failures" class="heading-anchor" href="#stage8-uk-debugging">#</a></h3>
 <ol>
@@ -2670,6 +2730,106 @@ suspend fun consume(session: Session) {
     advanceUntilIdle()
 }</code></pre>
 <p>Review: required work should not be supervised merely to “keep going”; handler logs but does not recover; <code>async</code> needs observation; <code>runCatching</code> must preserve <code>CancellationException</code>; timeout cannot prove commit absence; production dispatcher/time must be injected; all test dispatchers share scheduler. Debug by naming the refresh, locating the first failed Job/cause, checking whether cancellation was remapped, and correlating server operation ID before retry.</p>
+
+<h2 id="stage8-uk-practice-notes">Практичні нотатки<a aria-label="Посилання на розділ: Практичні нотатки" class="heading-anchor" href="#stage8-uk-practice-notes">#</a></h2>
+<h3>Коротке interview-формулювання</h3>
+<blockquote>
+<p>Я не вибираю coroutine API ізольовано. Я спочатку визначаю owner, cancellation path і failure semantics. Якщо підзадачі формують одну операцію — <code>coroutineScope</code>; якщо можуть падати незалежно — <code>supervisorScope</code>. Cancellation я не вважаю error path і не показую як помилку користувачу.</p>
+</blockquote>
+<p>Недостатньо сказати «launch запускає, async повертає результат»: треба пояснити structured concurrency, lifecycle ownership, cancellation, exception propagation, partial failure, dispatcher strategy і testing — і прив’язати concurrency design до business semantics.</p>
+<h3>Atomic vs partial success у коді</h3>
+<p>Типові приклади: <code>coroutineScope</code> (atomic) — checkout потребує cart + payment + address, екран не рендериться без усіх required даних. <code>supervisorScope</code> (partial success) — Home screen (profile, banners, recommendations), dashboard widgets, optional analytics/config calls, non-critical enrichment.</p>
+<pre><code class="language-kotlin">// Atomic: один failure скасовує решту і перекидається caller-у
+suspend fun loadRequiredCheckoutData(): CheckoutData = coroutineScope {
+    val cart = async { cartRepository.getCart() }
+    val address = async { addressRepository.getSelectedAddress() }
+    val payment = async { paymentRepository.getDefaultPaymentMethod() }
+
+    CheckoutData(
+        cart = cart.await(),
+        address = address.await(),
+        paymentMethod = payment.await()
+    )
+}
+
+// Partial: кожен child явно моделює свій result
+// (runCatchingNonCancellation — див. Cancellation preservation та cleanup)
+suspend fun loadDashboard(): DashboardUiModel = supervisorScope {
+    val profile = async { runCatchingNonCancellation { profileRepository.getProfile() } }
+    val banners = async { runCatchingNonCancellation { bannerRepository.getBanners() } }
+    val recommendations = async { runCatchingNonCancellation { recommendationRepository.getItems() } }
+
+    DashboardUiModel(
+        profile = profile.await().getOrNull(),
+        banners = banners.await().getOrDefault(emptyList()),
+        recommendations = recommendations.await().getOrDefault(emptyList())
+    )
+}
+</code></pre>
+<p>У checkout <code>coroutineScope</code> правильний, бо екран не має сенсу без cart або payment: якщо один запит падає, siblings скасовуються, а caller отримує exception.</p>
+<p>Варіант, де optional лише один блок, а помилка обробляється на <code>await()</code>:</p>
+<pre><code class="language-kotlin">suspend fun loadDashboard(): DashboardUiModel = supervisorScope {
+    val profile = async { profileRepository.getProfile() }
+    val recommendations = async { recommendationsRepository.getRecommendations() }
+    val ads = async { adsRepository.getAds() }
+
+    DashboardUiModel(
+        profile = profile.await(),
+        recommendations = recommendations.await(),
+        ads = try {
+            ads.await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emptyList()
+        }
+    )
+}
+</code></pre>
+<p>Тут <code>supervisorScope</code> має сенс: failure <code>ads</code> не cancel-ить profile/recommendations, а помилка обробляється на <code>await()</code>. Із <code>coroutineScope</code> падіння ads скасувало б увесь dashboard. Якщо ж ловити помилку всередині самого <code>async</code> (як у першому варіанті), child ніколи не падає, і тоді ізоляцію дає саме обробка, а не <code>supervisorScope</code>. Не обгортайте suspend-виклики в голий <code>runCatching</code>: він ковтає <code>CancellationException</code>.</p>
+<h3>Рівні error handling</h3>
+<ol>
+<li><strong>Local handling</strong> — try/catch навколо конкретного operation.</li>
+<li><strong>Domain result</strong> — sealed <code>Result</code>, <code>Either</code>, typed error на межі data→domain (Success / типізовані Error-причини, як NetworkError у розділі Networking і Data). Винятки — для неочікуваного; очікувані стани — частина типу результату, а не control flow через throw.</li>
+<li><strong>UI state</strong> — user-friendly message/action; не показувати raw exception message користувачу.</li>
+<li><strong>Global logging</strong> — non-fatal reporting для unexpected errors; expected domain errors не логувати як crash.</li>
+<li><strong>Cancellation</strong> — not an error.</li>
+</ol>
+<p>У ViewModel краще явно оновлювати UI state, а не покладатися на global <code>CoroutineExceptionHandler</code>.</p>
+<pre><code class="language-kotlin">sealed class CheckoutError : Exception() {
+    class Network : CheckoutError()
+    class PaymentDeclined : CheckoutError()
+    class Unknown : CheckoutError()
+}
+
+class SubmitCheckoutUseCase @Inject constructor(
+    private val repository: CheckoutRepository
+) {
+    suspend operator fun invoke(): Result&lt;Unit&gt; = runCatchingNonCancellation {
+        repository.submitOrder()
+    }.recoverCatching { throwable -&gt; // Result failure must be a Throwable
+        throw throwable.toCheckoutError()
+    }
+}
+
+// ViewModel
+fun submit() {
+    viewModelScope.launch {
+        _uiState.update { it.copy(isSubmitting = true) }
+
+        submitCheckout()
+            .onSuccess {
+                _uiState.update { it.copy(isSubmitting = false) }
+                _events.emit(CheckoutEvent.NavigateToSuccess)
+            }
+            .onFailure { error -&gt;
+                _uiState.update {
+                    it.copy(isSubmitting = false, error = error.toMessage())
+                }
+            }
+    }
+}
+</code></pre>
 
 <h2 id="stage8-uk-likely-qa">10 likely practice Q&amp;A<a aria-label="Посилання на розділ: 10 likely practice Q and A" class="heading-anchor" href="#stage8-uk-likely-qa">#</a></h2>
 <p><em>Це likely practice questions, не підтверджений і не гарантований список співбесіди.</em></p>
@@ -6423,181 +6583,6 @@ Result (only verified metrics) → learning/revisit trigger
 <h2 id="stage32-uk-sources">References (principles, not guarantees)</h2><ul><li><strong>Primary engineering-practice source:</strong> <a href="https://google.github.io/eng-practices/review/">Google Engineering Practices — Code Review</a>, including <a href="https://google.github.io/eng-practices/review/reviewer/standard.html">review standard</a>, <a href="https://google.github.io/eng-practices/review/reviewer/looking-for.html">what to look for</a>, <a href="https://google.github.io/eng-practices/review/reviewer/speed.html">speed</a>, and <a href="https://google.github.io/eng-practices/review/developer/">author guidance</a>. These are Google practices, useful principles rather than universal policy.</li><li><strong>Primary reliability sources:</strong> Google SRE, <a href="https://sre.google/sre-book/managing-incidents/">Managing Incidents</a>, <a href="https://sre.google/workbook/postmortem-culture/">Postmortem Culture</a>, and <a href="https://sre.google/sre-book/embracing-risk/">Embracing Risk</a>. Adapt roles and risk policy to the organization.</li><li><strong>Primary Android context:</strong> <a href="https://developer.android.com/topic/architecture">Android Developers — Guide to app architecture</a> and <a href="https://developer.android.com/topic/architecture/recommendations">architecture recommendations</a>. These inform technical boundaries; they do not define career levels.</li><li><strong>ADR source:</strong> Michael Nygard’s lightweight ADR template, preserved by <a href="https://architecture-decision-record.github.io/templates/decision-record-template-by-michael-nygard/">Architecture Decision Record</a>; see also <a href="https://martinfowler.com/bliki/ArchitectureDecisionRecord.html">Martin Fowler’s contextual overview</a>. A record improves traceability, not decision correctness.</li><li><strong>Contextual team-research source:</strong> <a href="https://rework.withgoogle.com/intl/en/guides/understand-team-effectiveness">Google re:Work — team effectiveness</a>. Findings are contextual and are not a guarantee for every team.</li></ul>
 </div></details>
 
-<details class="major-section" data-key="coroutines-and-concurrency" data-title="Coroutines and Concurrency" id="coroutines-and-concurrency" open=""><summary class="major-summary"><span class="major-title">Coroutines and Concurrency</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
-<p><strong>Детальніше:</strong> <a href="#kotlin-coroutines-foundations-internals">Kotlin Coroutines: foundations та internals</a> (ownership, Job tree, launch/async, dispatchers, cancellation, callback bridging), <a href="#kotlin-coroutines-failures-supervision-testing">Kotlin Coroutines: failures, supervision, cleanup, testing та debugging</a> (failure propagation, supervision, CoroutineExceptionHandler, cleanup, runTest), <a href="#compose-effects-navigation-viewmodel">Compose effects, navigation та ViewModel integration</a> (rememberCoroutineScope, LaunchedEffect). Нижче — лише interview-формулювання та деталі, яких немає в цих етапах.</p>
-<h2 id="structured-concurrency">Structured concurrency<a aria-label="Посилання на розділ: Structured concurrency" class="heading-anchor" href="#structured-concurrency">#</a></h2>
-<p>Що дає structured concurrency: контроль lifetime async задач, автоматичну cancellation propagation, зрозуміле exception propagation, відсутність orphan coroutines, predictable cleanup. Якщо coroutine без потреби переживає Android-екран, вона може продовжити network/database work після закриття, оновити неіснуючий UI, утримувати references (leak), витрачати battery/network і створити race condition при повторному відкритті екрана.</p>
-<blockquote>
-<p>Structured concurrency для мене — це про ownership async роботи. Кожна coroutine має мати parent scope з правильним lifecycle. У ViewModel я використовую <code>viewModelScope</code>, у UI — lifecycle-aware scopes, у repository — suspend APIs або application-level scope тільки для справді app-wide задач. Я уникаю <code>GlobalScope</code>, бо він створює orphan work. Якщо екран закривається, робота має скасуватися, якщо тільки product requirement не каже інше.</p>
-</blockquote>
-<p><strong>Чому <code>GlobalScope</code> небезпечний?</strong> Живе весь процес і стоїть поза structured concurrency: ніхто не скасує, помилки не пропагуються до власника, робота і посилання течуть. Замість нього — injected scope з явним owner-ом і lifecycle.</p>
-<p><strong>Чим structured concurrency краща за callbacks?</strong> Явний lifecycle і ownership, автоматична propagation скасування і помилок вгору-вниз по ієрархії, послідовний читабельний код замість пірамід колбеків з розмитим error handling.</p>
-<p><strong>Коли доречно мати application-level CoroutineScope?</strong> Для роботи, що легітимно переживає екран: синк, outbox, аналітика. Створюється у DI як <code>CoroutineScope(SupervisorJob() + Dispatchers.Default)</code> і інжектиться явно — а не GlobalScope «бо зручно» (приклад — у <a href="#job-vs-supervisorjob">Job vs SupervisorJob</a>).</p>
-<p><strong>Як уникнути coroutine leaks?</strong> Крім правильного scope за ownership і відмови від GlobalScope: не тримати посилання на View/Activity у довгих корутинах, скасовувати збережені Job-и, не ковтати CancellationException.</p>
-<hr/>
-<h2 id="launch-vs-async">launch vs async<a aria-label="Посилання на розділ: launch vs async" class="heading-anchor" href="#launch-vs-async">#</a></h2>
-<p><strong>Коли використовувати <code>awaitAll()</code>?</strong> Коли є колекція Deferred і всі результати потрібні разом як одна операція; <code>awaitAll</code> падає одразу при першому failure будь-якого Deferred (не в порядку списку), але сам нічого не скасовує: решту скасовує enclosing <code>coroutineScope</code>/звичайний Job; у <code>supervisorScope</code> інші Deferred продовжують працювати. Для часткових результатів — supervisorScope і обробка кожного окремо.</p>
-<hr/>
-<h2 id="coroutinescope-vs-supervisorscope">coroutineScope vs supervisorScope<a aria-label="Посилання на розділ: coroutineScope vs supervisorScope" class="heading-anchor" href="#coroutinescope-vs-supervisorscope">#</a></h2>
-<p>Типові приклади: <code>coroutineScope</code> (atomic) — checkout потребує cart + payment + address, екран не рендериться без усіх required даних. <code>supervisorScope</code> (partial success) — Home screen (profile, banners, recommendations), dashboard widgets, optional analytics/config calls, non-critical enrichment.</p>
-<pre><code class="language-kotlin">// Atomic: один failure скасовує решту і перекидається caller-у
-suspend fun loadRequiredCheckoutData(): CheckoutData = coroutineScope {
-    val cart = async { cartRepository.getCart() }
-    val address = async { addressRepository.getSelectedAddress() }
-    val payment = async { paymentRepository.getDefaultPaymentMethod() }
-
-    CheckoutData(
-        cart = cart.await(),
-        address = address.await(),
-        paymentMethod = payment.await()
-    )
-}
-
-// Partial: кожен child явно моделює свій result
-// (runCatchingNonCancellation — див. Coroutine cancellation нижче)
-suspend fun loadDashboard(): DashboardUiModel = supervisorScope {
-    val profile = async { runCatchingNonCancellation { profileRepository.getProfile() } }
-    val banners = async { runCatchingNonCancellation { bannerRepository.getBanners() } }
-    val recommendations = async { runCatchingNonCancellation { recommendationRepository.getItems() } }
-
-    DashboardUiModel(
-        profile = profile.await().getOrNull(),
-        banners = banners.await().getOrDefault(emptyList()),
-        recommendations = recommendations.await().getOrDefault(emptyList())
-    )
-}
-</code></pre>
-<hr/>
-<h2 id="job-vs-supervisorjob">Job vs SupervisorJob<a aria-label="Посилання на розділ: Job vs SupervisorJob" class="heading-anchor" href="#job-vs-supervisorjob">#</a></h2>
-<pre><code class="language-kotlin">class AppCoroutineScope @Inject constructor() : CoroutineScope {
-    override val coroutineContext: CoroutineContext =
-        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, throwable -&gt;
-            // Log to crash/non-fatal reporting
-            logger.error(throwable)
-        }
-}
-</code></pre>
-<p>Такий scope може бути доречним для app-wide non-UI задач, але його потрібно cancel при shutdown тільки в специфічних середовищах; у Android process-level lifetime зазвичай закінчується разом із process.</p>
-<hr/>
-<h2 id="dispatchers-withcontext-suspend-vs-blocking">Dispatchers, withContext, suspend vs blocking<a aria-label="Посилання на розділ: Dispatchers, withContext, suspend vs blocking" class="heading-anchor" href="#dispatchers-withcontext-suspend-vs-blocking">#</a></h2>
-<p>Repository може сам гарантувати dispatcher або очікувати dispatcher від caller — але в команді це має бути стандартизовано (типово: data-шар гарантує main-safety, ViewModel про потоки не знає).</p>
-<pre><code class="language-kotlin">class ProductRepository @Inject constructor(
-    private val api: ProductApi,
-    private val dao: ProductDao,
-    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
-) {
-    suspend fun refreshProduct(id: String): Product = withContext(ioDispatcher) {
-        val dto = api.getProduct(id)
-        val entity = dto.toEntity()
-        dao.upsert(entity)
-        entity.toDomain()
-    }
-}
-</code></pre>
-<p>Типові помилки: вважати, що Retrofit suspend call завжди вирішує всі threading питання; робити heavy JSON/list mapping на Main; використовувати <code>Dispatchers.IO</code> для CPU-heavy work.</p>
-<p><strong>Чому <code>runBlocking</code> небезпечний на Main thread?</strong> Він блокує потік до завершення всієї корутини — фризи кадрів і ANR. Легітимні місця: <code>main()</code>, тести, рідкісні синхронні мости в legacy-коді (як runBlocking у Authenticator, де OkHttp API синхронний).</p>
-<p><strong>Чим <code>Dispatchers.IO</code> відрізняється від <code>Default</code>?</strong> IO — еластичний пул для blocking IO (диск, блокуючі мережеві API). Default — пул ~за кількістю ядер для CPU-bound роботи (парсинг, сортування). CPU-робота на IO — oversubscription; blocking IO на Default — голодування пулу.</p>
-<hr/>
-<h2 id="coroutine-cancellation">Coroutine cancellation<a aria-label="Посилання на розділ: Coroutine cancellation" class="heading-anchor" href="#coroutine-cancellation">#</a></h2>
-<p><code>runCatching</code> ловить і <code>CancellationException</code>, тому в production часто пишуть helper, який rethrow cancellation (використовується в прикладах цього розділу):</p>
-<pre><code class="language-kotlin">suspend inline fun &lt;T&gt; runCatchingNonCancellation(
-    crossinline block: suspend () -&gt; T
-): Result&lt;T&gt; {
-    return try {
-        Result.success(block())
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        Result.failure(e)
-    }
-}
-</code></pre>
-<p><strong>Чому cancellation cooperative?</strong> Скасування — це прапорець стану Job, який перевіряється у suspension points. Примусово вбити потік безпечно неможливо, тож обчислювальний цикл без suspension/перевірок не зупиниться — додавайте <code>ensureActive()</code>/<code>yield()</code>. CancellationException — службовий сигнал, не помилка (див. також <a href="#kotlin-coroutines-failures-supervision-testing">Kotlin Coroutines: failures, supervision, cleanup</a>).</p>
-<hr/>
-<h2 id="exception-handling-in-coroutines">Exception handling in coroutines<a aria-label="Посилання на розділ: Exception handling in coroutines" class="heading-anchor" href="#exception-handling-in-coroutines">#</a></h2>
-<p>Рівні error handling, які має пояснити senior:</p>
-<ol>
-<li><strong>Local handling</strong> — try/catch навколо конкретного operation.</li>
-<li><strong>Domain result</strong> — sealed <code>Result</code>, <code>Either</code>, typed error на межі data→domain (Success / типізовані Error-причини, як NetworkError у розділі Networking і Data). Винятки — для неочікуваного; очікувані стани — частина типу результату, а не control flow через throw.</li>
-<li><strong>UI state</strong> — user-friendly message/action; не показувати raw exception message користувачу.</li>
-<li><strong>Global logging</strong> — non-fatal reporting для unexpected errors; expected domain errors не логувати як crash.</li>
-<li><strong>Cancellation</strong> — not an error.</li>
-</ol>
-<p>У ViewModel краще явно оновлювати UI state, а не покладатися на global <code>CoroutineExceptionHandler</code>.</p>
-<pre><code class="language-kotlin">sealed class CheckoutError : Exception() {
-    class Network : CheckoutError()
-    class PaymentDeclined : CheckoutError()
-    class Unknown : CheckoutError()
-}
-
-class SubmitCheckoutUseCase @Inject constructor(
-    private val repository: CheckoutRepository
-) {
-    suspend operator fun invoke(): Result&lt;Unit&gt; = runCatchingNonCancellation {
-        repository.submitOrder()
-    }.recoverCatching { throwable -&gt; // Result failure must be a Throwable
-        throw throwable.toCheckoutError()
-    }
-}
-
-// ViewModel
-fun submit() {
-    viewModelScope.launch {
-        _uiState.update { it.copy(isSubmitting = true) }
-
-        submitCheckout()
-            .onSuccess {
-                _uiState.update { it.copy(isSubmitting = false) }
-                _events.emit(CheckoutEvent.NavigateToSuccess)
-            }
-            .onFailure { error -&gt;
-                _uiState.update {
-                    it.copy(isSubmitting = false, error = error.toMessage())
-                }
-            }
-    }
-}
-</code></pre>
-<p><strong>Як помилки Flow відрізняються від coroutine errors?</strong> У Flow виняток тече вниз по ланцюжку і обробляється <code>catch</code>/<code>retry</code> (лише upstream); помилка термінально завершує потік. У звичайних корутинах помилка пропагується вгору по Job-ієрархії і скасовує сусідів.</p>
-<hr/>
-<h2 id="lifecycle-aware-coroutine-scopes">Lifecycle-aware coroutine scopes<a aria-label="Посилання на розділ: Lifecycle-aware coroutine scopes" class="heading-anchor" href="#lifecycle-aware-coroutine-scopes">#</a></h2>
-<p>Scope має відповідати lifetime задачі: load screen data — <code>viewModelScope</code>; collect UI state у Fragment — <code>viewLifecycleOwner.lifecycleScope + repeatOnLifecycle</code>; snackbar/animation/scroll action у Compose — <code>rememberCoroutineScope</code>; app-wide sync — application scope/WorkManager залежно від гарантій, не ViewModel. Типові помилки: використовувати <code>rememberCoroutineScope</code> для business logic; запускати довгу задачу в Composable без effect key.</p>
-<hr/>
-<h2 id="testing-coroutines">Testing coroutines<a aria-label="Посилання на розділ: Testing coroutines" class="heading-anchor" href="#testing-coroutines">#</a></h2>
-<pre><code class="language-kotlin">@OptIn(ExperimentalCoroutinesApi::class)
-class ProductViewModelTest {
-    private val testDispatcher = StandardTestDispatcher()
-    private val repository = FakeProductRepository()
-
-    @BeforeEach
-    fun setUp() {
-        Dispatchers.setMain(testDispatcher)
-    }
-
-    @AfterEach
-    fun tearDown() {
-        Dispatchers.resetMain()
-    }
-
-    @Test
-    fun `load product exposes content state`() = runTest {
-        repository.product = Product(id = "1", name = "Phone")
-        val viewModel = ProductViewModel(repository)
-
-        viewModel.load("1")
-        advanceUntilIdle()
-
-        assertEquals(
-            ProductUiState.Content("Phone"),
-            viewModel.uiState.value
-        )
-    }
-}
-</code></pre>
-<p>Не зловживайте mocks для простих repositories, де fake був би стабільніший.</p>
-<hr/>
-<h2 id="coroutines-and-concurrency-підсумок">Coroutines and Concurrency — підсумок<a aria-label="Посилання на розділ: Coroutines and Concurrency — підсумок" class="heading-anchor" href="#coroutines-and-concurrency-підсумок">#</a></h2>
-<p>На Senior Android interview Coroutines — одна з найважливіших тем. Недостатньо сказати “launch запускає, async повертає результат”. Треба пояснити structured concurrency, lifecycle ownership, cancellation, exception propagation, partial failure, dispatcher strategy і testing. Найсильніша відповідь завжди прив’язує concurrency design до business semantics.</p>
 </div></details><details class="major-section" data-key="networking" data-title="Networking" id="networking" open=""><summary class="major-summary"><span class="major-title">Networking</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
 <p><strong>Детальніше:</strong> <a href="#android-networking-fundamentals">Android networking fundamentals</a>, <a href="#authentication-token-refresh-android-mobile-security">Authentication, token refresh та Android mobile security</a>, <a href="#offline-first-architecture-paging-3">Offline-first architecture і Paging 3</a>.</p>
 <p>Retrofit (declarative API layer) vs OkHttp (transport), interceptors, timeouts, HTTP cache, error taxonomy, idempotent retry, offset/cursor pagination, single-flight token refresh і loading states розібрані в етапах вище. Тут — лише доповнення:</p>
@@ -8967,7 +8952,7 @@ try {
 <li><code>viewModelScope</code> owns screen or business work that should survive configuration changes and is cancelled when the ViewModel is cleared. A repository exposes main-safe suspend APIs; it must not smuggle UI work into <code>GlobalScope</code>.</li>
 <li><code>lifecycleScope</code> is cancelled when its <code>Lifecycle</code> is destroyed. For Fragment View UI, use <code>viewLifecycleOwner.lifecycleScope</code>, not the Fragment lifetime for stale bindings.</li>
 <li><code>repeatOnLifecycle(STARTED)</code> suspends its caller, launches the block while at least STARTED, cancels that block below STARTED, and restarts it on re-entry. Launch independent collectors as children in the block; sequential <code>collect</code> calls do not run concurrently.</li>
-<li>A real application scope can be injected for app-lifetime work, but it needs a documented owner, shutdown, and error policy. Avoid <code>GlobalScope</code> and per-call <code>CoroutineScope(...)</code>, which hide cancellation and outlive the caller.</li>
+<li>A real application scope can be injected for explicitly designed app-lifetime work (analytics queues, session observers, shared socket managers), but it needs a documented owner, shutdown, and error policy: injected, observable, and cancellable when appropriate. Avoid <code>GlobalScope</code> and per-call <code>CoroutineScope(...)</code>, which hide cancellation and outlive the caller.</li>
 </ul>
 
 <h3 id="en-stage7-bridging">Callback bridging, runBlocking, and context propagation<a aria-label="Link to section: Callback bridging runBlocking and context propagation" class="heading-anchor" href="#en-stage7-bridging">#</a></h3>
@@ -9042,6 +9027,10 @@ suspend fun awaitSdk() = suspendCancellableCoroutine&lt;Result&gt; { c -&gt;
     sdk.start { c.resume(it) }              // no unregister; callback may fire twice
 }</code></pre>
 <p>Review questions: who owns the Job and where is shutdown; is <code>api.load</code> actually main-safe; why manually hop to Main instead of updating owned state; can inline <code>Main.immediate</code> cause reentrancy; what does cancellation do; does the callback have a single terminal protocol? Debug with <code>CoroutineName</code>, the IDE Coroutines view, <code>-Dkotlinx.coroutines.debug</code> in a non-production diagnostic run, job-tree or log correlation, and traces around the blocking call. Debug probes can expose suspended stacks, but they do not prove business ownership or exactly-once behavior.</p>
+
+<h2 id="en-stage7-practice-notes">Practice notes<a aria-label="Link to section: Practice notes" class="heading-anchor" href="#en-stage7-practice-notes">#</a></h2>
+<h3>Interview wording: structured concurrency</h3>
+<blockquote><p>“I design coroutine ownership explicitly. UI work belongs to <code>viewModelScope</code> or lifecycle scopes; domain suspend functions do not launch unowned background work. If a parent operation is cancelled, its children should normally be cancelled too.”</p></blockquote>
 
 <h2 id="en-stage7-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice Q and A" class="heading-anchor" href="#en-stage7-likely-qa">#</a></h2>
 <p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
@@ -9254,6 +9243,20 @@ suspend fun consume(session: Session) {
     advanceUntilIdle()
 }</code></pre>
 <p>Review should reject supervision of required work merely to “keep going”; a handler logs but does not recover; <code>async</code> needs observation; <code>runCatching</code> must preserve <code>CancellationException</code>; timeout cannot prove that commit did not happen; production dispatchers and time must be injected; and all test dispatchers must share a scheduler. Debug by naming the refresh, locating the first failed Job and cause, checking whether cancellation was remapped, and correlating the server operation ID before retrying.</p>
+
+<h2 id="en-stage8-practice-notes">Practice notes<a aria-label="Link to section: Practice notes" class="heading-anchor" href="#en-stage8-practice-notes">#</a></h2>
+<h3>Interview wording</h3>
+<p>Define owner, cancellation, and failure semantics before choosing an API. Use <code>coroutineScope</code> when child tasks are one all-or-nothing operation; use <code>supervisorScope</code> when children can fail independently.</p>
+<h3>All-or-nothing parallel load</h3>
+<pre><code class="language-kotlin">suspend fun loadCheckoutScreen(
+    cartRepository: CartRepository,
+    paymentRepository: PaymentRepository
+): CheckoutData = coroutineScope {
+    val cart = async { cartRepository.getCart() }
+    val methods = async { paymentRepository.getPaymentMethods() }
+    CheckoutData(cart.await(), methods.await())
+}
+</code></pre>
 
 <h2 id="en-stage8-likely-qa">10 likely practice Q&amp;A<a aria-label="Link to section: 10 likely practice Q and A" class="heading-anchor" href="#en-stage8-likely-qa">#</a></h2>
 <p><em>These are likely practice questions, not a confirmed or guaranteed interview list.</em></p>
@@ -12497,11 +12500,6 @@ Result (verified metrics only) → learning/revisit trigger
 <h2 id="en-stage32-sources">References (principles, not guarantees)</h2><ul><li><strong>Primary engineering-practice source:</strong> <a href="https://google.github.io/eng-practices/review/">Google Engineering Practices — Code Review</a>, including <a href="https://google.github.io/eng-practices/review/reviewer/standard.html">review standard</a>, <a href="https://google.github.io/eng-practices/review/reviewer/looking-for.html">what to look for</a>, <a href="https://google.github.io/eng-practices/review/reviewer/speed.html">speed</a>, and <a href="https://google.github.io/eng-practices/review/developer/">author guidance</a>. These are Google practices, useful principles rather than universal policy.</li><li><strong>Primary reliability sources:</strong> Google SRE, <a href="https://sre.google/sre-book/managing-incidents/">Managing Incidents</a>, <a href="https://sre.google/workbook/postmortem-culture/">Postmortem Culture</a>, and <a href="https://sre.google/sre-book/embracing-risk/">Embracing Risk</a>. Adapt roles and risk policy to the organization.</li><li><strong>Primary Android context:</strong> <a href="https://developer.android.com/topic/architecture">Android Developers — Guide to app architecture</a> and <a href="https://developer.android.com/topic/architecture/recommendations">architecture recommendations</a>. These inform technical boundaries; they do not define career levels.</li><li><strong>ADR source:</strong> Michael Nygard’s lightweight ADR template, preserved by <a href="https://architecture-decision-record.github.io/templates/decision-record-template-by-michael-nygard/">Architecture Decision Record</a>; see also <a href="https://martinfowler.com/bliki/ArchitectureDecisionRecord.html">Martin Fowler’s contextual overview</a>. A record improves traceability, not decision correctness.</li><li><strong>Contextual team-research source:</strong> <a href="https://rework.withgoogle.com/intl/en/guides/understand-team-effectiveness">Google re:Work — team effectiveness</a>. Findings are contextual and are not a guarantee for every team.</li></ul>
 </div></details>
 
-<details class="major-section" data-key="coroutines-and-concurrency" data-title="Coroutines and Concurrency" id="en-coroutines-and-concurrency" open=""><summary class="major-summary"><span class="major-title">Coroutines and Concurrency</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
-<p><strong>More detail:</strong> <a href="#en-kotlin-coroutines-foundations-internals">Kotlin Coroutines: foundations and internals</a> (ownership, Job tree, launch/async, dispatchers and withContext, cancellation) and <a href="#en-kotlin-coroutines-failures-supervision-testing">Kotlin Coroutines: failures, supervision, cleanup, testing, and debugging</a> (coroutineScope vs supervisorScope, exception propagation, CoroutineExceptionHandler, preserving CancellationException, test dispatchers). Only the short interview wording is kept here.</p>
-<h2 id="en-structured-concurrency">Structured concurrency<a aria-label="Link to section: Structured concurrency" class="heading-anchor" href="#en-structured-concurrency">#</a></h2>
-<h3 id="en-interview-wording-5">Interview wording<a aria-label="Link to section: Interview wording" class="heading-anchor" href="#en-interview-wording-5">#</a></h3>
-<p>“I design coroutine ownership explicitly. UI work belongs to <code>viewModelScope</code> or lifecycle scopes; domain suspend functions do not launch unowned background work. If a parent operation is cancelled, its children should normally be cancelled too.”</p>
 </div></details><details class="major-section" data-key="networking" data-title="Networking" id="en-networking" open=""><summary class="major-summary"><span class="major-title">Networking</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
 <p><strong>More detail:</strong> <a href="#en-android-networking-fundamentals">Android networking fundamentals</a>, <a href="#en-authentication-token-refresh-android-mobile-security">Authentication, token refresh, and Android mobile security</a>, <a href="#en-offline-first-architecture-paging-3">Offline-first architecture and Paging 3</a>, <a href="#en-networking-data-senior">Networking and Data: Senior deep dive</a> (typed <code>NetworkError</code>).</p>
 <p>Retrofit vs OkHttp, interceptors, token refresh, error taxonomy, pagination and retry policy are covered in the stages above. Additions only:</p>
