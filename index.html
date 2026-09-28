@@ -738,7 +738,6 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <li><a data-target="variance" href="#variance">Variance: in, out, star</a></li>
 <li><a data-target="equals-hashcode-pitfalls" href="#equals-hashcode-pitfalls">equals/hashCode і data class</a></li>
 <li><a data-target="java-interop" href="#java-interop">Java interoperability</a></li>
-<li><a data-target="jvm-android-runtime" href="#jvm-android-runtime">JVM vs ART</a></li>
 </ol>
 </li>
 <li class="toc-major">
@@ -936,9 +935,7 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <ol class="toc-children">
 <li><a data-target="en-val-vs-var-and-immutability" href="#en-val-vs-var-and-immutability">val vs var and immutability</a></li>
 <li><a data-target="en-nullability-lateinit-and-lazy" href="#en-nullability-lateinit-and-lazy">Nullability, lateinit , and lazy</a></li>
-<li><a data-target="en-data-classes-and-sealed-classes-interfaces" href="#en-data-classes-and-sealed-classes-interfaces">Data classes and sealed classes/interfaces</a></li>
 <li><a data-target="en-inline-reified-higher-order-functions-and-extensions" href="#en-inline-reified-higher-order-functions-and-extensions">Inline, reified, higher-order functions, and extensions</a></li>
-<li><a data-target="en-generics-and-variance" href="#en-generics-and-variance">Generics and variance</a></li>
 </ol>
 </li>
 <li class="toc-major">
@@ -1065,7 +1062,6 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <li><a data-target="en-variance" href="#en-variance">Variance: in, out, star</a></li>
 <li><a data-target="en-equals-hashcode-pitfalls" href="#en-equals-hashcode-pitfalls">equals/hashCode pitfalls</a></li>
 <li><a data-target="en-java-interop" href="#en-java-interop">Java interoperability</a></li>
-<li><a data-target="en-jvm-android-runtime" href="#en-jvm-android-runtime">JVM vs ART</a></li>
 </ol>
 </li>
 <li class="toc-major">
@@ -6360,53 +6356,17 @@ Result (only verified metrics) → learning/revisit trigger
 </div></details>
 
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<p><strong>Детальніше:</strong> <a href="#kotlin-type-system-state-modeling">Kotlin: система типів і моделювання стану</a>, <a href="#advanced-kotlin-jvm">Advanced Kotlin/JVM для Senior Android</a>, <a href="#kotlin-hot-flows-ui-state-events">StateFlow, SharedFlow, Channel та Android UI state/events</a>. Нижче лишено тільки Android-практичні доповнення, яких немає в цих етапах.</p>
 <h2 id="val-vs-var-immutability">val vs var, immutability<a aria-label="Посилання на розділ: val vs var, immutability" class="heading-anchor" href="#val-vs-var-immutability">#</a></h2>
-<h3 id="питання-8">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-8">#</a></h3>
-<p>Чим <code>val</code> відрізняється від <code>var</code> і чому immutability важлива?</p>
-<h3 id="коротка-відповідь-8">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-8">#</a></h3>
-<p><code>val</code> — read-only reference, <code>var</code> — mutable reference. Immutability зменшує side effects, race conditions, bugs у UI state і робить code predictable. Для Android це особливо важливо у ViewModel, Compose і Flow.</p>
-<h3 id="senior-level-пояснення-8">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-8">#</a></h3>
-<p><code>val</code> не завжди означає immutable object. Якщо <code>val list = mutableListOf()</code> — reference read-only, але content mutable. Senior candidate має розрізняти shallow immutability і deep immutability.</p>
-<p>У production UI state краще моделювати immutable data classes:</p>
-<pre><code class="language-kotlin">data class CheckoutUiState(
-    val isLoading: Boolean = false,
-    val items: List&lt;CartItemUiModel&gt; = emptyList(),
-    val errorMessage: String? = null
-)
-</code></pre>
-<p>Це дає:</p>
-<ul>
-<li>predictable state transitions;</li>
-<li>прості ViewModel tests;</li>
-<li>коректну роботу Compose recomposition;</li>
-<li>менше hidden mutations.</li>
-</ul>
-<h3 id="типові-помилки-8">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-8">#</a></h3>
-<ul>
-<li>Використовувати mutable list у UI state.</li>
-<li>Експозити <code>MutableStateFlow</code> назовні.</li>
-<li>Міняти object in-place і очікувати recomposition.</li>
-<li>Вважати <code>val</code> повною immutable гарантією.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-8">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-8">#</a></h3>
-<blockquote>
-<p>Я за замовчуванням використовую <code>val</code> і immutable UI state. Це не тільки стиль Kotlin, а спосіб зменшити side effects. У ViewModel я тримаю <code>MutableStateFlow</code> приватним, а назовні віддаю <code>StateFlow</code>, щоб state змінювався тільки через контрольовані reducer/event functions.</p>
-</blockquote>
+<p>Shallow vs deep immutability, shallow <code>copy()</code>, read-only <code>List</code> і приватний <code>MutableStateFlow</code> з публічним <code>asStateFlow()</code> — у етапах вище. Практичний підсумок для співбесіди: <code>val</code> та immutable UI state за замовчуванням — не лише стиль Kotlin, а спосіб зменшити side effects. Це дає predictable state transitions, прості ViewModel tests, коректну роботу Compose recomposition і менше hidden mutations; state змінюється лише через контрольовані reducer/event functions ViewModel.</p>
 <hr/>
 <h2 id="nullable-types-lateinit-vs-lazy">Nullable types, lateinit vs lazy<a aria-label="Посилання на розділ: Nullable types, lateinit vs lazy" class="heading-anchor" href="#nullable-types-lateinit-vs-lazy">#</a></h2>
-<h3 id="питання-9">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-9">#</a></h3>
-<p>Як працює null-safety у Kotlin і коли використовувати <code>lateinit</code> або <code>lazy</code>?</p>
-<h3 id="коротка-відповідь-9">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-9">#</a></h3>
-<p>Kotlin робить nullability частиною type system: <code>String</code> не може бути null, <code>String?</code> може. <code>lateinit</code> дозволяє відкласти ініціалізацію non-null <code>var</code>, а <code>lazy</code> створює значення при першому доступі.</p>
-<h3 id="senior-level-пояснення-9">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-9">#</a></h3>
-<p><code>lateinit</code> підходить для dependency або binding, які точно будуть ініціалізовані перед використанням, але не в constructor. У modern Android з DI його стало менше. <code>lazy</code> підходить для expensive object або computed value, який може не знадобитися.</p>
-<p>Risks:</p>
+<p>Null-safety, <code>!!</code>, platform types і <code>UninitializedPropertyAccessException</code> — у Stage 2. Практичні правила вибору:</p>
 <ul>
-<li><code>lateinit</code> може кинути <code>UninitializedPropertyAccessException</code>.</li>
-<li><code>lazy</code> за замовчуванням synchronized, що може бути зайвим.</li>
+<li><code>lateinit</code> — для dependency або binding, які точно будуть ініціалізовані перед використанням, але не в constructor. У modern Android з DI його стало менше; не зловживайте ним для всього. Типова помилка — тримати Fragment binding як <code>lateinit</code> і не очищати.</li>
+<li><code>lazy</code> — для expensive object або computed value, який може не знадобитися; за замовчуванням synchronized, що може бути зайвим.</li>
 <li>Nullable property іноді краще, якщо lifecycle справді допускає null.</li>
 </ul>
-<h3 id="production-приклад-6">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-6">#</a></h3>
 <pre><code class="language-kotlin">class UserSessionStore @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
@@ -6415,141 +6375,30 @@ Result (only verified metrics) → learning/revisit trigger
     }
 }
 </code></pre>
-<h3 id="типові-помилки-9">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-9">#</a></h3>
-<ul>
-<li>Використовувати <code>!!</code> замість modeling nullable state.</li>
-<li>Зловживати <code>lateinit</code> для всього.</li>
-<li>Тримати Fragment binding як <code>lateinit</code> і не очищати.</li>
-<li>Використовувати nullable type там, де краще sealed state.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-9">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-9">#</a></h3>
-<blockquote>
-<p>Null-safety у Kotlin змушує явно моделювати відсутність значення. Я уникаю <code>!!</code>, бо це переносить crash у runtime. <code>lateinit</code> використовую тільки коли lifecycle гарантує ініціалізацію до доступу, а <code>lazy</code> — для відкладеного створення. Для UI краще моделювати стани через sealed class/data class, а не nullable-поля без семантики.</p>
-</blockquote>
 <hr/>
 <h2 id="data-class-sealed-class-interface">data class, sealed class/interface<a aria-label="Посилання на розділ: data class, sealed class/interface" class="heading-anchor" href="#data-class-sealed-class-interface">#</a></h2>
-<h3 id="питання-10">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-10">#</a></h3>
-<p>Коли використовувати <code>data class</code>, <code>sealed class</code> або <code>sealed interface</code>?</p>
-<h3 id="коротка-відповідь-10">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-10">#</a></h3>
-<p><code>data class</code> — для immutable value objects. <code>sealed class/interface</code> — для закритої ієрархії станів або подій, коли всі варіанти відомі на compile-time.</p>
-<h3 id="senior-level-пояснення-10">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-10">#</a></h3>
-<p>У Android sealed types дуже корисні для UI state, result modeling, navigation events, domain errors. Вони роблять impossible states менш імовірними.</p>
-<p>Погано:</p>
-<pre><code class="language-kotlin">data class UiState(
-    val isLoading: Boolean,
-    val data: Product?,
-    val error: Throwable?
-)
-</code></pre>
-<p>Це дозволяє некоректний стан: <code>isLoading=true</code>, <code>data!=null</code>, <code>error!=null</code> одночасно.</p>
-<p>Краще:</p>
-<pre><code class="language-kotlin">sealed interface ProductUiState {
-    data object Loading : ProductUiState
-    data class Content(val product: ProductUiModel) : ProductUiState
-    data class Error(val message: String) : ProductUiState
-}
-</code></pre>
-<h3 id="типові-помилки-10">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-10">#</a></h3>
-<ul>
-<li>Моделювати взаємовиключні стани nullable-полями.</li>
-<li>Робити sealed hierarchy занадто granular без потреби.</li>
-<li>Використовувати DTO як UI model.</li>
-<li>Класти exception напряму в UI state.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-10">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-10">#</a></h3>
-<blockquote>
-<p>Я використовую data class для value/state objects, а sealed types — коли хочу явно обмежити можливі стани. Це покращує readability, тестованість і зменшує invalid state combinations. Особливо це корисно для UI state, network result і domain errors.</p>
-</blockquote>
+<p>Data class vs sealed/enum, invalid state combinations і exhaustive <code>when</code> — у Stage 2. Додатково: у Android sealed types корисні не лише для UI state, а й для result modeling, navigation events і domain errors. Типові помилки: робити sealed hierarchy занадто granular без потреби; використовувати DTO як UI model; класти exception напряму в UI state.</p>
 <hr/>
 <h2 id="object-companion-object-constants">object, companion object, constants<a aria-label="Посилання на розділ: object, companion object, constants" class="heading-anchor" href="#object-companion-object-constants">#</a></h2>
-<h3 id="питання-11">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-11">#</a></h3>
-<p>Чим <code>object</code> відрізняється від <code>companion object</code>?</p>
-<h3 id="коротка-відповідь-11">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-11">#</a></h3>
-<p><code>object</code> створює singleton. <code>companion object</code> — object, пов’язаний із класом і доступний через ім’я класу, схожий на static members, але не те саме, що Java static.</p>
-<h3 id="senior-level-пояснення-11">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-11">#</a></h3>
-<p><code>object</code> корисний для stateless utilities або constants, але не варто перетворювати його на global service locator. Singleton зі state може створити hidden coupling, складність тестування і lifecycle issues.</p>
-<p>DI-managed singleton краще, ніж naked global object, якщо клас має dependencies або state.</p>
-<h3 id="типові-помилки-11">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-11">#</a></h3>
-<ul>
-<li>Класти mutable global state в <code>object</code>.</li>
-<li>Використовувати companion як dumping ground для constants.</li>
-<li>Ускладнювати тестування через hardcoded singleton.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-11">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-11">#</a></h3>
-<blockquote>
-<p><code>object</code> — це мовний singleton, але я використовую його обережно. Якщо сутність має dependencies, side effects або state, краще віддати її DI container-у. Companion object підходить для factory methods, constants або Java interop, але не має ставати глобальним контейнером логіки.</p>
-</blockquote>
+<p><code>object</code> створює singleton. <code>companion object</code> — object, пов’язаний із класом і доступний через ім’я класу; схожий на static members, але не те саме, що Java static.</p>
+<p><code>object</code> корисний для stateless utilities або constants, але не варто перетворювати його на global service locator: singleton зі state створює hidden coupling, складність тестування і lifecycle issues. Якщо сутність має dependencies, side effects або state, DI-managed singleton кращий за naked global object. Companion object підходить для factory methods, constants або Java interop, але не має ставати глобальним контейнером логіки.</p>
+<p>Типові помилки: класти mutable global state в <code>object</code>; використовувати companion як dumping ground для constants; ускладнювати тестування через hardcoded singleton.</p>
 <hr/>
 <h2 id="inline-reified-higher-order-functions-extension-functions">inline, reified, higher-order functions, extension functions<a aria-label="Посилання на розділ: inline, reified, higher-order functions, extension functions" class="heading-anchor" href="#inline-reified-higher-order-functions-extension-functions">#</a></h2>
-<h3 id="питання-12">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-12">#</a></h3>
-<p>Для чого потрібні <code>inline</code> functions і <code>reified</code> type parameters?</p>
-<h3 id="коротка-відповідь-12">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-12">#</a></h3>
-<p><code>inline</code> просить compiler вставити тіло функції в місце виклику, що зменшує overhead lambdas і дозволяє <code>reified</code> type parameters. <code>reified</code> дає доступ до generic type у runtime всередині inline function.</p>
-<h3 id="senior-level-пояснення-12">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-12">#</a></h3>
-<p><code>inline</code> корисний для маленьких higher-order functions, performance-sensitive DSLs, type-safe APIs. Але зловживання inline збільшує bytecode size. <code>reified</code> часто використовується для type-safe navigation, JSON parsing helpers, DI helpers.</p>
-<h3 id="production-приклад-7">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-7">#</a></h3>
+<p>Механіка <code>inline</code>/<code>reified</code>, bytecode size і ABI — у Stage 3. Inline — інструмент, а не default: маленькі higher-order functions, performance-sensitive DSLs, type-safe APIs. Надмірний inline також ускладнює stack traces. <code>reified</code> часто використовують для type-safe navigation, JSON parsing helpers, DI helpers:</p>
 <pre><code class="language-kotlin">inline fun &lt;reified T : Any&gt; SavedStateHandle.requireArg(key: String): T {
     return requireNotNull(get&lt;T&gt;(key)) {
         "Missing required argument: $key of type ${T::class.simpleName}"
     }
 }
 </code></pre>
-<h3 id="типові-помилки-12">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-12">#</a></h3>
-<ul>
-<li>Додавати <code>inline</code> всюди.</li>
-<li>Не розуміти, що <code>reified</code> працює тільки з inline.</li>
-<li>Робити extension function з business logic, яка приховує dependencies.</li>
-<li>Зловживати scope functions і погіршувати readability.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-12">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-12">#</a></h3>
-<blockquote>
-<p>Inline — це інструмент, а не default. Я використовую його, коли є реальна причина: lambda overhead, DSL або reified type. Але уникаю надмірного inline, бо це може збільшити bytecode і ускладнити stack traces.</p>
-</blockquote>
+<p>Типові помилки: робити extension function з business logic, яка приховує dependencies; зловживати scope functions і погіршувати readability.</p>
 <hr/>
 <h2 id="generics-variance-delegation">Generics, variance, delegation<a aria-label="Посилання на розділ: Generics, variance, delegation" class="heading-anchor" href="#generics-variance-delegation">#</a></h2>
-<h3 id="питання-13">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-13">#</a></h3>
-<p>Що таке covariance/contravariance у Kotlin?</p>
-<h3 id="коротка-відповідь-13">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-13">#</a></h3>
-<p>Variance описує, як generic types поводяться при subtype relationships. <code>out T</code> означає producer/covariant, <code>in T</code> — consumer/contravariant. Просте правило: producer — out, consumer — in.</p>
-<h3 id="senior-level-пояснення-13">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-13">#</a></h3>
-<p>У Android це часто зустрічається в API дизайні: listeners, mappers, use cases, repositories, adapters. Variance дозволяє створювати type-safe і flexible abstractions без unsafe casts.</p>
-<pre><code class="language-kotlin">interface Mapper&lt;in I, out O&gt; {
-    fun map(input: I): O
-}
-</code></pre>
-<p><code>I</code> тільки споживається, тому <code>in</code>. <code>O</code> тільки повертається, тому <code>out</code>.</p>
-<h3 id="типові-помилки-13">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-13">#</a></h3>
-<ul>
-<li>Не розуміти PECS/producer-consumer.</li>
-<li>Використовувати <code>Any</code> і casts замість variance.</li>
-<li>Створювати надто generic APIs без практичної потреби.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-13">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-13">#</a></h3>
-<blockquote>
-<p>Я пояснюю variance через producer/consumer. Якщо generic type тільки повертається — <code>out</code>, якщо тільки приймається — <code>in</code>. Це корисно для API дизайну, де ми хочемо type safety без зайвих casts.</p>
-</blockquote>
+<p>Variance (producer — <code>out</code>, consumer — <code>in</code>), projections і mapper/codec приклади — у Stage 2 і Stage 3. В Android variance найчастіше потрібна в API дизайні: listeners, mappers, use cases, repositories, adapters. Не створюйте надто generic APIs без практичної потреби.</p>
 <hr/>
 <h2 id="kotlin-collections">Kotlin collections<a aria-label="Посилання на розділ: Kotlin collections" class="heading-anchor" href="#kotlin-collections">#</a></h2>
-<h3 id="питання-14">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-14">#</a></h3>
-<p>Чим Kotlin <code>List</code> відрізняється від <code>MutableList</code>?</p>
-<h3 id="коротка-відповідь-14">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-14">#</a></h3>
-<p><code>List</code> — read-only interface, <code>MutableList</code> дозволяє змінювати collection. Але read-only не гарантує deep immutability, бо underlying collection може бути mutable.</p>
-<h3 id="senior-level-пояснення-14">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-14">#</a></h3>
-<p>Для UI state краще віддавати <code>List&lt;T&gt;</code> і створювати новий list при зміні. Це важливо для DiffUtil, Compose і predictable rendering.</p>
-<pre><code class="language-kotlin">_state.update { current -&gt;
-    current.copy(items = current.items + newItem)
-}
-</code></pre>
-<h3 id="типові-помилки-14">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-14">#</a></h3>
-<ul>
-<li>Mutate in-place і чекати, що UI оновиться.</li>
-<li>Віддавати <code>MutableList</code> з repository/ViewModel.</li>
-<li>Робити heavy collection transformations на Main dispatcher.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-14">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-14">#</a></h3>
-<blockquote>
-<p>У public state я використовую read-only collections і immutable updates. Це зменшує side effects і робить UI rendering передбачуваним. Якщо трансформації важкі, виношу їх на Default dispatcher або в domain/data layer.</p>
-</blockquote>
+<p><code>List</code> vs <code>MutableList</code> і immutable updates — у Stage 2. Новий list при кожній зміні важливий також для DiffUtil. Heavy collection transformations не робіть на Main dispatcher — виносьте їх на Default dispatcher або в domain/data layer.</p>
 <hr/>
 <h2 id="kotlin-for-android-підсумок">Kotlin for Android — підсумок<a aria-label="Посилання на розділ: Kotlin for Android — підсумок" class="heading-anchor" href="#kotlin-for-android-підсумок">#</a></h2>
 <p>Kotlin на Senior-рівні — це не тільки syntax. Це спосіб моделювати state, errors, nullability, immutability і API boundaries. Найсильніші відповіді показують, як Kotlin features допомагають писати безпечний, тестований і підтримуваний Android-код.</p>
@@ -9359,18 +9208,17 @@ fun coldStartup() = benchmarkRule.measureRepeated(
 <p><strong>Staff/Lead: як ви проєктуєте політику дозволів на рівні продукту?</strong><br/>
 Принцип мінімізації: спершу шукаємо безпермішенні API (Photo Picker, SAF), потім contextual ask з rationale в момент цінності, метрика grant-rate по кожному дозволу в аналітиці, і явна деградація фіч при відмові. Це знижує і відтік на onboarding, і ризики при Play-ревью.</p>
 </div></details><details class="major-section" data-key="kotlin-jvm-internals" data-title="Kotlin/JVM Internals для Android-співбесід" id="kotlin-jvm-internals" open=""><summary class="major-summary"><span class="major-title">Kotlin/JVM Internals для Android-співбесід</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
-<p>Класичні Java-питання з банків нікуди не зникли — вони мутували в Kotlin-форму. Нижче — модернізовані версії того, що в старих списках виглядало як «equals/hashCode», «generics», «String immutable».</p>
+<p><strong>Детальніше:</strong> <a href="#advanced-kotlin-jvm">Advanced Kotlin/JVM для Senior Android</a>, <a href="#kotlin-type-system-state-modeling">Kotlin: система типів і моделювання стану</a>, <a href="#startup-rendering-performance">Startup and rendering performance</a> (D8/R8 → DEX → ART, Baseline/Cloud Profiles).</p>
+<p>Класичні Java-питання з банків нікуди не зникли — вони мутували в Kotlin-форму («equals/hashCode», «generics», «String immutable»). Нижче — лише доповнення до етапів вище.</p>
 
 <h2 id="inline-reified">inline, noinline, crossinline, reified<a aria-label="Посилання на розділ: inline reified" class="heading-anchor" href="#inline-reified">#</a></h2>
-<p><strong>Навіщо існує.</strong> Лямбда на JVM — це об'єкт; у гарячому шляху (колекційні оператори, builder-и) алокації об'єктів-функцій коштують. <code>inline</code> вбудовує і функцію, і тіло лямбди в місце виклику — прибирає function object для inlined lambda-параметрів у цьому call site (<code>noinline</code>/materialized лямбди та власний код тіла все ще можуть алокувати), плюс відкриває два унікальні механізми: non-local return з лямбди і <code>reified</code> type parameters (тип доступний у рантаймі без передачі <code>Class</code>, бо код вбудувався з конкретним типом).</p>
-<p><strong>Модифікатори.</strong> <code>noinline</code> — коли лямбду треба зберегти у змінну/передати далі (об'єкт таки створюється); <code>crossinline</code> — лямбда буде викликана з іншого контексту (інша лямбда, Runnable), тому non-local return заборонений, але інлайн зберігається.</p>
+<p>Механіка <code>inline</code>/<code>noinline</code>/<code>crossinline</code>/<code>reified</code>, non-local return і ABI-наслідки — у Stage 3. Правило для Senior-відповіді: інлайнити маленькі функції з лямбда-параметрами в гарячих шляхах (колекційні оператори, builder-и), а не «все для швидкості». Android-приклад reified-адаптера під API level:</p>
 <pre><code class="language-kotlin">inline fun &lt;reified T : Parcelable&gt; Bundle.parcelableCompat(key: String): T? =
     if (Build.VERSION.SDK_INT &gt;= 34) getParcelable(key, T::class.java) // 33 is buggy (b/232589966); or BundleCompat
     else @Suppress("DEPRECATION") getParcelable&lt;T&gt;(key)</code></pre>
-<p><strong>Trade-offs для Senior-відповіді:</strong> інлайн збільшує розмір байткоду (важливо для великих функцій), public inline у бібліотечному модулі вбудовує своє тіло у код споживачів — зміна тіла вимагає перекомпіляції споживачів, це частина ABI. Тому інлайнити варто маленькі функції з лямбда-параметрами, а не «все для швидкості».</p>
 
 <h2 id="variance">Variance: in, out, star projection<a aria-label="Посилання на розділ: Variance" class="heading-anchor" href="#variance">#</a></h2>
-<p>Формула, яку очікують: <code>out T</code> — тип лише «віддає» T (producer), тому <code>List&lt;Dog&gt;</code> можна використати як <code>List&lt;Animal&gt;</code> (коваріантність); <code>in T</code> — тип лише «приймає» T (consumer), тому <code>Comparable&lt;Animal&gt;</code> підходить там, де чекають <code>Comparable&lt;Dog&gt;</code> (контраваріантність; а <code>Comparator</code> на JVM — інваріантний Java-тип, і <code>Comparator&lt;Animal&gt;</code> проходить у <code>sortedWith</code> лише завдяки use-site <code>Comparator&lt;in T&gt;</code>); <code>*</code> — «якийсь невідомий тип»: читати можна як <code>Any?</code>, писати не можна нічого конкретного.</p>
+<p>Формула <code>out</code>/<code>in</code>/<code>*</code> — у Stage 2/3. Додатковий приклад: <code>Comparable&lt;Animal&gt;</code> підходить там, де чекають <code>Comparable&lt;Dog&gt;</code> (контраваріантність; а <code>Comparator</code> на JVM — інваріантний Java-тип, і <code>Comparator&lt;Animal&gt;</code> проходить у <code>sortedWith</code> лише завдяки use-site <code>Comparator&lt;in T&gt;</code>).</p>
 <pre><code class="language-kotlin">sealed interface UiEvent
 class EventBus&lt;in T : UiEvent&gt; { fun send(event: T) {} }      // consumer
 interface DataSource&lt;out T&gt; { suspend fun load(): List&lt;T&gt; }   // producer
@@ -9380,33 +9228,28 @@ val clicksBus: EventBus&lt;ClickEvent&gt; = analytics // ok: in-варіантн
 <p>Android-прив'язка, яка підіймає відповідь до Senior: <code>Flow&lt;out T&gt;</code> коваріантний — тому <code>Flow&lt;LoadedState&gt;</code> підставляється у <code>Flow&lt;UiState&gt;</code>; <code>Comparable</code>, <code>Continuation&lt;in T&gt;</code> — приклади зі stdlib. Use-site variance (<code>fun copy(from: Array&lt;out Item&gt;)</code>) — коли клас інваріантний, але конкретна функція використовує його лише як producer/consumer.</p>
 
 <h2 id="equals-hashcode-pitfalls">equals/hashCode і пастки data class<a aria-label="Посилання на розділ: equals hashCode" class="heading-anchor" href="#equals-hashcode-pitfalls">#</a></h2>
-<p>Контракт стандартний: рівні об'єкти зобов'язані мати рівний hashCode; hashCode стабільний, поки об'єкт не змінився. Сучасні пастки:</p>
+<p>Контракт стандартний: рівні об'єкти зобов'язані мати рівний hashCode; hashCode стабільний, поки об'єкт не змінився. Те, що equals/hashCode/copy data class бачать лише primary-constructor properties, — у Stage 2. Інші сучасні пастки:</p>
 <ul>
 <li><strong>Масиви у data class:</strong> <code>equals</code> для <code>Array</code> — порівняння за посиланням. Два data class з однаковим вмістом масиву нерівні → DiffUtil/StateFlow вважають їх «різними», UI мерехтить. Рішення: <code>List</code> замість <code>Array</code> або ручні equals/hashCode з <code>contentEquals</code>.</li>
 <li><strong>Mutable поля + HashSet/HashMap:</strong> об'єкт поклали в set, поле змінили — hashCode інший, об'єкт «зник» з set, хоча він там. Тому ключі і елементи set — тільки immutable.</li>
-<li><strong>data class з полями поза конструктором:</strong> у equals/hashCode/copy входять лише властивості primary constructor — поле, оголошене в тілі, ігнорується, що дивує при порівняннях.</li>
 <li><strong>copy() ламає інваріанти:</strong> до Kotlin 2.0.20 <code>copy()</code> був public навіть при private конструкторі, тож валідацію лише у фабриці можна було обійти. Тепер компілятор попереджає; позначте клас <code>@ConsistentCopyVisibility</code> (у майбутній language version це стане default/error). Валідація в <code>init</code> виконується завжди, бо <code>copy()</code> викликає конструктор.</li>
 <li><strong>Зв'язка з Compose/StateFlow:</strong> уся дедуплікація (StateFlow conflation, skip recomposition) стоїть на equals — некоректний equals означає або зайві оновлення, або пропущені.</li>
 </ul>
 
 <h2 id="java-interop">Java interoperability: де болить<a aria-label="Посилання на розділ: Java interop" class="heading-anchor" href="#java-interop">#</a></h2>
+<p>Platform types, SAM conversion, <code>@JvmOverloads</code>/<code>@JvmStatic</code>/<code>@JvmField</code> і value-class mangling — у Stage 2/3. Додатково:</p>
 <ul>
-<li><strong>Platform types (<code>String!</code>):</strong> значення з Java без анотацій nullability — компілятор не перевіряє, NPE прилітає у рантаймі в несподіваному місці. Практика: на кордоні з Java-SDK одразу фіксувати тип явно (<code>val name: String?</code>) і нормалізувати.</li>
 <li><strong>Checked exceptions:</strong> Kotlin їх не оголошує; Java-код, що кличе Kotlin, не змушений ловити. Для публічного API, який споживає Java, — <code>@Throws</code>.</li>
-<li><strong>Default-параметри:</strong> з Java видно лише повну сигнатуру; <code>@JvmOverloads</code> генерує перевантаження (класика — кастомні View з трьома конструкторами).</li>
+<li><strong>Default-параметри:</strong> класичний кейс <code>@JvmOverloads</code> — кастомні View з трьома конструкторами.</li>
 <li><strong>companion object:</strong> з Java — <code>Companion.foo()</code>, якщо не <code>@JvmStatic</code>; константи — <code>@JvmField</code> або <code>const val</code>.</li>
-<li><strong>SAM-конверсія</strong> працює для Java-інтерфейсів і Kotlin <code>fun interface</code> — у legacy-кодовій базі це головний клей між світами.</li>
 <li><strong>Корутини з Java не викликаються</strong> безпосередньо (suspend має прихований Continuation-параметр) — на кордон даються звичайні колбеки/CompletableFuture або Flow→LiveData адаптери.</li>
 </ul>
 
-<h2 id="jvm-android-runtime">JVM vs ART: що варто сказати<a aria-label="Посилання на розділ: JVM vs ART" class="heading-anchor" href="#jvm-android-runtime">#</a></h2>
-<p>Старе питання «Dalvik vs ART» сьогодні звучить так: Kotlin компілюється у JVM-байткод, D8 переводить його в DEX, R8 поверх цього робить shrinking/obfuscation/optimization. ART виконує DEX через мікс інтерпретації, JIT і profile-guided AOT: гарячі шляхи компілюються за профілем (локальним і cloud profiles з Play). Baseline Profiles — спосіб «підказати» цей профіль одразу при встановленні. Це пов'язує внутрішності рантайму з практичним питанням стартап-перформансу — саме такий місток і очікують від Senior.</p>
-
 <h3 id="kotlin-internals-follow-up">Follow-up питання за рівнями<a aria-label="Посилання на розділ: Kotlin internals follow-up" class="heading-anchor" href="#kotlin-internals-follow-up">#</a></h3>
 <p><strong>Middle+: чому не можна зробити reified без inline?</strong><br/>
-Через type erasure: у скомпільованому методі тип-параметр стертий, у рантаймі його не існує. Inline копіює тіло функції в місце виклику, де конкретний тип відомий компілятору, тож <code>T::class</code> підставляється статично. Без інлайну довелось би передавати <code>Class&lt;T&gt;</code> вручну — що ми і робимо в Java.</p>
+Через type erasure (див. Stage 2/3). Без інлайну довелось би передавати <code>Class&lt;T&gt;</code> вручну — що ми і робимо в Java.</p>
 <p><strong>Senior: value class — коли і навіщо?</strong><br/>
-Типобезпека без алокацій: <code>@JvmInline value class UserId(val raw: String)</code> у більшості місць компілюється в underlying String, але компілятор не дасть переплутати UserId з OrderId. Пастки: боксинг при використанні як nullable, generic або через інтерфейс; мангління імен методів для Java-interop. Використовую для доменних ідентифікаторів і одиниць виміру (Money, Percent) — дешевий захист від цілого класу багів.</p>
+Механіка, boxing і mangling — у Stage 2/3. Використовую для доменних ідентифікаторів і одиниць виміру (Money, Percent) — дешевий захист від цілого класу багів.</p>
 <p><strong>Staff/Lead: команда сперечається — використовувати inline-функції у спільному core-модулі чи ні. Ваш фреймворк рішення?</strong><br/>
 Зважую: виграш (алокації лямбд у гарячих шляхах, reified-зручність) проти вартості (binary compatibility — тіло вбудоване у споживачів, зміни вимагають рекомпіляції; зростання DEX). Для внутрішнього монорепо з одночасною збіркою — ок для дрібних утиліт; для модуля, що публікується як артефакт із незалежним версіюванням, — обережно, і явні правила в конвенціях коду. Рішення фіксую в ADR з критеріями, а не «як домовились усно».</p>
 </div></details><details class="major-section" data-key="networking-data-senior" data-title="Networking і Data: Senior deep dive" id="networking-data-senior" open=""><summary class="major-summary"><span class="major-title">Networking і Data: Senior deep dive</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
@@ -14570,52 +14413,17 @@ Result (verified metrics only) → learning/revisit trigger
 </div></details>
 
 <details class="major-section" data-key="kotlin-for-android" data-title="Kotlin for Android" id="en-kotlin-for-android" open=""><summary class="major-summary"><span class="major-title">Kotlin for Android</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
+<p><strong>More detail:</strong> <a href="#en-kotlin-type-system-state-modeling">Kotlin: type system and state modelling</a>, <a href="#en-advanced-kotlin-jvm">Advanced Kotlin/JVM for Senior Android</a>, <a href="#en-kotlin-hot-flows-ui-state-events">StateFlow, SharedFlow, Channel, and Android UI state/events</a>. Only Android-practical additions not covered there remain below.</p>
 <h2 id="en-val-vs-var-and-immutability"><code>val</code> vs <code>var</code> and immutability<a aria-label="Link to section: val vs var and immutability" class="heading-anchor" href="#en-val-vs-var-and-immutability">#</a></h2>
-<p><code>val</code> means the reference is read-only; it does not guarantee deep immutability. <code>var</code> means the reference can be reassigned. In Android UI state, immutability makes state predictable and easier to test.</p>
-<pre><code class="language-kotlin">data class CheckoutUiState(
-    val isLoading: Boolean = false,
-    val items: List&lt;CartItemUi&gt; = emptyList(),
-    val error: UiError? = null
-)
-</code></pre>
-<h3 id="en-senior-note">Senior note<a aria-label="Link to section: Senior note" class="heading-anchor" href="#en-senior-note">#</a></h3>
-<p>Mutable state should be owned by one component. ViewModel can own a private <code>MutableStateFlow</code>, while UI observes public <code>StateFlow</code>.</p>
-<pre><code class="language-kotlin">private val _uiState = MutableStateFlow(CheckoutUiState())
-val uiState: StateFlow&lt;CheckoutUiState&gt; = _uiState.asStateFlow()
-</code></pre>
+<p><code>val</code> vs deep immutability and immutable UI state are covered in Stage 2; exposing a private <code>MutableStateFlow</code> as <code>asStateFlow()</code> is covered in Stage 10. Rule of thumb: mutable state should be owned by one component — the ViewModel owns the mutable holder, the UI only observes.</p>
 <h2 id="en-nullability-lateinit-and-lazy">Nullability, <code>lateinit</code>, and <code>lazy</code><a aria-label="Link to section: Nullability, lateinit , and lazy" class="heading-anchor" href="#en-nullability-lateinit-and-lazy">#</a></h2>
-<p>Kotlin null-safety helps model absence explicitly. Avoid <code>!!</code> in production code unless you can prove an invariant and want a fail-fast crash.</p>
-<p><code>lateinit</code> is useful for properties initialized after constructor, mostly in tests or Android framework classes. <code>lazy</code> initializes a value on first access.</p>
-<h3 id="en-common-mistakes-5">Common mistakes<a aria-label="Link to section: Common mistakes" class="heading-anchor" href="#en-common-mistakes-5">#</a></h3>
-<ul>
-<li>Using <code>lateinit</code> to avoid proper constructor injection.</li>
-<li>Using <code>!!</code> instead of modeling nullable state.</li>
-<li>Exposing nullable values where sealed UI state would be clearer.</li>
-</ul>
-<h2 id="en-data-classes-and-sealed-classes-interfaces">Data classes and sealed classes/interfaces<a aria-label="Link to section: Data classes and sealed classes/interfaces" class="heading-anchor" href="#en-data-classes-and-sealed-classes-interfaces">#</a></h2>
-<p>Data classes are useful for immutable values and UI state. Sealed classes/interfaces model a closed hierarchy of states or events.</p>
-<pre><code class="language-kotlin">sealed interface PaymentState {
-    data object Idle : PaymentState
-    data object Loading : PaymentState
-    data class Requires3ds(val url: String) : PaymentState
-    data class Failed(val message: String) : PaymentState
-    data object Success : PaymentState
-}
-</code></pre>
-<h3 id="en-interview-wording-4">Interview wording<a aria-label="Link to section: Interview wording" class="heading-anchor" href="#en-interview-wording-4">#</a></h3>
-<p>“I use sealed hierarchies when the set of states is known and I want exhaustive <code>when</code>. It helps avoid boolean soup such as <code>isLoading</code>, <code>isError</code>, <code>isEmpty</code>, <code>isSuccess</code> conflicting with each other.”</p>
+<p>Avoid <code>!!</code> in production code unless you can prove an invariant and want a fail-fast crash. <code>lateinit</code> is mostly useful in tests or Android framework classes, for properties initialized after the constructor; do not use it to avoid proper constructor injection. <code>lazy</code> initializes a value on first access.</p>
 <h2 id="en-inline-reified-higher-order-functions-and-extensions">Inline, reified, higher-order functions, and extensions<a aria-label="Link to section: Inline, reified, higher-order functions, and extensions" class="heading-anchor" href="#en-inline-reified-higher-order-functions-and-extensions">#</a></h2>
-<p>Higher-order functions allow behavior to be passed as values. Inline can reduce allocation overhead for small lambdas and enables <code>reified</code> type parameters.</p>
+<p>Inline/reified mechanics are covered in Stage 3. A typical reified JSON helper:</p>
 <pre><code class="language-kotlin">inline fun &lt;reified T&gt; Json.decodeOrNull(json: String): T? =
     runCatching { decodeFromString&lt;T&gt;(json) }.getOrNull()
 </code></pre>
 <p>Extensions improve readability but should not hide complex behavior or create surprising APIs.</p>
-<h2 id="en-generics-and-variance">Generics and variance<a aria-label="Link to section: Generics and variance" class="heading-anchor" href="#en-generics-and-variance">#</a></h2>
-<p><code>out</code> means producer covariance; <code>in</code> means consumer contravariance. This is common in repositories, mappers, result wrappers, and UI abstractions.</p>
-<pre><code class="language-kotlin">interface Mapper&lt;in From, out To&gt; {
-    fun map(value: From): To
-}
-</code></pre>
 </div></details><details class="major-section" data-key="coroutines-and-concurrency" data-title="Coroutines and Concurrency" id="en-coroutines-and-concurrency" open=""><summary class="major-summary"><span class="major-title">Coroutines and Concurrency</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
 <p><strong>More detail:</strong> <a href="#en-kotlin-coroutines-foundations-internals">Kotlin Coroutines: foundations and internals</a> (ownership, Job tree, launch/async, dispatchers and withContext, cancellation) and <a href="#en-kotlin-coroutines-failures-supervision-testing">Kotlin Coroutines: failures, supervision, cleanup, testing, and debugging</a> (coroutineScope vs supervisorScope, exception propagation, CoroutineExceptionHandler, preserving CancellationException, test dispatchers). Only the short interview wording is kept here.</p>
 <h2 id="en-structured-concurrency">Structured concurrency<a aria-label="Link to section: Structured concurrency" class="heading-anchor" href="#en-structured-concurrency">#</a></h2>
@@ -15443,18 +15251,17 @@ The benchmark measures one device, a fixed state and usually TTID; vitals are a 
 <p><strong>Staff/Lead: how do you design a permissions policy at product level?</strong><br/>
 The minimization principle: prefer permissionless APIs first (Photo Picker, SAF), then contextual asks with rationale at the moment of value, a grant-rate metric per permission in analytics, and an explicit degraded mode per denial. This reduces onboarding drop-off and Play review risk at the same time.</p>
 </div></details><details class="major-section" data-key="kotlin-jvm-internals" data-title="Kotlin/JVM Internals for Android interviews" id="en-kotlin-jvm-internals" open=""><summary class="major-summary"><span class="major-title">Kotlin/JVM Internals for Android interviews</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
-<p>The classic Java question banks did not disappear — they mutated into Kotlin form. Below are modernized versions of what old lists called "equals/hashCode", "generics", "String immutability".</p>
+<p><strong>More detail:</strong> <a href="#en-advanced-kotlin-jvm">Advanced Kotlin/JVM for Senior Android</a>, <a href="#en-kotlin-type-system-state-modeling">Kotlin: type system and state modelling</a>, <a href="#en-startup-rendering-performance">Startup and rendering performance</a> (D8/R8 → DEX → ART, Baseline/Cloud Profiles).</p>
+<p>The classic Java question banks did not disappear — they mutated into Kotlin form ("equals/hashCode", "generics", "String immutability"). Below are only additions to the stages above.</p>
 
 <h2 id="en-inline-reified">inline, noinline, crossinline, reified<a aria-label="Link to section: inline reified" class="heading-anchor" href="#en-inline-reified">#</a></h2>
-<p><strong>Why it exists.</strong> A lambda on the JVM is an object; in hot paths (collection operators, builders) function-object allocations cost. <code>inline</code> embeds both the function and the lambda body at the call site — it removes the function object for inlined lambda parameters at that call site (<code>noinline</code> or materialised lambdas and the body's own code can still allocate) — and unlocks two unique mechanisms: non-local return from the lambda, and <code>reified</code> type parameters (the type is available at runtime without passing a <code>Class</code>, because the code was inlined with a concrete type).</p>
-<p><strong>Modifiers.</strong> <code>noinline</code> — when the lambda must be stored/passed on (an object is created after all); <code>crossinline</code> — the lambda will be invoked from another context (another lambda, a Runnable), so non-local return is banned but inlining is kept.</p>
+<p>The mechanics of <code>inline</code>/<code>noinline</code>/<code>crossinline</code>/<code>reified</code>, non-local returns and ABI consequences are in Stage 3. Rule for a Senior answer: inline small functions with lambda parameters on hot paths (collection operators, builders), not "everything for speed". An Android reified adapter across API levels:</p>
 <pre><code class="language-kotlin">inline fun &lt;reified T : Parcelable&gt; Bundle.parcelableCompat(key: String): T? =
     if (Build.VERSION.SDK_INT &gt;= 34) getParcelable(key, T::class.java) // 33 is buggy (b/232589966); or BundleCompat
     else @Suppress("DEPRECATION") getParcelable&lt;T&gt;(key)</code></pre>
-<p><strong>Trade-offs for a Senior answer:</strong> inlining grows bytecode (matters for large functions), and a public inline function in a library module embeds its body into consumers — changing the body requires recompiling consumers; it is part of the ABI. Inline small functions with lambda parameters, not "everything for speed".</p>
 
 <h2 id="en-variance">Variance: in, out, star projection<a aria-label="Link to section: Variance" class="heading-anchor" href="#en-variance">#</a></h2>
-<p>The expected formula: <code>out T</code> — the type only "produces" T, so <code>List&lt;Dog&gt;</code> can be used as <code>List&lt;Animal&gt;</code> (covariance); <code>in T</code> — the type only "consumes" T, so <code>Comparable&lt;Animal&gt;</code> fits where <code>Comparable&lt;Dog&gt;</code> is expected (contravariance; <code>Comparator</code> on the JVM is an invariant Java type, and <code>Comparator&lt;Animal&gt;</code> is accepted by <code>sortedWith</code> only thanks to the use-site <code>Comparator&lt;in T&gt;</code>); <code>*</code> — "some unknown type": read as <code>Any?</code>, write nothing concrete.</p>
+<p>The <code>out</code>/<code>in</code>/<code>*</code> formula is in Stages 2/3. Extra example: <code>Comparable&lt;Animal&gt;</code> fits where <code>Comparable&lt;Dog&gt;</code> is expected (contravariance; <code>Comparator</code> on the JVM is an invariant Java type, and <code>Comparator&lt;Animal&gt;</code> is accepted by <code>sortedWith</code> only thanks to the use-site <code>Comparator&lt;in T&gt;</code>).</p>
 <pre><code class="language-kotlin">sealed interface UiEvent
 class EventBus&lt;in T : UiEvent&gt; { fun send(event: T) {} }      // consumer
 interface DataSource&lt;out T&gt; { suspend fun load(): List&lt;T&gt; }   // producer
@@ -15464,32 +15271,28 @@ val clicksBus: EventBus&lt;ClickEvent&gt; = analytics // ok: in-variance</code><
 <p>The Android tie-in that lifts the answer to Senior: <code>Flow&lt;out T&gt;</code> is covariant — so <code>Flow&lt;LoadedState&gt;</code> substitutes for <code>Flow&lt;UiState&gt;</code>; <code>Comparable</code> and <code>Continuation&lt;in T&gt;</code> are stdlib examples. Use-site variance (<code>fun copy(from: Array&lt;out Item&gt;)</code>) is for invariant classes used by a specific function as producer/consumer only.</p>
 
 <h2 id="en-equals-hashcode-pitfalls">equals/hashCode and data class pitfalls<a aria-label="Link to section: equals hashCode" class="heading-anchor" href="#en-equals-hashcode-pitfalls">#</a></h2>
+<p>That generated equals/hashCode/copy see only primary-constructor properties is covered in Stage 2. Other pitfalls:</p>
 <ul>
 <li><strong>Arrays in data classes:</strong> <code>Array.equals</code> is referential. Two data classes with identical array content are unequal → DiffUtil/StateFlow treat them as "different", the UI flickers. Fix: <code>List</code> instead of <code>Array</code>, or manual equals/hashCode with <code>contentEquals</code>.</li>
 <li><strong>Mutable fields + HashSet/HashMap:</strong> put an object in a set, mutate a field — the hashCode changes and the object "vanishes" from the set while still being in it. Keys and set elements must be immutable.</li>
-<li><strong>Fields outside the constructor:</strong> equals/hashCode/copy include only primary-constructor properties — a property declared in the body is ignored, which surprises in comparisons.</li>
 <li><strong>copy() breaking invariants:</strong> before Kotlin 2.0.20, <code>copy()</code> was public even with a private constructor, so factory-only validation could be bypassed. The compiler now warns; annotate the class with <code>@ConsistentCopyVisibility</code> (this becomes the default/an error in a future language version). Validation in <code>init</code> always runs, because <code>copy()</code> calls the constructor.</li>
 <li><strong>The Compose/StateFlow link:</strong> all deduplication (StateFlow conflation, recomposition skipping) stands on equals — a broken equals means either redundant updates or missed ones.</li>
 </ul>
 
 <h2 id="en-java-interop">Java interoperability: where it hurts<a aria-label="Link to section: Java interop" class="heading-anchor" href="#en-java-interop">#</a></h2>
+<p>Platform types, SAM conversion, <code>@JvmOverloads</code>/<code>@JvmStatic</code>/<code>@JvmField</code> and value-class mangling are covered in Stages 2/3. In addition:</p>
 <ul>
-<li><strong>Platform types (<code>String!</code>):</strong> values from un-annotated Java skip compiler null checks — the NPE arrives at runtime in an unexpected place. Practice: pin the type explicitly at the Java boundary (<code>val name: String?</code>) and normalize.</li>
 <li><strong>Checked exceptions:</strong> Kotlin does not declare them; Java callers are not forced to catch. For a public API consumed from Java — <code>@Throws</code>.</li>
-<li><strong>Default parameters:</strong> Java sees only the full signature; <code>@JvmOverloads</code> generates overloads (the classic: custom Views with three constructors).</li>
+<li><strong>Default parameters:</strong> the classic <code>@JvmOverloads</code> case is custom Views with three constructors.</li>
 <li><strong>companion object:</strong> from Java it is <code>Companion.foo()</code> unless <code>@JvmStatic</code>; constants — <code>@JvmField</code> or <code>const val</code>.</li>
-<li><strong>SAM conversion</strong> works for Java interfaces and Kotlin <code>fun interface</code> — the main glue in legacy codebases.</li>
 <li><strong>Coroutines are not callable from Java</strong> directly (suspend has a hidden Continuation parameter) — expose callbacks/CompletableFuture or Flow→LiveData adapters at the boundary.</li>
 </ul>
 
-<h2 id="en-jvm-android-runtime">JVM vs ART: what to say<a aria-label="Link to section: JVM vs ART" class="heading-anchor" href="#en-jvm-android-runtime">#</a></h2>
-<p>The old "Dalvik vs ART" question now sounds like this: Kotlin compiles to JVM bytecode, D8 converts it to DEX, R8 layers shrinking/obfuscation/optimization on top. ART executes DEX via a mix of interpretation, JIT and profile-guided AOT: hot paths get compiled per profile (local plus cloud profiles from Play). Baseline Profiles are how you "seed" that profile at install time. This connects runtime internals to the practical question of startup performance — exactly the bridge expected from a Senior.</p>
-
 <h3 id="en-kotlin-internals-follow-up">Follow-up questions by level<a aria-label="Link to section: Kotlin internals follow-up" class="heading-anchor" href="#en-kotlin-internals-follow-up">#</a></h3>
 <p><strong>Middle+: why can't reified exist without inline?</strong><br/>
-Type erasure: in compiled code the type parameter is erased and does not exist at runtime. Inline copies the function body to the call site where the concrete type is known to the compiler, so <code>T::class</code> is substituted statically. Without inlining you would pass <code>Class&lt;T&gt;</code> by hand — which is exactly what Java does.</p>
+Type erasure (see Stages 2/3). Without inlining you would pass <code>Class&lt;T&gt;</code> by hand — which is exactly what Java does.</p>
 <p><strong>Senior: value classes — when and why?</strong><br/>
-Type safety without allocations: <code>@JvmInline value class UserId(val raw: String)</code> compiles to the underlying String in most positions, but the compiler will not let you confuse a UserId with an OrderId. Pitfalls: boxing when used as nullable, generic or behind an interface; name mangling for Java interop. I use them for domain identifiers and units (Money, Percent) — cheap protection against a whole class of bugs.</p>
+Mechanics, boxing and mangling are in Stages 2/3. I use them for domain identifiers and units (Money, Percent) — cheap protection against a whole class of bugs.</p>
 <p><strong>Staff/Lead: the team argues about inline functions in a shared core module. Your decision framework?</strong><br/>
 Weigh the gain (lambda allocations on hot paths, reified convenience) against the cost (binary compatibility — the body is embedded into consumers, changes force recompilation; DEX growth). Fine for small utilities in a monorepo built together; risky for an independently versioned published artifact. Either way the decision goes into an ADR with criteria, not verbal folklore.</p>
 </div></details><details class="major-section" data-key="networking-data-senior" data-title="Networking and Data: Senior deep dive" id="en-networking-data-senior" open=""><summary class="major-summary"><span class="major-title">Networking and Data: Senior deep dive</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
