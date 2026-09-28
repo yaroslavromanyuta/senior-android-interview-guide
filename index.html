@@ -1358,7 +1358,7 @@ onPause -&gt; onStop -&gt; onDestroyView -&gt; onDestroy -&gt; onDetach
 </blockquote>
 <h3 id="follow-up-питання-2">Follow-up питання<a aria-label="Посилання на розділ: Follow-up питання" class="heading-anchor" href="#follow-up-питання-2">#</a></h3>
 <p><strong>Чому не можна використовувати non-default constructor для Fragment?</strong><br/>
-Система перестворює Fragment рефлексією через default constructor (recreation, process death). Аргументи передаються через <code>arguments</code> Bundle або Navigation args — інакше краш при відновленні.</p>
+За замовчуванням <code>FragmentFactory</code> перестворює Fragment рефлексією через no-arg constructor (recreation, process death), тож без кастомної factory інший конструктор дасть краш при відновленні. Дані передаються через <code>arguments</code> Bundle або Navigation args; залежності з конструктора можливі лише через власну <code>FragmentFactory</code> (або Hilt field injection через <code>@AndroidEntryPoint</code>).</p>
 <p><strong>Що таке <code>viewLifecycleOwner</code>?</strong><br/>
 Lifecycle owner View-ієрархії Fragment-а — коротший за lifecycle самого Fragment (view вмирає в onDestroyView, інстанс живе у back stack). До нього прив'язуються колектори стейту і все, що тримає binding.</p>
 <p><strong>Коли викликається <code>onDestroyView</code>, але не <code>onDestroy</code>?</strong><br/>
