@@ -634,9 +634,6 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 <li class="toc-major">
 <a data-target="networking" href="#networking">Networking</a>
 <ol class="toc-children">
-<li><a data-target="retrofit-vs-okhttp" href="#retrofit-vs-okhttp">Retrofit vs OkHttp</a></li>
-<li><a data-target="interceptors-and-authentication" href="#interceptors-and-authentication">Interceptors and authentication</a></li>
-<li><a data-target="pagination-caching-retry-network-monitoring" href="#pagination-caching-retry-network-monitoring">Pagination, caching, retry, network monitoring</a></li>
 <li><a data-target="networking-підсумок" href="#networking-підсумок">Networking — підсумок</a></li>
 </ol>
 </li>
@@ -975,20 +972,9 @@ mark { background: #fff3a3; color: #111827; padding: 0 2px; border-radius: 4px; 
 </li>
 <li class="toc-major">
 <a data-target="en-networking" href="#en-networking">Networking</a>
-<ol class="toc-children">
-<li><a data-target="en-retrofit-and-okhttp" href="#en-retrofit-and-okhttp">Retrofit and OkHttp</a></li>
-<li><a data-target="en-interceptors-and-token-refresh" href="#en-interceptors-and-token-refresh">Interceptors and token refresh</a></li>
-<li><a data-target="en-error-handling" href="#en-error-handling">Error handling</a></li>
-<li><a data-target="en-pagination-caching-and-retry" href="#en-pagination-caching-and-retry">Pagination, caching, and retry</a></li>
-</ol>
 </li>
 <li class="toc-major">
 <a data-target="en-persistence" href="#en-persistence">Persistence</a>
-<ol class="toc-children">
-<li><a data-target="en-room-and-sqlite" href="#en-room-and-sqlite">Room and SQLite</a></li>
-<li><a data-target="en-datastore-vs-sharedpreferences" href="#en-datastore-vs-sharedpreferences">DataStore vs SharedPreferences</a></li>
-<li><a data-target="en-migrations" href="#en-migrations">Migrations</a></li>
-</ol>
 </li>
 <li class="toc-major">
 <a data-target="en-testing" href="#en-testing">Testing</a>
@@ -6959,164 +6945,23 @@ object NetworkModule {
 <p>DI на Senior-рівні — це про dependency ownership, lifecycle і testability. Hilt/Dagger не замінюють архітектуру; вони тільки будують object graph. Важливо пояснити scopes, context leaks, constructor injection, module boundaries і testing strategy.</p>
 <hr/>
 </div></details><details class="major-section" data-key="networking" data-title="Networking" id="networking" open=""><summary class="major-summary"><span class="major-title">Networking</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
-<h2 id="retrofit-vs-okhttp">Retrofit vs OkHttp<a aria-label="Посилання на розділ: Retrofit vs OkHttp" class="heading-anchor" href="#retrofit-vs-okhttp">#</a></h2>
-<h3 id="питання-47">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-47">#</a></h3>
-<p>Чим Retrofit відрізняється від OkHttp?</p>
-<h3 id="коротка-відповідь-36">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-36">#</a></h3>
-<p>OkHttp — HTTP client, який виконує network requests, connection pooling, interceptors, caching. Retrofit — type-safe abstraction над HTTP API, яка перетворює interface methods у HTTP calls і використовує OkHttp під капотом.</p>
-<h3 id="senior-level-пояснення-46">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-46">#</a></h3>
-<p>У production OkHttp відповідає за low-level concerns:</p>
+<p><strong>Детальніше:</strong> <a href="#android-networking-fundamentals">Android networking fundamentals</a>, <a href="#authentication-token-refresh-android-mobile-security">Authentication, token refresh та Android mobile security</a>, <a href="#offline-first-architecture-paging-3">Offline-first architecture і Paging 3</a>.</p>
+<p>Retrofit (declarative API layer) vs OkHttp (transport), interceptors, timeouts, HTTP cache, error taxonomy, idempotent retry, offset/cursor pagination, single-flight token refresh і loading states розібрані в етапах вище. Тут — лише доповнення:</p>
 <ul>
-<li>interceptors;</li>
-<li>authentication headers;</li>
-<li>logging;</li>
-<li>TLS/cert pinning;</li>
-<li>connection pooling;</li>
-<li>timeouts;</li>
-<li>cache;</li>
-<li>retry at transport level.</li>
+<li>DTO маплю на data/domain boundary: не повертати DTO чи Retrofit <code>Response</code> прямо в UI.</li>
+<li>Якщо refresh fail-иться (зокрема refresh token expired), auth layer очищає session і повідомляє app про logout/session expired: UI має отримати session-expired state, а не сирий 401.</li>
+<li>Page-based pagination простіша, але має edge cases.</li>
+<li>Cache strategy залежить від product: network-only; cache-first; network-bound resource; offline-first з DB як source of truth.</li>
 </ul>
-<p>Retrofit відповідає за API contract:</p>
-<ul>
-<li>endpoints;</li>
-<li>path/query/body annotations;</li>
-<li>converters;</li>
-<li>call adapters;</li>
-<li>suspend integration.</li>
-</ul>
-<h3 id="production-приклад-29">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-29">#</a></h3>
-<pre><code class="language-kotlin">interface OrdersApi {
-    @GET("orders")
-    suspend fun getOrders(
-        @Query("page") page: Int,
-        @Query("limit") limit: Int
-    ): OrdersResponseDto
-}
-</code></pre>
-<h3 id="типові-помилки-46">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-46">#</a></h3>
-<ul>
-<li>Обробляти domain errors в interceptor.</li>
-<li>Повертати DTO прямо в UI.</li>
-<li>Не мати timeout strategy.</li>
-<li>Логувати sensitive headers/body.</li>
-<li>Retry-ити non-idempotent requests без idempotency key.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-47">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-47">#</a></h3>
-<blockquote>
-<p>OkHttp — це transport layer, Retrofit — declarative API layer. Я тримаю auth/logging/cache/timeouts на OkHttp рівні, а endpoint contract — у Retrofit. DTO маплю на data/domain boundary і не протягую Retrofit response у UI.</p>
-</blockquote>
-<hr/>
-<h2 id="interceptors-and-authentication">Interceptors and authentication<a aria-label="Посилання на розділ: Interceptors and authentication" class="heading-anchor" href="#interceptors-and-authentication">#</a></h2>
-<h3 id="питання-48">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-48">#</a></h3>
-<p>Як реалізувати auth headers і token refresh?</p>
-<h3 id="коротка-відповідь-37">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-37">#</a></h3>
-<p>Auth interceptor додає access token до requests. Token refresh зазвичай робиться через OkHttp <code>Authenticator</code> або централізований auth repository, який синхронізує refresh, щоб уникнути parallel refresh storm.</p>
-<h3 id="senior-level-пояснення-47">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-47">#</a></h3>
-<p>Token refresh — складний production сценарій. Треба врахувати:</p>
-<ul>
-<li>кілька одночасних 401;</li>
-<li>refresh token expiration;</li>
-<li>logout/session invalidation;</li>
-<li>retry original request тільки один раз;</li>
-<li>thread blocking в OkHttp Authenticator;</li>
-<li>secure token storage;</li>
-<li>race condition між requests.</li>
-</ul>
-<h3 id="production-sketch">Production sketch<a aria-label="Посилання на розділ: Production sketch" class="heading-anchor" href="#production-sketch">#</a></h3>
-<pre><code class="language-kotlin">class AuthInterceptor @Inject constructor(
-    private val tokenStore: TokenStore
-) : Interceptor {
-    override fun intercept(chain: Interceptor.Chain): Response {
-        val token = tokenStore.getAccessTokenBlocking()
-        val request = chain.request().newBuilder()
-            .apply {
-                if (token != null) header("Authorization", "Bearer $token")
-            }
-            .build()
-
-        return chain.proceed(request)
-    }
-}
-</code></pre>
-<p>Token refresh має бути guarded by Mutex:</p>
-<pre><code class="language-kotlin">class TokenRefresher @Inject constructor(
-    private val api: AuthApi,
-    private val tokenStore: TokenStore
-) {
-    private val mutex = Mutex()
-
-    suspend fun refreshIfNeeded(): Token? = mutex.withLock {
-        val current = tokenStore.getTokens()
-        if (!current.needsRefresh()) return current.accessToken
-
-        val newTokens = api.refresh(current.refreshToken)
-        tokenStore.save(newTokens)
-        newTokens.accessToken
-    }
-}
-</code></pre>
-<h3 id="типові-помилки-47">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-47">#</a></h3>
-<ul>
-<li>Кожен 401 запускає свій refresh.</li>
-<li>Infinite retry loop.</li>
-<li>Refresh request теж проходить через той самий authenticator і рекурсивно падає.</li>
-<li>Tokens зберігаються у plain SharedPreferences без security consideration.</li>
-<li>UI отримує 401 замість session-expired state.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-48">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-48">#</a></h3>
-<blockquote>
-<p>Для auth я розділяю додавання token і refresh. Interceptor додає header, а refresh має бути синхронізований, щоб кілька 401 не створили refresh storm. Якщо refresh fail-иться, auth layer має очистити session і повідомити app про logout/session expired. Також я обмежую retry, щоб не отримати infinite loop.</p>
-</blockquote>
-<hr/>
-<h2 id="pagination-caching-retry-network-monitoring">Pagination, caching, retry, network monitoring<a aria-label="Посилання на розділ: Pagination, caching, retry, network monitoring" class="heading-anchor" href="#pagination-caching-retry-network-monitoring">#</a></h2>
-<h3 id="питання-49">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-49">#</a></h3>
-<p>Як реалізувати pagination і caching?</p>
-<h3 id="коротка-відповідь-38">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-38">#</a></h3>
-<p>Pagination може бути page-based, offset-based або cursor-based. У production треба зберігати load state, end-of-pagination, retry, deduplication і cache strategy. Для складних списків часто використовують Paging 3 з RemoteMediator.</p>
-<h3 id="senior-level-пояснення-48">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-48">#</a></h3>
-<p>Cursor-based pagination надійніша для mutable feeds, бо offset може ламатися при insert/delete. Page-based простіша, але має edge cases. Cache strategy залежить від product:</p>
-<ul>
-<li>network-only;</li>
-<li>cache-first;</li>
-<li>network-bound resource;</li>
-<li>offline-first with DB as source of truth.</li>
-</ul>
-<p>Retry має враховувати idempotency. GET можна retry-ити простіше, POST/checkout/payment — тільки з idempotency key або explicit product decision.</p>
-<h3 id="типові-помилки-48">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-48">#</a></h3>
-<ul>
-<li>Дублікати items при pagination.</li>
-<li>Неправильний end-of-list handling.</li>
-<li>Retry POST без idempotency.</li>
-<li>Cache invalidation відсутня.</li>
-<li>UI не показує separate loading states: initial/append/refresh.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-49">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-49">#</a></h3>
-<blockquote>
-<p>Для pagination я спочатку уточнюю API contract: cursor, page чи offset. Потім моделюю loading states окремо для initial load, refresh і append. Якщо потрібен offline/cache, використовую DB як source of truth і remote mediator/sync. Retry strategy залежить від HTTP method і idempotency.</p>
-</blockquote>
 <hr/>
 <h2 id="networking-підсумок">Networking — підсумок<a aria-label="Посилання на розділ: Networking — підсумок" class="heading-anchor" href="#networking-підсумок">#</a></h2>
 <p>Networking на Senior-рівні — це не тільки Retrofit interface. Треба пояснити transport vs API layer, authentication, token refresh races, error mapping, pagination, cache invalidation, retry safety, connectivity, security і observability.</p>
 <hr/>
 </div></details><details class="major-section" data-key="persistence" data-title="Persistence" id="persistence" open=""><summary class="major-summary"><span class="major-title">Persistence</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
+<p><strong>Детальніше:</strong> <a href="#local-persistence-sqlite-room-datastore">Local persistence: SQLite, Room, migrations, transactions і DataStore boundaries</a>, <a href="#offline-first-architecture-paging-3">Offline-first architecture і Paging 3</a>, <a href="#authentication-token-refresh-android-mobile-security">Authentication, token refresh та Android mobile security</a> (secure storage).</p>
+<p>Room internals (indexes, transactions, WAL, relations, conflict strategies, Flow invalidation), migrations, DataStore (Preferences/Proto, corruption, SharedPreferencesMigration) і DB як source of truth розібрані в етапах вище. Тут — базові приклади та доповнення.</p>
 <h2 id="room-and-sqlite">Room and SQLite<a aria-label="Посилання на розділ: Room and SQLite" class="heading-anchor" href="#room-and-sqlite">#</a></h2>
-<h3 id="питання-50">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-50">#</a></h3>
-<p>Навіщо використовувати Room замість SQLite напряму?</p>
-<h3 id="коротка-відповідь-39">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-39">#</a></h3>
-<p>Room — abstraction над SQLite з compile-time query validation, DAO, entities, migrations і Flow/LiveData integration. Він зменшує boilerplate і runtime SQL помилки.</p>
-<h3 id="senior-level-пояснення-49">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-49">#</a></h3>
-<p>Room не замінює розуміння SQLite. Senior має знати:</p>
-<ul>
-<li>indexes;</li>
-<li>transactions;</li>
-<li>query performance;</li>
-<li>migrations;</li>
-<li>relations;</li>
-<li>conflict strategies;</li>
-<li>WAL;</li>
-<li>DB as source of truth.</li>
-</ul>
-<h3 id="production-приклад-30">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-30">#</a></h3>
+<p>Room також інтегрується з LiveData (не лише Flow) і зменшує boilerplate. Базовий DAO: observe через Flow, bulk upsert, очищення таблиці:</p>
 <pre><code class="language-kotlin">@Dao
 interface ProductDao {
     @Query("SELECT * FROM products ORDER BY name ASC")
@@ -7129,35 +6974,9 @@ interface ProductDao {
     suspend fun deleteAll()
 }
 </code></pre>
-<h3 id="типові-помилки-49">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-49">#</a></h3>
-<ul>
-<li><code>fallbackToDestructiveMigration()</code> у production без explicit decision.</li>
-<li>Немає indexes для frequent queries.</li>
-<li>Робити DB operations на Main.</li>
-<li>Зберігати UI models у DB.</li>
-<li>Не тестувати migrations.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-50">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-50">#</a></h3>
-<blockquote>
-<p>Room дає compile-time safety і зручну integration з Kotlin Flow, але я все одно думаю як про SQLite: indexes, transactions, migrations, query plans. Для offline-first часто роблю DB source of truth: UI observe-ить Room Flow, refresh оновлює DB у transaction.</p>
-</blockquote>
-<hr/>
+<p>Типова помилка: зберігати UI models у DB.</p>
 <h2 id="datastore-vs-sharedpreferences">DataStore vs SharedPreferences<a aria-label="Посилання на розділ: DataStore vs SharedPreferences" class="heading-anchor" href="#datastore-vs-sharedpreferences">#</a></h2>
-<h3 id="питання-51">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-51">#</a></h3>
-<p>Коли використовувати DataStore, а коли SharedPreferences?</p>
-<h3 id="коротка-відповідь-40">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-40">#</a></h3>
-<p>DataStore — сучасна async replacement для SharedPreferences, побудована на coroutines/Flow. Preferences DataStore підходить для key-value settings, Proto DataStore — для typed schema. SharedPreferences legacy/simple, але synchronous API може створювати problems.</p>
-<h3 id="senior-level-пояснення-50">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-50">#</a></h3>
-<p>DataStore краще для:</p>
-<ul>
-<li>reactive settings через Flow;</li>
-<li>async writes;</li>
-<li>consistency;</li>
-<li>typed Proto schema;</li>
-<li>migration from SharedPreferences.</li>
-</ul>
-<p>Не використовуй DataStore для великих relational data — для цього Room. Tokens/secret data потребують security layer/encrypted storage consideration.</p>
-<h3 id="production-приклад-31">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-31">#</a></h3>
+<p>SharedPreferences залишив би для legacy/simple cases; вибір persistence залежить від data shape, size, consistency і security requirements.</p>
 <pre><code class="language-kotlin">class UserPreferencesRepository @Inject constructor(
     private val dataStore: DataStore&lt;Preferences&gt;
 ) {
@@ -7173,35 +6992,9 @@ interface ProductDao {
     }
 }
 </code></pre>
-<h3 id="типові-помилки-50">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-50">#</a></h3>
-<ul>
-<li>Використовувати SharedPreferences <code>commit()</code> на Main.</li>
-<li>Зберігати complex relational data в DataStore.</li>
-<li>Не обробляти corruption/migration.</li>
-<li>Дублювати settings у memory без sync.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-51">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-51">#</a></h3>
-<blockquote>
-<p>Для settings я зазвичай вибираю DataStore, бо він async і Flow-friendly. SharedPreferences залишив би для legacy/simple cases. Room — для structured relational data. Вибір persistence залежить від data shape, size, consistency і security requirements.</p>
-</blockquote>
-<hr/>
+<p>Типові помилки: SharedPreferences <code>commit()</code> на Main; дублювати settings у memory без sync.</p>
 <h2 id="migrations-and-transactions">Migrations and transactions<a aria-label="Посилання на розділ: Migrations and transactions" class="heading-anchor" href="#migrations-and-transactions">#</a></h2>
-<h3 id="питання-52">Питання<a aria-label="Посилання на розділ: Питання" class="heading-anchor" href="#питання-52">#</a></h3>
-<p>Як безпечно робити database migrations?</p>
-<h3 id="коротка-відповідь-41">Коротка відповідь<a aria-label="Посилання на розділ: Коротка відповідь" class="heading-anchor" href="#коротка-відповідь-41">#</a></h3>
-<p>Migration має явно описувати перехід між версіями schema і бути протестованою на реальних old schemas. Transactions гарантують atomic updates, особливо при sync/cache replacement.</p>
-<h3 id="senior-level-пояснення-51">Senior-level пояснення<a aria-label="Посилання на розділ: Senior-level пояснення" class="heading-anchor" href="#senior-level-пояснення-51">#</a></h3>
-<p>Senior має згадати:</p>
-<ul>
-<li>migration tests;</li>
-<li>backward compatibility;</li>
-<li>not losing user data;</li>
-<li>phased migrations для великих таблиць;</li>
-<li>indexes/constraints;</li>
-<li>transaction boundaries;</li>
-<li>destructive migration тільки для non-critical cache або explicit product decision.</li>
-</ul>
-<h3 id="production-приклад-32">Production приклад<a aria-label="Посилання на розділ: Production приклад" class="heading-anchor" href="#production-приклад-32">#</a></h3>
+<p>Приклад manual migration: новий NOT NULL column з default і index для frequent query.</p>
 <pre><code class="language-kotlin">val MIGRATION_3_4 = object : Migration(3, 4) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE products ADD COLUMN lastUpdated INTEGER NOT NULL DEFAULT 0")
@@ -7209,17 +7002,6 @@ interface ProductDao {
     }
 }
 </code></pre>
-<h3 id="типові-помилки-51">Типові помилки<a aria-label="Посилання на розділ: Типові помилки" class="heading-anchor" href="#типові-помилки-51">#</a></h3>
-<ul>
-<li>Не тестувати migration from all supported versions.</li>
-<li>Destructive migration для user-generated data.</li>
-<li>Забути default value для NOT NULL column.</li>
-<li>Не додати index і отримати slow query.</li>
-</ul>
-<h3 id="як-пояснити-на-співбесіді-52">Як пояснити на співбесіді<a aria-label="Посилання на розділ: Як пояснити на співбесіді" class="heading-anchor" href="#як-пояснити-на-співбесіді-52">#</a></h3>
-<blockquote>
-<p>DB migration — це production-risk зона, бо можна втратити user data. Я пишу explicit migrations, тестую їх на old schema і використовую destructive migration тільки для disposable cache. Для sync updates використовую transactions, щоб UI не побачив half-updated state.</p>
-</blockquote>
 <hr/>
 <h2 id="persistence-підсумок">Persistence — підсумок<a aria-label="Посилання на розділ: Persistence — підсумок" class="heading-anchor" href="#persistence-підсумок">#</a></h2>
 <p>Persistence — це не тільки “Room чи DataStore”. Senior має думати про source of truth, migrations, transactions, query performance, cache invalidation, security і offline behavior. Найкраща відповідь показує, як local storage інтегрується з repository і UI state.</p>
@@ -9010,13 +8792,13 @@ val clicksBus: EventBus&lt;ClickEvent&gt; = analytics // ok: in-варіантн
 <p><strong>Staff/Lead: команда сперечається — використовувати inline-функції у спільному core-модулі чи ні. Ваш фреймворк рішення?</strong><br/>
 Зважую: виграш (алокації лямбд у гарячих шляхах, reified-зручність) проти вартості (binary compatibility — тіло вбудоване у споживачів, зміни вимагають рекомпіляції; зростання DEX). Для внутрішнього монорепо з одночасною збіркою — ок для дрібних утиліт; для модуля, що публікується як артефакт із незалежним версіюванням, — обережно, і явні правила в конвенціях коду. Рішення фіксую в ADR з критеріями, а не «як домовились усно».</p>
 </div></details><details class="major-section" data-key="networking-data-senior" data-title="Networking і Data: Senior deep dive" id="networking-data-senior" open=""><summary class="major-summary"><span class="major-title">Networking і Data: Senior deep dive</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
-<p>Цей розділ поглиблює базові Networking/Persistence секції: тут те, про що питають після слів «а тепер уявімо production».</p>
+<p><strong>Детальніше:</strong> <a href="#android-networking-fundamentals">Android networking fundamentals</a>, <a href="#authentication-token-refresh-android-mobile-security">Authentication, token refresh та Android mobile security</a>, <a href="#local-persistence-sqlite-room-datastore">Local persistence: SQLite, Room, migrations, transactions і DataStore boundaries</a>, <a href="#offline-first-architecture-paging-3">Offline-first architecture і Paging 3</a>, <a href="#senior-android-reliability-observability">Senior Android reliability and observability</a>.</p>
 
 <h2 id="interceptors-vs-authenticators">OkHttp: interceptors vs authenticators<a aria-label="Посилання на розділ: Interceptors vs authenticators" class="heading-anchor" href="#interceptors-vs-authenticators">#</a></h2>
-<p>Розподіл обов'язків: <strong>application interceptor</strong> — крос-катінг логіка до кешу (заголовки, логування доменних запитів, короткозамкнуті відповіді); <strong>network interceptor</strong> — бачить реальний мережевий трафік після кешу і редиректів (стиснення, низькорівневе логування); <strong>Authenticator</strong> — реактивна авторизація, викликається тільки на 401, з готовим response у руках. Proactive (додати свіжий токен у кожен запит) — interceptor; reactive (відновитись після 401) — Authenticator. Розрізнення цих ролей — маркер людини, що реально налаштовувала клієнт.</p>
+<p>Ролі application/network interceptor і Authenticator (proactive vs reactive) — в етапах 18–19. Додатково: application interceptor може повертати short-circuited response без мережі; network interceptor (після кешу і редиректів) — місце для стиснення і низькорівневого логування.</p>
 
 <h2 id="network-error-taxonomy">Таксономія мережевих помилок<a aria-label="Посилання на розділ: Network error taxonomy" class="heading-anchor" href="#network-error-taxonomy">#</a></h2>
-<p>Senior не повертає з репозиторію «Exception». Помилки класифікуються за тим, <em>що з ними робити</em>:</p>
+<p>Помилки класифікуються за тим, <em>що з ними робити</em> (retry-політика залежить від класу помилки та ідемпотентності):</p>
 <pre><code class="language-kotlin">sealed interface NetworkError {
     data object NoConnection : NetworkError          // retry автоматично при появі мережі
     data object Timeout : NetworkError               // retry з backoff
@@ -9025,40 +8807,36 @@ val clicksBus: EventBus&lt;ClickEvent&gt; = analytics // ok: in-варіантн
     // 422 -&gt; валідація полів, 429 -&gt; backoff за Retry-After, 5xx -&gt; retry + алерт
     data class Serialization(val cause: Throwable) : NetworkError // контракт зламано: лог + non-fatal
 }</code></pre>
-<p>Ключова думка: retry-політика залежить від класу помилки і від ідемпотентності операції. GET ідемпотентний, тому retry безпечний, але лише для вибраних transient-збоїв (connection reset, timeout, 408/429/503) з backoff, jitter і бюджетом спроб/часу; parse-, 4xx-contract-, TLS-помилки та cancellation не ретраїмо. POST «створити замовлення» — тільки з idempotency key.</p>
 
 <h2 id="idempotency">Ідемпотентність у платіжних і order-флоу<a aria-label="Посилання на розділ: Idempotency" class="heading-anchor" href="#idempotency">#</a></h2>
-<p>Сценарій-пастка: запит «оплатити» пішов, відповідь загубилась (timeout). Стан невідомий: гроші могли списатись. Retry без захисту = подвійне списання; відсутність retry = «зависла» оплата.</p>
-<p>Рішення: клієнт генерує <code>Idempotency-Key</code> (UUID) <em>до</em> першої спроби, зберігає його разом з локальним записом операції (Room, до відправки — патерн outbox), і всі повтори йдуть з тим самим ключем; сервер дедуплікує. Після timeout правильна дія — не «створити знову», а запитати статус операції за ключем. На співбесіді важливо проговорити, що це контракт із бекендом: без серверної підтримки ключ нічого не дає.</p>
+<p>Сценарій-пастка: запит «оплатити» пішов, відповідь загубилась (timeout) — гроші могли списатись. Retry без захисту = подвійне списання; відсутність retry = «зависла» оплата. <code>Idempotency-Key</code> (UUID) генерується <em>до</em> першої спроби і зберігається з outbox-записом у Room до відправки; повтори йдуть з тим самим ключем, сервер дедуплікує (без серверної підтримки ключ нічого не дає). Після timeout правильна дія — не «створити знову», а запитати статус операції за ключем.</p>
 
 <h2 id="paging3-remotemediator">Paging 3: RemoteMediator і інвалідація кешу<a aria-label="Посилання на розділ: Paging 3" class="heading-anchor" href="#paging3-remotemediator">#</a></h2>
-<p>Архітектура offline-first стрічки: <code>PagingSource</code> читає тільки з Room (single source of truth), <code>RemoteMediator</code> підвантажує сторінки з мережі і пише в Room у транзакції разом з remote keys (курсори/next-page токени). Будь-яка зміна даних у Room автоматично інвалідовує PagingSource — UI оновлюється сам.</p>
-<p>Senior-нюанси: (1) <code>RemoteMediator.initialize()</code> → <code>InitializeAction.LAUNCH_INITIAL_REFRESH</code>/<code>SKIP_INITIAL_REFRESH</code> вирішує, чи запускати initial REFRESH (миттєвий показ старого кешу проти «стрибка» контенту), а чистити таблицю чи merge — вирішує ваша реалізація <code>load(REFRESH)</code>; (2) remote keys зберігаються транзакційно з даними, інакше після process death пагінація з'їжджає; (3) <code>cachedIn(viewModelScope)</code> обов'язковий — без нього PagingData не переживає resubscribe і ламається після rotation; (4) jumping/placeholders — окреме рішення з trade-offs по UX.</p>
+<p>Архітектура RemoteMediator + Room, remote keys і REFRESH-політика — у Stage 21. Практичний наслідок: без <code>cachedIn(viewModelScope)</code> PagingData не переживає resubscribe і ламається після rotation.</p>
 
 <h2 id="room-advanced">Room: транзакції, relations, індекси<a aria-label="Посилання на розділ: Room advanced" class="heading-anchor" href="#room-advanced">#</a></h2>
 <ul>
-<li><strong>Транзакції:</strong> <code>@Transaction</code> для атомарних мультитабличних операцій (очистити + вставити при sync; прочитати entity з relations консистентно). усередині <code>withTransaction</code> віддавайте перевагу suspend DAO-викликам — вони лишаються в транзакції навіть після зміни контексту; блокуючі DAO/DB API з іншого диспетчера чи scope всередині блоку Room відхиляє, щоб уникнути deadlock; не запускайте незалежні child-корутини, що переживають блок.</li>
-<li><strong>Relations:</strong> <code>@Embedded</code> не додає запитів — лише розгортає колонки в той самий row. Кожен <code>@Relation</code> додає один batched <code>IN (…)</code> запит на рівень relation (1 + k запитів, не 1 + N), тому метод потребує <code>@Transaction</code> для консистентності. Для гарячих списків explicit JOIN у custom POJO все ще може бути дешевшим; справжній N+1 виникає, коли код викликає DAO для кожного елемента в циклі.</li>
-<li><strong>Індекси:</strong> кожен зовнішній ключ і кожна колонка з WHERE/ORDER BY у частих запитах — кандидат на <code>@Index</code>. Перевірка — <code>EXPLAIN QUERY PLAN</code> і Database Inspector. Trade-off: індекси сповільнюють запис — для таблиць, які масово перезаписуються при sync, індексувати треба свідомо.</li>
-<li><strong>Flow з Room:</strong> інвалідація на рівні таблиці — Flow переемітить навіть якщо ваші конкретні рядки не змінились; <code>distinctUntilChanged()</code> після мапінгу — стандартний прийом.</li>
+<li>Усередині <code>withTransaction</code> віддавайте перевагу suspend DAO-викликам — вони лишаються в транзакції навіть після зміни контексту; блокуючі DAO/DB API з іншого диспетчера чи scope всередині блоку Room відхиляє, щоб уникнути deadlock; не запускайте незалежні child-корутини, що переживають блок.</li>
+<li><code>@Embedded</code> не додає запитів — лише розгортає колонки в той самий row.</li>
+<li>Індекси: кожен зовнішній ключ і колонка з WHERE/ORDER BY частих запитів — кандидат на <code>@Index</code>; окрім <code>EXPLAIN QUERY PLAN</code> перевіряйте через Database Inspector. Для таблиць, що масово перезаписуються при sync, індексувати свідомо.</li>
 </ul>
 
 <h2 id="datastore-deep">DataStore: corruption, міграція, межі<a aria-label="Посилання на розділ: DataStore deep dive" class="heading-anchor" href="#datastore-deep">#</a></h2>
-<p>Повторюючи edge case з банку пасток коротко: corruption handler обов'язковий (диск не ідеальний), міграція з SharedPreferences — через <code>SharedPreferencesMigration</code> одним атомарним кроком, великі/спискові дані — у Room. Додатковий Senior-нюанс: <code>updateData</code> серіалізує конкуретні оновлення — це гарантія консистентності, але і боттлнек, тому DataStore не місце для лічильників, що оновлюються з кількох потоків десятки разів на секунду.</p>
+<p><code>updateData</code> серіалізує конкурентні оновлення — це і гарантія консистентності, і боттлнек: DataStore не місце для лічильників, що оновлюються з кількох потоків десятки разів на секунду.</p>
 
 <h2 id="mobile-security">Security: токени, Keystore, pinning<a aria-label="Посилання на розділ: Mobile security" class="heading-anchor" href="#mobile-security">#</a></h2>
 <ul>
-<li><strong>Де зберігати токени:</strong> базовий рівень — приватні файли застосунку (DataStore): інші застосунки без root їх не читають. Підсилення — шифрування ключем з <strong>Android Keystore</strong>: ключ не екстрагується з secure hardware, дані шифруються AES/GCM. Чесний Senior-коментар: це захист від офлайн-екстракції і бекапів, а не від атакуючого з root на розблокованому девайсі.</li>
-<li><strong>EncryptedSharedPreferences:</strong> бібліотека Jetpack Security (security-crypto) deprecated і не розвивається — у нових проєктах краще власна тонка обгортка Keystore + DataStore, у старих — план міграції, а не сліпе копіювання туторіалів.</li>
-<li><strong>Certificate pinning:</strong> для targetSdk ≥ 24 user-installed CA і так не довіряються за замовчуванням (Network Security Config, якщо застосунок явно не додав <code>&lt;certificates src="user"/&gt;</code>), тож MITM з користувацьким сертифікатом відсікається без pinning. Pinning додатково звужує довіру проти скомпрометованого або помилково видаючого system CA; Android guidance не радить пінити, якщо threat model цього не вимагає. Trade-offs, які обов'язково треба назвати: ротація сертифікатів стає релізним ризиком (запінений сертифікат протух → застосунок осліп, а оновлення через Play займає дні), тому пінити публічний ключ (SPKI), тримати backup pins, мати kill-switch через remote config. Альтернатива для багатьох кейсів — Certificate Transparency monitoring або пінінг лише для критичних ендпоінтів (платежі).</li>
-<li><strong>Інше, що згадати за нагоди:</strong> <code>android:allowBackup</code> і правила бекапу для чутливих даних, заборона логування PII/токенів (interceptor для редагування), obfuscation ≠ security.</li>
+<li><strong>Де зберігати токени:</strong> базовий рівень — приватні файли застосунку (DataStore): інші застосунки без root їх не читають. Підсилення — шифрування AES/GCM ключем з Android Keystore. Це захист від офлайн-екстракції і бекапів, а не від атакуючого з root на розблокованому девайсі.</li>
+<li><strong>EncryptedSharedPreferences:</strong> Jetpack Security (security-crypto) deprecated і не розвивається — у нових проєктах краще власна тонка обгортка Keystore + DataStore, у старих — план міграції.</li>
+<li><strong>Certificate pinning:</strong> для targetSdk ≥ 24 user-installed CA і так не довіряються за замовчуванням (Network Security Config, якщо застосунок явно не додав <code>&lt;certificates src="user"/&gt;</code>), тож MITM з користувацьким сертифікатом відсікається без pinning. Ротація сертифікатів — релізний ризик: запінений сертифікат протух → застосунок осліп, а оновлення через Play займає дні; тому SPKI pins, backup pins і kill-switch через remote config. Альтернатива для багатьох кейсів — Certificate Transparency monitoring або пінінг лише критичних ендпоінтів (платежі).</li>
+<li><strong>Бекап:</strong> <code>android:allowBackup</code> і правила бекапу для чутливих даних.</li>
 </ul>
 
 <h3 id="networking-data-follow-up">Follow-up питання за рівнями<a aria-label="Посилання на розділ: Networking data follow-up" class="heading-anchor" href="#networking-data-follow-up">#</a></h3>
 <p><strong>Middle+: чим відрізняється офлайн-кеш OkHttp від кешу в Room?</strong><br/>
-HTTP-кеш OkHttp — транспортний рівень: працює за заголовками Cache-Control/ETag, прозорий для коду, але не дає запитів по даних і контролю структури. Room — application-level source of truth: свої запити, транзакції, зв'язки, явна політика свіжості. Для UI-даних майже завжди Room; HTTP-кеш — дешевий бонус для статичних ресурсів.</p>
+HTTP-кеш — транспортний рівень (Cache-Control/ETag), Room — application-level source of truth (деталі в етапах 18 і 20). Для UI-даних майже завжди Room; HTTP-кеш — дешевий бонус для статичних ресурсів.</p>
 <p><strong>Senior: як ви проєктуєте retry, щоб не влаштувати retry storm?</strong><br/>
-Exponential backoff з jitter (рандомізація, щоб клієнти не били синхронно), ліміт спроб, повага до <code>Retry-After</code> на 429/503, retry лише ідемпотентних операцій, circuit-breaker-подібний стан «бекенд лежить — не довбати» на рівні репозиторію, і метрика retry rate в observability, щоб бачити шторм до того, як він покладе бекенд.</p>
+Окрім backoff з jitter, ліміту спроб, <code>Retry-After</code> на 429/503 і retry лише ідемпотентних операцій: circuit-breaker-подібний стан «бекенд лежить — не довбати» на рівні репозиторію і метрика retry rate в observability, щоб бачити шторм до того, як він покладе бекенд.</p>
 <p><strong>Staff/Lead: бекенд-команда пропонує перейти на GraphQL. Ваші питання?</strong><br/>
 Що болить зараз (over-fetching? версіювання?), як зміняться кешування (нормалізований кеш Apollo проти Room — хто source of truth?), офлайн-сценарії і пагінація, error-контракт (GraphQL повертає 200 з errors — вся таксономія помилок переписується), вартість для батареї/розміру відповідей, тулінг і кодоген у CI, навчання команди. Рішення — пілот на одному некритичному екрані з метриками до/після, а не big bang.</p>
 </div></details><details class="major-section" data-key="release-engineering" data-title="Release Engineering: R8, signing, Gradle, мультимодульність" id="release-engineering" open=""><summary class="major-summary"><span class="major-title">Release Engineering: R8, signing, Gradle, мультимодульність</span><span class="major-meta">розгорнути / згорнути</span></summary><div class="section-body">
@@ -14207,31 +13985,16 @@ object NetworkModule {
 <h2 id="en-testing-with-di">Testing with DI<a aria-label="Link to section: Testing with DI" class="heading-anchor" href="#en-testing-with-di">#</a></h2>
 <p>In tests, replace real dependencies with fakes. Prefer fakes for behavior and mocks for interaction verification when necessary.</p>
 </div></details><details class="major-section" data-key="networking" data-title="Networking" id="en-networking" open=""><summary class="major-summary"><span class="major-title">Networking</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
-<h2 id="en-retrofit-and-okhttp">Retrofit and OkHttp<a aria-label="Link to section: Retrofit and OkHttp" class="heading-anchor" href="#en-retrofit-and-okhttp">#</a></h2>
-<p>Retrofit maps HTTP APIs to Kotlin interfaces. OkHttp handles low-level HTTP, connection pooling, interceptors, and caching.</p>
-<h2 id="en-interceptors-and-token-refresh">Interceptors and token refresh<a aria-label="Link to section: Interceptors and token refresh" class="heading-anchor" href="#en-interceptors-and-token-refresh">#</a></h2>
-<p>Use application interceptors for adding headers and logging. Token refresh must avoid infinite loops and concurrent refresh storms.</p>
-<h3 id="en-production-design">Production design<a aria-label="Link to section: Production design" class="heading-anchor" href="#en-production-design">#</a></h3>
+<p><strong>More detail:</strong> <a href="#en-android-networking-fundamentals">Android networking fundamentals</a>, <a href="#en-authentication-token-refresh-android-mobile-security">Authentication, token refresh, and Android mobile security</a>, <a href="#en-offline-first-architecture-paging-3">Offline-first architecture and Paging 3</a>, <a href="#en-networking-data-senior">Networking and Data: Senior deep dive</a> (typed <code>NetworkError</code>).</p>
+<p>Retrofit vs OkHttp, interceptors, token refresh, error taxonomy, pagination and retry policy are covered in the stages above. Additions only:</p>
 <ul>
-<li>Attach access token to requests.</li>
-<li>On 401, synchronize refresh.</li>
-<li>Retry the original request once with the new token.</li>
-<li>If refresh fails, clear session and emit logout/session-expired event.</li>
+<li>Do not leak Retrofit/OkHttp exceptions directly into UI; map them to a typed error model at the data boundary.</li>
+<li>If refresh fails, clear the session and emit a logout/session-expired event.</li>
 </ul>
-<h2 id="en-error-handling">Error handling<a aria-label="Link to section: Error handling" class="heading-anchor" href="#en-error-handling">#</a></h2>
-<p>Map transport errors, HTTP errors, serialization errors, and business errors separately. Do not leak Retrofit/OkHttp exceptions directly into UI.</p>
-<pre><code class="language-kotlin">sealed interface NetworkError {
-    data object NoConnection : NetworkError
-    data object Unauthorized : NetworkError
-    data class Server(val code: Int) : NetworkError
-    data object Unknown : NetworkError
-}
-</code></pre>
-<h2 id="en-pagination-caching-and-retry">Pagination, caching, and retry<a aria-label="Link to section: Pagination, caching, and retry" class="heading-anchor" href="#en-pagination-caching-and-retry">#</a></h2>
-<p>Pagination requires stable keys, duplicate handling, loading states, and error recovery. Retry should be explicit and limited; not every request should retry automatically.</p>
 </div></details><details class="major-section" data-key="persistence" data-title="Persistence" id="en-persistence" open=""><summary class="major-summary"><span class="major-title">Persistence</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
-<h2 id="en-room-and-sqlite">Room and SQLite<a aria-label="Link to section: Room and SQLite" class="heading-anchor" href="#en-room-and-sqlite">#</a></h2>
-<p>Room is an abstraction over SQLite with compile-time query validation. Use transactions for multi-step updates that must be atomic.</p>
+<p><strong>More detail:</strong> <a href="#en-local-persistence-sqlite-room-datastore">Local persistence: SQLite, Room, migrations, transactions, and DataStore boundaries</a>, <a href="#en-offline-first-architecture-paging-3">Offline-first architecture and Paging 3</a>.</p>
+<p>Room vs SQLite, transactions, DataStore vs SharedPreferences and tested migrations are covered in the stages above. Additions only:</p>
+<p>A DAO <code>@Transaction</code> method that atomically replaces a table on sync:</p>
 <pre><code class="language-kotlin">@Dao
 interface ProductDao {
     @Query("SELECT * FROM products ORDER BY name")
@@ -14244,11 +14007,7 @@ interface ProductDao {
     }
 }
 </code></pre>
-<h2 id="en-datastore-vs-sharedpreferences">DataStore vs SharedPreferences<a aria-label="Link to section: DataStore vs SharedPreferences" class="heading-anchor" href="#en-datastore-vs-sharedpreferences">#</a></h2>
-<p>DataStore is the modern choice for asynchronous, transactional key-value or typed preferences. SharedPreferences is legacy and synchronous by default.</p>
-<p>Use DataStore for preferences, feature flags, onboarding state, and small settings. Do not use it as a relational database.</p>
-<h2 id="en-migrations">Migrations<a aria-label="Link to section: Migrations" class="heading-anchor" href="#en-migrations">#</a></h2>
-<p>Database migrations must be tested. A broken migration is a production data-loss bug, not just a local crash.</p>
+<p>Typical DataStore contents: preferences, feature flags, onboarding state, and small settings.</p>
 </div></details><details class="major-section" data-key="testing" data-title="Testing" id="en-testing" open=""><summary class="major-summary"><span class="major-title">Testing</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
 <h2 id="en-unit-integration-and-ui-tests">Unit, integration, and UI tests<a aria-label="Link to section: Unit, integration, and UI tests" class="heading-anchor" href="#en-unit-integration-and-ui-tests">#</a></h2>
 <p>Unit tests validate isolated logic. Integration tests validate collaboration between components. UI tests validate user-visible behavior. A senior test strategy chooses the cheapest test that gives enough confidence.</p>
@@ -14977,13 +14736,13 @@ Mechanics, boxing and mangling are in Stages 2/3. I use them for domain identifi
 <p><strong>Staff/Lead: the team argues about inline functions in a shared core module. Your decision framework?</strong><br/>
 Weigh the gain (lambda allocations on hot paths, reified convenience) against the cost (binary compatibility — the body is embedded into consumers, changes force recompilation; DEX growth). Fine for small utilities in a monorepo built together; risky for an independently versioned published artifact. Either way the decision goes into an ADR with criteria, not verbal folklore.</p>
 </div></details><details class="major-section" data-key="networking-data-senior" data-title="Networking and Data: Senior deep dive" id="en-networking-data-senior" open=""><summary class="major-summary"><span class="major-title">Networking and Data: Senior deep dive</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
-<p>This section deepens the base Networking/Persistence chapters: this is what gets asked right after the words "now imagine production".</p>
+<p><strong>More detail:</strong> <a href="#en-android-networking-fundamentals">Android networking fundamentals</a>, <a href="#en-authentication-token-refresh-android-mobile-security">Authentication, token refresh, and Android mobile security</a>, <a href="#en-local-persistence-sqlite-room-datastore">Local persistence: SQLite, Room, migrations, transactions, and DataStore boundaries</a>, <a href="#en-offline-first-architecture-paging-3">Offline-first architecture and Paging 3</a>, <a href="#en-senior-android-reliability-observability">Senior Android reliability and observability</a>.</p>
 
 <h2 id="en-interceptors-vs-authenticators">OkHttp: interceptors vs authenticators<a aria-label="Link to section: Interceptors vs authenticators" class="heading-anchor" href="#en-interceptors-vs-authenticators">#</a></h2>
-<p>Division of responsibilities: an <strong>application interceptor</strong> handles cross-cutting logic before the cache (headers, domain-level request logging, short-circuited responses); a <strong>network interceptor</strong> sees real network traffic after the cache and redirects (compression, low-level logging); an <strong>Authenticator</strong> is reactive authorization, invoked only on 401, with the failed response in hand. Proactive (attach a fresh token to every request) — interceptor; reactive (recover from 401) — Authenticator. Distinguishing these roles is the marker of someone who has actually configured a client.</p>
+<p>The roles of application/network interceptors and the Authenticator (proactive vs reactive) are covered in Stages 18–19. In addition: an application interceptor can return short-circuited responses without the network; a network interceptor (after the cache and redirects) is the place for compression and low-level logging.</p>
 
 <h2 id="en-network-error-taxonomy">A taxonomy of network errors<a aria-label="Link to section: Network error taxonomy" class="heading-anchor" href="#en-network-error-taxonomy">#</a></h2>
-<p>A Senior does not return "Exception" from a repository. Errors are classified by <em>what should be done about them</em>:</p>
+<p>Errors are classified by <em>what should be done about them</em> (retry policy depends on the error class and on idempotency):</p>
 <pre><code class="language-kotlin">sealed interface NetworkError {
     data object NoConnection : NetworkError          // auto-retry when network returns
     data object Timeout : NetworkError               // retry with backoff
@@ -14992,40 +14751,36 @@ Weigh the gain (lambda allocations on hot paths, reified convenience) against th
     // 422 -&gt; field validation, 429 -&gt; backoff per Retry-After, 5xx -&gt; retry + alert
     data class Serialization(val cause: Throwable) : NetworkError // broken contract: log + non-fatal
 }</code></pre>
-<p>The key thought: the retry policy depends on the error class and on the idempotency of the operation. GET is idempotent, so it is safe to retry, but only for selected transient failures (connection reset, timeout, 408/429/503) with backoff, jitter, and an attempt/time budget; never retry parse, 4xx contract, TLS, or cancellation errors. A POST "create order" — only with an idempotency key.</p>
 
 <h2 id="en-idempotency">Idempotency in payment and order flows<a aria-label="Link to section: Idempotency" class="heading-anchor" href="#en-idempotency">#</a></h2>
-<p>The trap scenario: a "pay" request went out, the response was lost (timeout). The state is unknown: money may have been charged. Retry without protection = double charge; no retry = a "stuck" payment.</p>
-<p>The solution: the client generates an <code>Idempotency-Key</code> (UUID) <em>before</em> the first attempt, stores it with the local operation record (Room, before sending — the outbox pattern), and every replay carries the same key; the server deduplicates. After a timeout the right move is not "create again" but "query the operation status by key". In the interview, stress that this is a contract with the backend: without server-side support the key does nothing.</p>
+<p>The trap scenario: a "pay" request went out, the response was lost (timeout) — money may have been charged. Retry without protection = double charge; no retry = a "stuck" payment. The <code>Idempotency-Key</code> (UUID) is generated <em>before</em> the first attempt and stored with the outbox record in Room before sending; every replay carries the same key and the server deduplicates (without server-side support the key does nothing). After a timeout the right move is not "create again" but "query the operation status by key".</p>
 
 <h2 id="en-paging3-remotemediator">Paging 3: RemoteMediator and cache invalidation<a aria-label="Link to section: Paging 3" class="heading-anchor" href="#en-paging3-remotemediator">#</a></h2>
-<p>The offline-first feed architecture: the <code>PagingSource</code> reads only from Room (single source of truth); the <code>RemoteMediator</code> fetches pages from the network and writes them to Room in a transaction together with remote keys (cursors/next-page tokens). Any change to Room data automatically invalidates the PagingSource — the UI updates by itself.</p>
-<p>Senior nuances: (1) <code>RemoteMediator.initialize()</code> → <code>InitializeAction.LAUNCH_INITIAL_REFRESH</code>/<code>SKIP_INITIAL_REFRESH</code> decides whether an initial REFRESH runs (instant display of the old cache versus a content "jump"); the clear-vs-merge choice lives in your <code>load(REFRESH)</code> implementation; (2) remote keys are stored transactionally with the data, otherwise pagination drifts after process death; (3) <code>cachedIn(viewModelScope)</code> is mandatory — without it PagingData does not survive resubscription and breaks after rotation; (4) jumping/placeholders are a separate decision with UX trade-offs.</p>
+<p>RemoteMediator + Room architecture, remote keys and the REFRESH policy are covered in Stage 21. Practical consequence: without <code>cachedIn(viewModelScope)</code> PagingData does not survive resubscription and breaks after rotation.</p>
 
 <h2 id="en-room-advanced">Room: transactions, relations, indexes<a aria-label="Link to section: Room advanced" class="heading-anchor" href="#en-room-advanced">#</a></h2>
 <ul>
-<li><strong>Transactions:</strong> <code>@Transaction</code> for atomic multi-table operations (clear + insert on sync; reading an entity with relations consistently). Inside <code>withTransaction</code>, prefer suspending DAO calls; they stay in the transaction even across context switches. Do not call blocking DAO/DB APIs from another dispatcher or scope inside the block, because Room rejects that to avoid deadlock. Never launch independent child coroutines that outlive the block.</li>
-<li><strong>Relations:</strong> <code>@Embedded</code> adds no query; it only flattens columns into the same row. Each <code>@Relation</code> adds one extra batched <code>IN (…)</code> query per relation level (1 + k queries, not 1 + N), so the method needs <code>@Transaction</code> for consistency. For hot lists an explicit JOIN projection into a custom POJO can still be cheaper, and N+1 comes from calling the DAO per item in a loop.</li>
-<li><strong>Indexes:</strong> every foreign key and every column in WHERE/ORDER BY of frequent queries is an <code>@Index</code> candidate. Verify with <code>EXPLAIN QUERY PLAN</code> and Database Inspector. Trade-off: indexes slow writes — for tables mass-rewritten on sync, index deliberately.</li>
-<li><strong>Flow from Room:</strong> invalidation is table-level — the Flow re-emits even when your specific rows did not change; <code>distinctUntilChanged()</code> after mapping is the standard move.</li>
+<li>Inside <code>withTransaction</code>, prefer suspending DAO calls; they stay in the transaction even across context switches. Do not call blocking DAO/DB APIs from another dispatcher or scope inside the block, because Room rejects that to avoid deadlock. Never launch independent child coroutines that outlive the block.</li>
+<li><code>@Embedded</code> adds no query; it only flattens columns into the same row.</li>
+<li>Indexes: every foreign key and every column in WHERE/ORDER BY of frequent queries is an <code>@Index</code> candidate; besides <code>EXPLAIN QUERY PLAN</code>, verify with Database Inspector. For tables mass-rewritten on sync, index deliberately.</li>
 </ul>
 
 <h2 id="en-datastore-deep">DataStore: corruption, migration, boundaries<a aria-label="Link to section: DataStore deep dive" class="heading-anchor" href="#en-datastore-deep">#</a></h2>
-<p>Recapping the edge-case bank briefly: a corruption handler is mandatory (disks are not perfect), migration off SharedPreferences goes through <code>SharedPreferencesMigration</code> as one atomic step, and large/list data belongs in Room. The extra Senior nuance: <code>updateData</code> serializes concurrent updates — a consistency guarantee and a bottleneck at once, so DataStore is no place for counters updated from several threads dozens of times per second.</p>
+<p><code>updateData</code> serializes concurrent updates — a consistency guarantee and a bottleneck at once, so DataStore is no place for counters updated from several threads dozens of times per second.</p>
 
 <h2 id="en-mobile-security">Security: tokens, Keystore, pinning<a aria-label="Link to section: Mobile security" class="heading-anchor" href="#en-mobile-security">#</a></h2>
 <ul>
-<li><strong>Where to keep tokens:</strong> the base level — the app's private storage (DataStore): other apps cannot read it without root. Hardening — encryption with an <strong>Android Keystore</strong> key: the key is non-extractable from secure hardware, data encrypted with AES/GCM. The honest Senior comment: this protects against offline extraction and backups, not against an attacker with root on an unlocked device.</li>
-<li><strong>EncryptedSharedPreferences:</strong> the Jetpack Security library (security-crypto) is deprecated and unmaintained — new projects are better off with a thin custom Keystore + DataStore wrapper; old ones need a migration plan, not blind tutorial copying.</li>
-<li><strong>Certificate pinning:</strong> for targetSdk ≥ 24, user-installed CAs are not trusted by default (Network Security Config, unless the app opts in with <code>&lt;certificates src="user"/&gt;</code>), so a user-installed MITM certificate is already rejected without pinning. Pinning additionally narrows trust against a compromised or mis-issuing system CA; Android guidance discourages pinning unless the threat model requires it. The trade-offs you must name: certificate rotation becomes a release risk (a pinned cert expires → the app goes blind, and a Play update takes days), so pin the public key (SPKI), keep backup pins, and have a remote-config kill switch. For many cases the alternative is Certificate Transparency monitoring, or pinning only critical endpoints (payments).</li>
-<li><strong>Also worth mentioning:</strong> <code>android:allowBackup</code> and backup rules for sensitive data, a logging-redaction interceptor so PII/tokens never hit logs, and obfuscation ≠ security.</li>
+<li><strong>Where to keep tokens:</strong> the base level — the app's private storage (DataStore): other apps cannot read it without root. Hardening — AES/GCM encryption with an Android Keystore key. This protects against offline extraction and backups, not against an attacker with root on an unlocked device.</li>
+<li><strong>EncryptedSharedPreferences:</strong> the Jetpack Security library (security-crypto) is deprecated and unmaintained — new projects are better off with a thin custom Keystore + DataStore wrapper; old ones need a migration plan.</li>
+<li><strong>Certificate pinning:</strong> for targetSdk ≥ 24, user-installed CAs are not trusted by default (Network Security Config, unless the app opts in with <code>&lt;certificates src="user"/&gt;</code>), so a user-installed MITM certificate is already rejected without pinning. Certificate rotation is a release risk: a pinned cert expires → the app goes blind, and a Play update takes days; so pin the public key (SPKI), keep backup pins, and have a remote-config kill switch. For many cases the alternative is Certificate Transparency monitoring, or pinning only critical endpoints (payments).</li>
+<li><strong>Backup:</strong> <code>android:allowBackup</code> and backup rules for sensitive data.</li>
 </ul>
 
 <h3 id="en-networking-data-follow-up">Follow-up questions by level<a aria-label="Link to section: Networking data follow-up" class="heading-anchor" href="#en-networking-data-follow-up">#</a></h3>
 <p><strong>Middle+: how does OkHttp's offline cache differ from a Room cache?</strong><br/>
-The OkHttp HTTP cache is transport-level: driven by Cache-Control/ETag headers, transparent to your code, but offers no queries over data and no control of structure. Room is an application-level source of truth: your own queries, transactions, relations, an explicit freshness policy. For UI data it is almost always Room; the HTTP cache is a cheap bonus for static resources.</p>
+The HTTP cache is transport-level (Cache-Control/ETag); Room is an application-level source of truth (details in Stages 18 and 20). For UI data it is almost always Room; the HTTP cache is a cheap bonus for static resources.</p>
 <p><strong>Senior: how do you design retry so you don't create a retry storm?</strong><br/>
-Exponential backoff with jitter (randomization so clients do not hammer in sync), an attempt cap, respect for <code>Retry-After</code> on 429/503, retry of idempotent operations only, a circuit-breaker-like "backend is down — stop hitting it" state in the repository, and a retry-rate metric in observability so you see the storm before it takes the backend down.</p>
+Beyond backoff with jitter, an attempt cap, <code>Retry-After</code> on 429/503 and retrying only idempotent operations: a circuit-breaker-like "backend is down — stop hitting it" state in the repository, and a retry-rate metric in observability so you see the storm before it takes the backend down.</p>
 <p><strong>Staff/Lead: the backend team proposes moving to GraphQL. Your questions?</strong><br/>
 What hurts today (over-fetching? versioning?), how caching changes (Apollo's normalized cache versus Room — who is the source of truth?), offline scenarios and pagination, the error contract (GraphQL returns 200 with errors — the whole error taxonomy gets rewritten), battery/payload costs, tooling and codegen in CI, team learning curve. The decision: a pilot on one non-critical screen with before/after metrics, not a big bang.</p>
 </div></details><details class="major-section" data-key="release-engineering" data-title="Release Engineering: R8, signing, Gradle, multi-module" id="en-release-engineering" open=""><summary class="major-summary"><span class="major-title">Release Engineering: R8, signing, Gradle, multi-module</span><span class="major-meta">expand / collapse</span></summary><div class="section-body">
